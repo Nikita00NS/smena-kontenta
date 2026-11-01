@@ -4223,3 +4223,48 @@ body.has-anim .article-cover {
     display: none;
   }
 }
+
+/* --- три шага в призыве --------------------------------------------------- */
+.cta__steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(16px, 2.4vw, 34px);
+  margin-top: clamp(24px, 3.4vw, 42px);
+  padding-top: clamp(20px, 2.6vw, 28px);
+  border-top: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.cta__step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.cta__step b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  opacity: 0.75;
+  padding-top: 4px;
+}
+
+.cta__step h3 {
+  margin: 0 0 4px;
+  font-size: 1.02rem;
+  color: #fff;
+}
+
+.cta__step p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.86);
+  max-width: 34ch;
+}
+
+@media (max-width: 720px) {
+  .cta__steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+}
