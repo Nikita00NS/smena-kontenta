@@ -250,8 +250,6 @@
       '<div class="topbar__right">' +
       '<a href="write.html">Опубликовать материал</a>' +
       '<a href="docs.html">Документы</a>' +
-      '<a href="https://t.me/' + String(SC.brand.telegram).replace(/^@/, "") +
-      '" target="_blank" rel="noopener">Telegram</a>' +
       "</div></div></div>" +
       '<div class="wrap"><div class="masthead">' +
       '<a class="logo" href="index.html" aria-label="Смена контента — на главную">' +
@@ -334,7 +332,7 @@
       (user
         ? '<li><a href="profile.html">Личный кабинет</a></li>' +
           '<li><a href="write.html">Новый материал</a></li>' +
-          '<li><a href="docs.html">Памятка автору</a></li>'
+          '<li><a href="admin.html">Панель проекта</a></li>'
         : '<li><a href="join.html">Регистрация</a></li>' +
           '<li><a href="join.html#login">Вход</a></li>' +
           '<li><a href="docs.html">Памятка автору</a></li>') +
@@ -343,7 +341,9 @@
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
       '<span class="footer-note">Медиа о молодёжи и регионах. Сайт работает на статических файлах — без серверов и подписок.</span>' +
-      '<span><a href="docs.html">Документы</a> · <a href="partners.html">Партнёрам</a></span>' +
+      '<span><a href="assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Соглашение</a>' +
+      ' · <a href="docs.html">Документы</a></span>' +
       "</div></div>";
   }
 
@@ -931,15 +931,203 @@
     }, { passive: true });
   }
 
+  /* 8. Документы ========================================================== */
+
+  function initDocs() {
+    var host = $("[data-docs]");
+    if (!host) return;
+    var docs = SC.docs || [];
+    host.innerHTML = docs
+      .map(function (d) {
+        return (
+          '<a class="doc-card" href="' + d.file + '" target="_blank" rel="noopener">' +
+          '<span class="doc-card__type doc-card__type--pdf">PDF · ' + d.pages + " " +
+          pageWord(d.pages) + "</span>" +
+          "<h3>" + esc(d.title) + "</h3>" +
+          "<p>" + esc(d.desc) + "</p>" +
+          '<span class="doc-card__foot"><span>' + esc(d.tag) +
+          "</span><span>Открыть →</span></span></a>"
+        );
+      })
+      .join("");
+  }
+
+  function plural(n, forms) {
+    var a = Math.abs(n) % 100;
+    var b = a % 10;
+    if (a > 10 && a < 20) return forms[2];
+    if (b > 1 && b < 5) return forms[1];
+    if (b === 1) return forms[0];
+    return forms[2];
+  }
+
+  function pageWord(n) {
+    var mod10 = n % 10;
+    var mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return "страница";
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "страницы";
+    return "страниц";
+  }
+
+  /* 9. Панель проекта ===================================================== */
+
+  function adminField(label, id, value, placeholder, type) {
+    return (
+      '<div class="field"><label for="' + id + '">' + esc(label) + "</label>" +
+      '<input id="' + id + '" name="' + id + '" type="' + (type || "text") + '" value="' +
+      esc(value == null ? "" : String(value)) + '" placeholder="' + esc(placeholder || "") + '"></div>'
+    );
+  }
+
+  function initAdmin() {
+    var host = $("[data-admin]");
+    if (!host) return;
+    var user = Store ? Store.currentUser() : null;
+    if (!user) {
+      window.location.replace("join.html?next=admin");
+      return;
+    }
+
+    var settings = Store.getSettings();
+    var isOwner = user.number === 101 || user.role === "Редактор";
+
+    if (!isOwner) {
+      host.innerHTML =
+        '<section class="section wrap"><div class="panel">' +
+        "<h3>Панель доступна редакции</h3>" +
+        "<p>Настройки проекта меняет первый зарегистрированный аккаунт или аккаунт с ролью " +
+        "«Редактор». Вы вошли как «" + esc(user.name) + "» — " + esc(user.role) + ".</p>" +
+        '<div class="row"><a class="btn btn--sm" href="profile.html">В кабинет</a>' +
+        '<a class="btn btn--sm btn--ghost" href="docs.html">Документы</a></div></div></section>';
+      return;
+    }
+
+    function val(id) {
+      var el = document.getElementById(id);
+      return el ? el.value.trim() : "";
+    }
+
+    function authorRow(a) {
+      var hasCard = a.posts >= settings.card.minPosts;
+      return (
+        '<div class="admin-table__row">' +
+        "<div><b>" + esc(a.name) + "</b><small>" + esc(a.email) + "</small></div>" +
+        "<div>" + esc(a.role || "—") + "</div>" +
+        "<div>" + esc(a.region || "—") + "</div>" +
+        "<div>" + a.posts + " публ.</div>" +
+        '<div><span class="status ' + (hasCard ? "status--pub" : "status--draft") + '">' +
+        (hasCard ? "карта выдана" : "нет карты") + "</span></div>" +
+        "</div>"
+      );
+    }
+
+    function render() {
+      settings = Store.getSettings();
+      var authors = Store.listUsers();
+      host.innerHTML =
+        '<section class="page-hero"><div class="wrap page-hero__grid"><div>' +
+        '<span class="kicker">Служебное</span><h1>Панель<br>проекта</h1></div>' +
+        '<div class="page-hero__aside"><p class="lead">Здесь заполняются данные организации и ' +
+        "правила выдачи пресс-карт. Всё, что вы сохраните, сразу появляется на сайте: в пресс-карте, " +
+        "подвале и документах.</p>" +
+        '<p class="admin-note">Данные хранятся в этом браузере. Для общей работы нужен сервер — ' +
+        "он описан в README, раздел 4.</p></div></div></section>" +
+
+        '<section class="section wrap"><div class="admin-grid">' +
+        '<form class="admin-card" data-admin-org><h2>Организация и центр</h2>' +
+        '<p class="admin-card__hint">Печатается на пресс-карте и указывается в документах.</p>' +
+        adminField("Название проекта", "org-name", settings.org.name, "Смена контента") +
+        adminField("Центр / редакция", "org-center", settings.org.center, "Редакция «Смена контента»") +
+        adminField("Руководитель", "org-head", settings.org.head, "Имя и фамилия") +
+        adminField("Почта для связи", "org-email", settings.org.email, "name@example.ru", "email") +
+        adminField("Телефон", "org-phone", settings.org.phone, "+7 900 000-00-00", "tel") +
+        adminField("Город", "org-city", settings.org.city, "город запуска") +
+        '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
+        '<span class="form__note" data-org-status></span></div></form>' +
+
+        '<form class="admin-card" data-admin-card><h2>Пресс-карта</h2>' +
+        '<p class="admin-card__hint">Правила, по которым автор получает карту с номером.</p>' +
+        adminField("Серия", "card-prefix", settings.card.prefix, "СК") +
+        adminField("Год", "card-year", settings.card.year, "2026", "number") +
+        adminField("Публикаций до выдачи", "card-min", settings.card.minPosts, "5", "number") +
+        adminField("Срок действия, месяцев", "card-valid", settings.card.validMonths, "12", "number") +
+        '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
+        '<span class="form__note" data-card-status></span></div></form>' +
+        "</div></section>" +
+
+        '<section class="section wrap" style="padding-top:0">' +
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Авторы</span>' +
+        "<h2>Кто уже на проекте</h2></div>" +
+        '<div class="row"><button class="btn btn--sm btn--ghost" type="button" data-export>' +
+        "Скачать данные</button></div></div>" +
+        (authors.length
+          ? '<div class="admin-table">' + authors.map(authorRow).join("") + "</div>"
+          : '<div class="empty"><h3>Пока никто не зарегистрировался</h3>' +
+            "<p>Аккаунты появятся здесь после регистрации авторов.</p></div>") +
+        "</section>";
+
+      bind();
+    }
+
+    function bind() {
+      var org = $("[data-admin-org]", host);
+      var card = $("[data-admin-card]", host);
+      if (org)
+        org.addEventListener("submit", function (e) {
+          e.preventDefault();
+          Store.saveSettings({
+            org: {
+              name: val("org-name"),
+              center: val("org-center"),
+              head: val("org-head"),
+              email: val("org-email"),
+              phone: val("org-phone"),
+              city: val("org-city"),
+            },
+          });
+          var st = $("[data-org-status]", host);
+          if (st) st.textContent = "Сохранено";
+        });
+      if (card)
+        card.addEventListener("submit", function (e) {
+          e.preventDefault();
+          Store.saveSettings({
+            card: {
+              prefix: val("card-prefix") || "СК",
+              year: Number(val("card-year")) || new Date().getFullYear(),
+              minPosts: Math.max(1, Number(val("card-min")) || 5),
+              validMonths: Math.max(1, Number(val("card-valid")) || 12),
+            },
+          });
+          render();
+        });
+      var exp = $("[data-export]", host);
+      if (exp)
+        exp.addEventListener("click", function () {
+          var blob = new Blob([Store.exportAll()], { type: "application/json" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "smena-kontenta-" + new Date().toISOString().slice(0, 10) + ".json";
+          a.click();
+          setTimeout(function () {
+            URL.revokeObjectURL(a.href);
+          }, 1000);
+        });
+    }
+
+    render();
+  }
+
   /* 7. Главная ============================================================= */
 
   function pressCardBlock() {
     var all = allArticles();
+    var settings = Store ? Store.getSettings() : { card: { prefix: "СК", year: 2026, minPosts: 5 }, org: {} };
     var stats = [
       { n: MAP.regions.length, l: "регионов на карте" },
-      { n: (SC.formats || []).length - 1, l: "форматов материалов" },
-      { n: 5, l: "документов проекта" },
-      { n: all.length, l: "публикаций" },
+      { n: all.length, l: "материалов в ленте" },
+      { n: (SC.docs || []).length, l: "документов проекта" },
+      { n: settings.card.minPosts, l: "публикаций до пресс-карты" },
     ];
     return (
       '<section class="section--tight wrap presscard-wrap">' +
@@ -947,30 +1135,33 @@
       '<div class="presscard__main">' +
       '<div class="presscard__top">' +
       '<span class="presscard__label">Пресс-карта проекта</span>' +
-      '<span class="presscard__code">СК-2026-000</span>' +
+      '<span class="presscard__code">' + esc(settings.card.prefix) + "-" +
+      esc(String(settings.card.year)) + "-000</span>" +
       "</div>" +
       '<img class="presscard__logo" src="assets/img/logo.png" alt="Смена контента" ' +
       'width="166" height="30" loading="lazy">' +
       '<div class="presscard__desc">Молодёжное медиа · Медиашкола · Сообщество авторов. ' +
       "Рассказываем истории из регионов России и учим их делать.</div>" +
       '<div class="presscard__row">' +
-      '<span><b>Основан</b>2026</span>' +
-      '<span><b>Регион запуска</b>выбирается</span>' +
-      '<span><b>Статус</b>набор команды</span>' +
-      '<span><b>Формат</b>онлайн-медиа</span>' +
+      "<span><b>Основан</b>" + esc(String(SC.brand.year || 2026)) + "</span>" +
+      "<span><b>Выдаёт</b>" + esc(settings.org.center || settings.org.name) + "</span>" +
+      "<span><b>Пресс-карта автора</b>после " + esc(String(settings.card.minPosts)) +
+      " публикаций</span>" +
+      "<span><b>Формат</b>онлайн-медиа</span>" +
       "</div>" +
       "</div>" +
       '<div class="presscard__side">' +
       '<div class="presscard__stats">' +
-      stats.map(function (s) {
-        return '<div><b data-count="' + s.n + '">0</b><span>' + s.l + "</span></div>";
+      stats.map(function (st) {
+        return '<div><b data-count="' + st.n + '">0</b><span>' + st.l + "</span></div>";
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
       '<a class="btn btn--sm" href="assets/docs/press-kit.pdf" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="docs.html">Документы</a>' +
       "</div>" +
-      '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>2026</span></div>' +
+      '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
+      esc(String(SC.brand.year || 2026)) + "</span></div>" +
       "</div></div></section>"
     );
   }
@@ -1355,8 +1546,6 @@
       "Все материалы: " + esc(regionName(a.region)) + "</a></div>" +
       '<div class="aside-box"><h3>Поделиться</h3><div class="share">' +
       '<button type="button" data-copy>Скопировать ссылку</button>' +
-      '<a class="tag" href="https://t.me/share/url?url=' + encodeURIComponent(window.location.href) +
-      "&text=" + encodeURIComponent(a.title) + '" target="_blank" rel="noopener">Telegram</a>' +
       "</div></div>" +
       '<div class="aside-box"><h3>Свежие материалы</h3><ul>' +
       latest.map(function (x) {
@@ -1502,7 +1691,8 @@
     var box = $("[data-auth]");
     if (!box) return;
     var user = Store ? Store.currentUser() : null;
-    var next = param("next") === "write" ? "write.html" : "profile.html";
+    var nextParam = param("next");
+    var next = nextParam === "write" ? "write.html" : nextParam === "admin" ? "admin.html" : "profile.html";
     if (user) {
       window.location.replace(next);
       return;
@@ -1537,6 +1727,14 @@
       regForm.addEventListener("submit", function (e) {
         e.preventDefault();
         var data = new FormData(regForm);
+        var errBox = $("[data-register-error]", box);
+        if (!data.get("agree")) {
+          if (errBox) {
+            errBox.textContent = "Отметьте согласие с правилами — без этого аккаунт создать нельзя.";
+            errBox.classList.remove("is-hidden");
+          }
+          return;
+        }
         var res = Store.register({
           name: data.get("name"),
           email: data.get("email"),
@@ -1550,7 +1748,7 @@
           out.classList.remove("is-hidden");
           return;
         }
-        window.location.href = next === "write.html" ? next : "profile.html?new=1";
+        window.location.href = next === "profile.html" ? "profile.html?new=1" : next;
       });
     }
 
@@ -1572,6 +1770,60 @@
   }
 
   /* 12. Личный кабинет ===================================================== */
+
+  /* пресс-карта автора: до нужного числа публикаций — прогресс, после — карта */
+  function issueCardBlock(card) {
+    var percent = Math.min(100, Math.round((card.posts / card.need) * 100));
+    if (!card.issued) {
+      return (
+        '<div class="presscard presscard--personal presscard--pending" data-reveal>' +
+        '<div class="presscard__main">' +
+        '<div class="presscard__top"><span class="presscard__label">Пресс-карта автора</span>' +
+        '<span class="presscard__code">не выдана</span></div>' +
+        '<div class="presscard__name">' + esc(card.name) + "</div>" +
+        '<div class="presscard__desc">' + esc(card.role) + " · " + esc(card.region) + "</div>" +
+        '<div class="card-progress">' +
+        '<div class="card-progress__head"><b>' + card.posts + " из " + card.need +
+        "</b><span>осталось " + card.left + " " +
+        plural(card.left, ["материал", "материала", "материалов"]) +
+        "</span></div>" +
+        '<div class="card-progress__bar"><i style="width:' + percent + '%"></i></div>' +
+        '<p class="card-progress__note">Пресс-карта с номером выдаётся после ' + card.need +
+        " опубликованных материалов. Она подтверждает, что вы автор проекта: с ней можно " +
+        "брать интервью и ходить на события как журналист «Смены контента».</p>" +
+        "</div>" +
+        '<div class="presscard__row">' +
+        "<span><b>Публикаций</b>" + card.posts + "</span>" +
+        "<span><b>Нужно</b>" + card.need + "</span>" +
+        "<span><b>Выдаёт</b>" + esc(card.issuer) + "</span>" +
+        "</div></div>" +
+        '<div class="presscard__side">' +
+        '<div class="presscard__stamp presscard__stamp--muted">пресс<br>карта<br><span>после ' +
+        card.need + "</span></div>" +
+        "</div></div>"
+      );
+    }
+    return (
+      '<div class="presscard presscard--personal" data-reveal>' +
+      '<div class="presscard__main">' +
+      '<div class="presscard__top"><span class="presscard__label">Пресс-карта автора</span>' +
+      '<span class="presscard__code">' + esc(card.number) + "</span></div>" +
+      '<div class="presscard__name">' + esc(card.name) + "</div>" +
+      '<div class="presscard__desc">' + esc(card.role) + " · " + esc(card.region) + "</div>" +
+      '<div class="presscard__row">' +
+      "<span><b>Выдана</b>" + fmtDate(card.issuedAt) + "</span>" +
+      "<span><b>Действует до</b>" + fmtDate(card.validUntil) + "</span>" +
+      "<span><b>Публикаций</b>" + card.posts + "</span>" +
+      "<span><b>Выдаёт</b>" + esc(card.issuer) + "</span>" +
+      (card.head ? "<span><b>Руководитель</b>" + esc(card.head) + "</span>" : "") +
+      "</div></div>" +
+      '<div class="presscard__side">' +
+      '<div class="presscard__stamp">смена<br>контента<br><span>' +
+      esc(String(new Date(card.issuedAt).getFullYear() || "")) + "</span></div>" +
+      '<button class="btn btn--sm btn--ghost" type="button" data-print>Печать</button>' +
+      "</div></div>"
+    );
+  }
 
   function initProfile() {
     var host = $("[data-profile]");
@@ -1625,32 +1877,20 @@
         "</div>" +
         '<div class="profile-hero__actions">' +
         '<a class="btn btn--accent" href="write.html">Написать материал</a>' +
+        '<a class="btn btn--ghost" href="admin.html">Панель проекта</a>' +
         '<button class="btn btn--ghost" type="button" data-logout>Выйти</button>' +
         "</div></div></div></section>" +
 
         '<section class="section wrap">' +
         (param("new")
-          ? '<div class="welcome"><b>Аккаунт создан.</b> Ваша пресс-карта ниже. ' +
-            "Можно сразу писать первый материал — черновик сохраняется автоматически.</div>"
+          ? '<div class="welcome"><b>Аккаунт создан.</b> Можно сразу писать первый материал. ' +
+            "Пресс-карта появится, когда вы опубликуете " +
+            Store.getSettings().card.minPosts + " материала: до этого момента в кабинете виден прогресс.</div>"
           : "") +
         '<div class="profile-grid">' +
 
-        // пресс-карта
-        '<div class="presscard presscard--personal" data-reveal>' +
-        '<div class="presscard__main">' +
-        '<div class="presscard__top"><span class="presscard__label">Пресс-карта автора</span>' +
-        '<span class="presscard__code">' + esc(card.number) + "</span></div>" +
-        '<div class="presscard__name">' + esc(card.name) + "</div>" +
-        '<div class="presscard__desc">' + esc(card.role) + " · " + esc(card.region) + "</div>" +
-        '<div class="presscard__row">' +
-        "<span><b>Выдана</b>" + fmtDate(card.since) + "</span>" +
-        "<span><b>Публикаций</b>" + card.posts + "</span>" +
-        "<span><b>Статус</b>" + (card.posts ? "действующий автор" : "автор проекта") + "</span>" +
-        "</div></div>" +
-        '<div class="presscard__side">' +
-        '<div class="presscard__stamp">смена<br>контента<br><span>2026</span></div>' +
-        '<button class="btn btn--sm btn--ghost" type="button" data-print>Печать</button>' +
-        "</div></div>" +
+        // пресс-карта (выдаётся после нужного числа публикаций)
+        issueCardBlock(card) +
 
         // статистика
         '<div class="profile-side">' +
@@ -1954,10 +2194,6 @@
       el.textContent = SC.brand.email;
       el.setAttribute("href", "mailto:" + SC.brand.email);
     });
-    $$("[data-brand-telegram]").forEach(function (el) {
-      el.textContent = SC.brand.telegram;
-      el.setAttribute("href", "https://t.me/" + String(SC.brand.telegram).replace(/^@/, ""));
-    });
     $$("[data-total-articles]").forEach(function (el) {
       el.textContent = allArticles().length;
     });
@@ -1990,6 +2226,8 @@
     if (page === "auth") initAuth();
     if (page === "profile") initProfile();
     if (page === "write") initWrite();
+    if (page === "docs") initDocs();
+    if (page === "admin") initAdmin();
 
     initAnimations();
     initHeroParallax();

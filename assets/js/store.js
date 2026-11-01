@@ -23,7 +23,40 @@ window.Store = (function () {
   var KEY = "smena_content_v1";
   var listeners = [];
 
-  var EMPTY = { users: [], posts: [], session: null };
+  var EMPTY = { users: [], posts: [], session: null, settings: null };
+
+  /* данные проекта: их заполняет редакция в панели управления */
+  var DEFAULT_SETTINGS = {
+    org: {
+      name: "Смена контента",
+      center: "Редакция «Смена контента»",
+      head: "",
+      email: "",
+      phone: "",
+      city: "",
+    },
+    card: {
+      prefix: "СК",
+      year: new Date().getFullYear(),
+      minPosts: 5,
+      validMonths: 12,
+    },
+  };
+
+  function merge(base, patch) {
+    var out = {};
+    Object.keys(base).forEach(function (k) {
+      out[k] = base[k] && typeof base[k] === "object" ? merge(base[k], {}) : base[k];
+    });
+    Object.keys(patch || {}).forEach(function (k) {
+      if (patch[k] && typeof patch[k] === "object" && !Array.isArray(patch[k])) {
+        out[k] = merge(out[k] || {}, patch[k]);
+      } else if (patch[k] !== undefined) {
+        out[k] = patch[k];
+      }
+    });
+    return out;
+  }
 
   function read() {
     try {
@@ -34,6 +67,7 @@ window.Store = (function () {
         users: data.users || [],
         posts: data.posts || [],
         session: data.session || null,
+        settings: data.settings || null,
       };
     } catch (e) {
       return JSON.parse(JSON.stringify(EMPTY));
@@ -355,18 +389,100 @@ window.Store = (function () {
 
   /* ------------------------------------------------------------- пресс-карта */
 
+  function getSettings() {
+    return merge(DEFAULT_SETTINGS, read().settings || {});
+  }
+
+  function saveSettings(patch) {
+    var data = read();
+    data.settings = merge(getSettings(), patch || {});
+    if (!write(data)) return { ok: false, error: "Не удалось сохранить настройки." };
+    return { ok: true, settings: data.settings };
+  }
+
+  function addMonths(iso, months) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    d.setMonth(d.getMonth() + Number(months || 12));
+    return d.toISOString();
+  }
+
+  /* Пресс-карта выдаётся после нужного числа публикаций:
+     до этого показываем прогресс, а не номер. */
   function pressCard() {
     var user = currentUser();
     if (!user) return null;
-    var posts = listPosts({ authorId: user.id, status: "published" }).length;
+    var settings = getSettings();
+    var card = settings.card;
+    var published = listPosts({ authorId: user.id, status: "published" });
+    var need = Math.max(1, Number(card.minPosts) || 1);
+    var issued = published.length >= need;
+
+    var issuedAt = null;
+    var validUntil = null;
+    if (issued) {
+      var byDate = published.slice().sort(function (a, b) {
+        return new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt);
+      });
+      var hit = byDate[need - 1] || byDate[byDate.length - 1];
+      issuedAt = (hit && (hit.date || hit.createdAt)) || new Date().toISOString();
+      validUntil = addMonths(issuedAt, card.validMonths);
+    }
+
     return {
-      number: "СК-" + String(2026) + "-" + String(user.number).padStart(3, "0"),
+      issued: issued,
+      posts: published.length,
+      need: need,
+      left: Math.max(0, need - published.length),
+      number: issued
+        ? card.prefix + "-" + card.year + "-" + String(user.number).padStart(3, "0")
+        : null,
       name: user.name,
       role: user.role,
       region: regionLabel(user.region) || "Регион не выбран",
+      issuer: settings.org.center || settings.org.name,
+      head: settings.org.head || "",
       since: user.createdAt,
-      posts: posts,
+      issuedAt: issuedAt,
+      validUntil: validUntil,
     };
+  }
+
+  /* список авторов для панели управления */
+  function listUsers() {
+    var data = read();
+    return data.users.map(function (u) {
+      var posts = data.posts.filter(function (p) {
+        return p.authorId === u.id && p.status === "published";
+      }).length;
+      return {
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        region: regionLabel(u.region),
+        posts: posts,
+        createdAt: u.createdAt,
+        number: u.number,
+      };
+    });
+  }
+
+  function exportAll() {
+    return JSON.stringify(read(), null, 2);
+  }
+
+  function importAll(json) {
+    try {
+      var data = JSON.parse(json);
+      if (!data || !Array.isArray(data.users) || !Array.isArray(data.posts))
+        return { ok: false, error: "Файл не похож на резервную копию." };
+      if (!write({ users: data.users, posts: data.posts, session: data.session || null, settings: data.settings || null }))
+        return { ok: false, error: "Не удалось записать данные." };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: "Файл повреждён или это не JSON." };
+    }
   }
 
   function onChange(fn) {
@@ -387,6 +503,11 @@ window.Store = (function () {
     publishPost: publishPost,
     publishedAsArticles: publishedAsArticles,
     pressCard: pressCard,
+    getSettings: getSettings,
+    saveSettings: saveSettings,
+    listUsers: listUsers,
+    exportAll: exportAll,
+    importAll: importAll,
     authorOf: authorOf,
     initials: initials,
     onChange: onChange,

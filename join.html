@@ -23,7 +23,7 @@
           <h1>Регистрация<br>автора</h1>
         </div>
         <div class="page-hero__aside">
-          <p class="lead">Аккаунт нужен, чтобы публиковать материалы: после регистрации вы сразу получаете пресс-карту автора и доступ к редактору. Никаких заявок на модерацию — пишите и публикуйте.</p>
+          <p class="lead">Аккаунт нужен, чтобы публиковать материалы. Регистрация занимает минуту: сразу открывается редактор, а пресс-карта с номером выдаётся после пяти публикаций.</p>
         </div>
       </div>
     </section>
@@ -58,6 +58,12 @@
                 <label for="r-role">Чем хотите заниматься</label>
                 <select id="r-role" name="role" data-auth-role></select>
               </div>
+              <label class="check-line">
+                <input type="checkbox" name="agree" value="1" required>
+                <span>Мне 14 лет или больше. Я принимаю
+                  <a href="assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">пользовательское соглашение</a>
+                  и <a href="assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">политику конфиденциальности</a>.</span>
+              </label>
               <div class="auth-error is-hidden" data-register-error></div>
               <button class="btn btn--accent btn--block" type="submit">Создать аккаунт</button>
               <p class="form__note" style="margin-top:12px">Регион нужен, чтобы материалы попадали на карту и в ленту своего региона. Его можно сменить в кабинете.</p>
