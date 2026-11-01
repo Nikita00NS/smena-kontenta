@@ -100,14 +100,23 @@ class Doc:
     def _frame(self, canvas, doc):
         w, h = A4
         canvas.saveState()
-        canvas.setFillColor(INK)
-        canvas.setFont("DM", 7.2)
-        canvas.drawString(22 * mm, h - 16 * mm, "СМЕНА КОНТЕНТА")
+        logo = os.path.join("assets", "img", "logo-dark.png")
+        if os.path.exists(logo):
+            from reportlab.platypus import Image as RLImage
+            lh = 5.0 * mm
+            lw = lh * 1706 / 309
+            canvas.drawImage(logo, 22 * mm, h - 19.2 * mm, width=lw, height=lh,
+                             mask="auto")
+            canvas.setFont("DM", 7.2)
+        else:
+            canvas.setFillColor(INK)
+            canvas.setFont("DM", 7.2)
+            canvas.drawString(22 * mm, h - 16 * mm, "СМЕНА КОНТЕНТА")
         canvas.setFillColor(MUTED)
-        canvas.drawRightString(w - 22 * mm, h - 16 * mm, self.header_right)
+        canvas.drawRightString(w - 22 * mm, h - 16.4 * mm, self.header_right)
         canvas.setStrokeColor(ACCENT)
         canvas.setLineWidth(1)
-        canvas.line(22 * mm, h - 18.5 * mm, w - 22 * mm, h - 18.5 * mm)
+        canvas.line(22 * mm, h - 21.4 * mm, w - 22 * mm, h - 21.4 * mm)
 
         canvas.setStrokeColor(LINE)
         canvas.setLineWidth(0.6)

@@ -427,27 +427,6 @@ p:last-child {
   color: var(--accent);
 }
 
-.badge-demo {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink);
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  padding: 2px 9px;
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-  white-space: nowrap;
-}
-
-.badge-demo::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
 .masthead {
   display: flex;
   align-items: center;
@@ -2429,23 +2408,6 @@ p:last-child {
   color: var(--paper);
 }
 
-.demo-note {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  background: var(--paper-2);
-  border-left: 3px solid var(--accent);
-  padding: 12px 14px;
-  font-size: 0.85rem;
-  line-height: 1.45;
-  color: var(--ink-soft);
-  margin-top: 26px;
-}
-
-.demo-note b {
-  color: var(--ink);
-}
-
 /* 13. Страница региона ====================================================== */
 .region-hero {
   background: var(--dark);
@@ -4267,4 +4229,314 @@ body.has-anim .article-cover {
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
   }
+}
+
+/* ==========================================================================
+   18. ЧЁРНАЯ ТЕМА И ЛОГОТИП
+   Все поверхности и текст берут цвета из токенов выше — здесь они
+   переопределяются один раз, поэтому тёмная тема не расползается по файлу.
+   ========================================================================== */
+
+:root {
+  --paper: #0a0a0a;
+  --paper-2: #151515;
+  --paper-3: #1f1f1f;
+  --ink: #f4f2ed;
+  --ink-soft: #c9c5bc;
+  --muted: #928d83;
+  --line: #2a2826;
+  --line-strong: #3f3c38;
+  --accent: #ff4a17;
+  --accent-dark: #d8370d;
+  --dark: #050505;
+  --dark-2: #0f0f0f;
+  --dark-3: #1a1917;
+  --on-dark: #f4f2ed;
+  --shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+
+html {
+  color-scheme: dark;
+  background: var(--paper);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* шапка и панели на чёрном ------------------------------------------------ */
+.site-header {
+  background: rgba(10, 10, 10, 0.88);
+  border-bottom: 1px solid var(--line);
+}
+
+.mobile-menu,
+.search-box {
+  border: 1px solid var(--line);
+}
+
+/* поля ввода: чуть светлее фона, чтобы были видны -------------------------- */
+.field input,
+.field select,
+.field textarea,
+.search-inline input,
+.search-box input,
+.cover-picker__ui input[type="text"] {
+  background: #121212;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.field input::placeholder,
+.field textarea::placeholder,
+.cover-picker__ui input::placeholder {
+  color: #6f6b63;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.search-inline input:focus {
+  border-color: var(--accent);
+}
+
+select option {
+  background: #121212;
+  color: var(--ink);
+}
+
+/* блоки, которые были «белыми листами» ------------------------------------- */
+.presscard {
+  background: var(--paper-2);
+  border-color: var(--line-strong);
+}
+
+.presscard::before {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+.auth-card,
+.doc-card,
+.role,
+.kpi__item,
+.map-tooltip,
+.map-suggest {
+  background: #101010;
+}
+
+.doc-card:hover,
+.role:hover {
+  background: var(--paper-2);
+}
+
+/* секции, которые и раньше были тёмными: текст на них остаётся светлым ----- */
+.map-section,
+.map-section h2,
+.map-section h3,
+.map-section p,
+.dark-block,
+.dark-block h2,
+.dark-block h3,
+.region-hero,
+.region-hero h1,
+.region-hero p,
+.panel--dark,
+.panel--dark h3,
+.profile-hero,
+.site-footer,
+.map-zoom button,
+.map-search input,
+.chip-sm,
+.map-regions-toggle,
+.legend__label {
+  color: var(--on-dark);
+}
+
+.panel--dark p,
+.region-hero .lead,
+.profile-hero p {
+  color: rgba(244, 242, 237, 0.72);
+}
+
+.dark-block,
+.panel--dark,
+.region-hero,
+.profile-hero,
+.site-footer {
+  background: var(--dark-2);
+}
+
+.map-section {
+  background: var(--dark);
+  border-block: 1px solid var(--line);
+}
+
+/* инверсные кнопки на тёмных блоках ---------------------------------------- */
+.btn--paper {
+  background: var(--on-dark);
+  color: #0a0a0a;
+  border-color: var(--on-dark);
+}
+
+.btn--paper:hover {
+  background: #fff;
+  border-color: #fff;
+}
+
+.btn--outline-paper {
+  color: var(--on-dark);
+  border-color: rgba(244, 242, 237, 0.42);
+}
+
+.btn--outline-paper:hover {
+  background: var(--on-dark);
+  color: #0a0a0a;
+  border-color: var(--on-dark);
+}
+
+.profile-hero .btn--ghost {
+  color: var(--on-dark);
+  border-color: rgba(244, 242, 237, 0.32);
+}
+
+.profile-hero .btn--ghost:hover {
+  background: var(--on-dark);
+  color: #0a0a0a;
+  border-color: var(--on-dark);
+}
+
+.chip-sm.is-on {
+  background: var(--on-dark);
+  color: #0a0a0a;
+}
+
+.map-tooltip {
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+}
+
+/* логотип ------------------------------------------------------------------ */
+.logo {
+  display: inline-flex;
+  align-items: center;
+}
+
+.logo__img {
+  display: block;
+  height: 34px;
+  width: auto;
+  max-width: 100%;
+}
+
+.mobile-menu .logo__img {
+  height: 28px;
+}
+
+.footer-brand .logo__img {
+  height: 42px;
+  margin-bottom: 14px;
+}
+
+.presscard__logo {
+  display: block;
+  height: 46px;
+  width: auto;
+  margin: 2px 0 14px;
+}
+
+/* печать: документы и пресс-карта остаются светлыми ------------------------ */
+@media print {
+  :root {
+    --paper: #fff;
+    --paper-2: #f6f5f2;
+    --paper-3: #ecebe6;
+    --ink: #111;
+    --ink-soft: #333;
+    --muted: #555;
+    --line: #bbb;
+    --line-strong: #888;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .presscard {
+    border-color: #111 !important;
+    background: #fff !important;
+  }
+
+  .presscard::before {
+    background-image: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .logo__img {
+    height: 27px;
+  }
+}
+
+/* кнопки на цветном призыве: белый фон, тёмный текст ---------------------- */
+.cta .btn {
+  background: #fff;
+  color: #0a0a0a;
+  border-color: #fff;
+}
+
+.cta .btn:hover {
+  background: var(--ink);
+  color: #0a0a0a;
+  border-color: var(--ink);
+}
+
+.cta .btn--ghost {
+  background: transparent;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.cta .btn--ghost:hover {
+  background: #fff;
+  color: #0a0a0a;
+  border-color: #fff;
+}
+
+/* ярлык типа документа: светлая плашка с тёмным текстом -------------------- */
+.doc-card__type {
+  background: var(--ink);
+  color: #0a0a0a;
+}
+
+/* карта на чёрном: подсветка региона светлая, а не «чёрная» ----------------- */
+.map-region {
+  fill: #35312a;
+}
+
+.map-region.is-dim {
+  fill: #201d18;
+}
+
+.map-region:hover:not(.is-selected),
+.map-region.is-active:not(.is-selected),
+.map-region:focus-visible:not(.is-selected) {
+  fill: #cfc9bd;
+}
+
+.map-region:focus-visible {
+  outline: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+
+.region-map-mini .map-region {
+  fill: #35312a;
 }

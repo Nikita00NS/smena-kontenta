@@ -203,12 +203,8 @@
   };
 
   var LOGO =
-    '<svg class="logo__mark" viewBox="0 0 32 32" aria-hidden="true">' +
-    '<rect x="0" y="0" width="32" height="32" fill="#14130f"/>' +
-    '<rect x="5" y="7" width="22" height="4" fill="#ff3d14"/>' +
-    '<rect x="9" y="14" width="18" height="4" fill="#f7f5ef"/>' +
-    '<rect x="5" y="21" width="13" height="4" fill="#f7f5ef"/>' +
-    "</svg>";
+    '<img class="logo__img" src="assets/img/logo.png" alt="Смена контента" ' +
+    'width="199" height="36" decoding="async">';
 
   /* 2. Шапка и подвал ====================================================== */
 
@@ -220,10 +216,6 @@
     { href: "about.html", label: "О проекте", key: "about" },
     { href: "partners.html", label: "Партнёрам", key: "partners" },
   ];
-
-  function brandLine() {
-    return '<span class="logo__name">Смена</span><span class="logo__sub">контента</span>';
-  }
 
   function mountHeader() {
     var host = $("[data-header]");
@@ -263,7 +255,7 @@
       "</div></div></div>" +
       '<div class="wrap"><div class="masthead">' +
       '<a class="logo" href="index.html" aria-label="Смена контента — на главную">' +
-      LOGO + '<span class="logo__type">' + brandLine() + "</span></a>" +
+      LOGO + "</a>" +
       '<nav class="nav" aria-label="Основная навигация">' + navHtml + "</nav>" +
       '<div class="header-actions">' +
       '<button class="icon-btn" type="button" data-search-open aria-label="Поиск по сайту">' +
@@ -278,8 +270,7 @@
     menu.setAttribute("data-menu", "");
     menu.innerHTML =
       '<div class="mobile-menu__head">' +
-      '<a class="logo" href="index.html">' + LOGO + '<span class="logo__type">' +
-      brandLine() + "</span></a>" +
+      '<a class="logo" href="index.html">' + LOGO + "</a>" +
       '<button class="icon-btn" type="button" data-menu-close aria-label="Закрыть меню">' +
       ICONS.close + "</button></div>" +
       NAV.map(function (n, i) {
@@ -323,7 +314,7 @@
       '<div class="wrap">' +
       '<div class="footer-top">' +
       '<div class="footer-brand">' +
-      '<div class="logo__name">Смена контента</div>' +
+      '<img class="logo__img" src="assets/img/logo.png" alt="Смена контента" width="199" height="36" loading="lazy">' +
       "<p>" + esc(SC.brand.tagline) + ". Медиа, медиашкола и сообщество авторов из регионов России.</p>" +
       '<p class="footer-status"><span class="dot"></span>Проект готовится к запуску: собираем команду и первые материалы.</p>' +
       "</div>" +
@@ -958,7 +949,8 @@
       '<span class="presscard__label">Пресс-карта проекта</span>' +
       '<span class="presscard__code">СК-2026-000</span>' +
       "</div>" +
-      '<div class="presscard__name">Смена контента</div>' +
+      '<img class="presscard__logo" src="assets/img/logo.png" alt="Смена контента" ' +
+      'width="166" height="30" loading="lazy">' +
       '<div class="presscard__desc">Молодёжное медиа · Медиашкола · Сообщество авторов. ' +
       "Рассказываем истории из регионов России и учим их делать.</div>" +
       '<div class="presscard__row">' +
