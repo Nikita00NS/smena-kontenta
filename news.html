@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Материалы — Смена контента</title>
+  <meta name="description" content="Все материалы «Смены контента»: репортажи, интервью, фотоистории и подкасты авторов из регионов России. Фильтры по региону, теме и формату.">
+  <meta name="theme-color" content="#f7f5ef">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body data-page="news">
+  <div data-header></div>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="wrap page-hero__grid">
+        <div>
+          <span class="kicker">Лента редакции</span>
+          <h1>Материалы<br>из регионов</h1>
+        </div>
+        <div class="page-hero__aside">
+          <p class="lead">Здесь собраны все публикации проекта. Фильтруйте по региону, теме или формату — или ищите по слову.</p>
+          <p class="meta"><span data-total-articles>—</span> материалов · <span data-total-regions>—</span> регионов на карте</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap">
+      <div class="filter-bar">
+        <div class="filter-group">
+          <span class="filter-group__label">Поиск</span>
+          <div class="search-inline">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+            <input type="search" placeholder="Слово в заголовке или тексте" aria-label="Поиск по материалам" data-filter-search>
+          </div>
+        </div>
+        <div class="filter-group">
+          <span class="filter-group__label">Регион</span>
+          <select data-filter-region aria-label="Фильтр по региону" style="min-width:240px;border:1px solid var(--line-strong);background:var(--paper);padding:10px 12px;font-size:.9rem"></select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-group__label">Сортировка</span>
+          <div class="filters">
+            <button class="chip is-on" type="button" data-sort="new">Сначала новые</button>
+            <button class="chip" type="button" data-sort="old">Сначала старые</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-bar" style="border-bottom:0;padding-top:0">
+        <div class="filter-group">
+          <span class="filter-group__label">Тема</span>
+          <div class="filters" data-filter-topic></div>
+        </div>
+      </div>
+      <div class="filter-bar" style="border-bottom:0;padding-top:0">
+        <div class="filter-group">
+          <span class="filter-group__label">Формат</span>
+          <div class="filters" data-filter-format></div>
+        </div>
+      </div>
+      <div class="filter-bar" style="padding-top:0">
+        <div class="filter-group">
+          <span class="filter-group__label">Федеральный округ</span>
+          <div class="filters" data-filter-district></div>
+        </div>
+      </div>
+
+      <p class="result-count" data-result-count></p>
+      <div class="cards" data-news-list></div>
+
+      <div class="empty" style="margin-top:40px">
+        <span class="kicker">Чего здесь нет</span>
+        <h3>Материалов из вашего региона ещё может не быть</h3>
+        <p>Мы не придумываем новости ради наполнения сайта. Если из какого-то региона публикаций пока нет — так и написано на его странице. Появиться они могут быстрее, если вы сами предложите историю.</p>
+        <div class="empty__actions">
+          <a class="btn btn--accent" href="join.html">Предложить историю</a>
+          <a class="btn btn--ghost" href="index.html#map">Выбрать регион на карте</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div data-footer></div>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/map-data.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
