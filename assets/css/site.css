@@ -1357,6 +1357,39 @@ p:last-child {
   color: var(--ink);
 }
 
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(247, 245, 239, 0.6);
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sw {
+  width: 11px;
+  height: 11px;
+  display: inline-block;
+  border: 1px solid rgba(247, 245, 239, 0.22);
+  flex: none;
+}
+
+.sw--has {
+  background: #514a3b;
+}
+
+.sw--none {
+  background: #322e26;
+}
+
 .map-pick {
   border: 1px solid rgba(247, 245, 239, 0.18);
   padding: 16px;

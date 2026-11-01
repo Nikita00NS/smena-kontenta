@@ -689,6 +689,10 @@
       '<input type="search" placeholder="Найти регион" aria-label="Найти регион на карте" data-region-search>' +
       '<div class="map-suggest" data-suggest></div></div>' +
       '<div class="district-chips" data-district-chips></div>' +
+      '<div class="map-legend">' +
+      '<span><i class="sw sw--has"></i>есть материалы</span>' +
+      '<span><i class="sw sw--none"></i>публикаций пока нет</span>' +
+      "</div>" +
       '<div class="map-pick" data-pick>' +
       '<div class="map-pick__meta">Регион не выбран</div>' +
       '<div class="map-pick__name">Наведите на карту</div>' +
