@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Регистрация автора — Смена контента</title>
+  <meta name="description" content="Создайте аккаунт автора «Смены контента»: пресс-карта, черновики, публикации в ленте сайта и на карте регионов. Без заявок и ожидания.">
+  <meta name="theme-color" content="#f7f5ef">
+  <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="assets/img/favicon.png" sizes="128x128" type="image/png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preload" href="assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body data-page="auth">
+  <div data-header></div>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="wrap page-hero__grid">
+        <div>
+          <span class="kicker">Участие</span>
+          <h1>Регистрация<br>автора</h1>
+        </div>
+        <div class="page-hero__aside">
+          <p class="lead">Аккаунт нужен, чтобы публиковать материалы. Регистрация занимает минуту: сразу открывается редактор, а пресс-карта с номером выдаётся после пяти публикаций.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap" data-auth>
+      <div class="auth-layout">
+        <div class="auth-card">
+          <div class="auth-tabs" role="tablist">
+            <button class="auth-tab is-on" type="button" data-auth-tab="register" role="tab">Регистрация</button>
+            <button class="auth-tab" type="button" data-auth-tab="login" role="tab">Вход</button>
+          </div>
+
+          <div class="auth-body" id="register" data-auth-panel="register">
+            <form data-register-form novalidate>
+              <div class="field">
+                <label for="r-name">Имя и фамилия</label>
+                <input id="r-name" name="name" type="text" placeholder="Как подписывать материалы" autocomplete="name" required>
+              </div>
+              <div class="field">
+                <label for="r-email">Почта</label>
+                <input id="r-email" name="email" type="email" placeholder="you@example.ru" autocomplete="email" required>
+              </div>
+              <div class="field">
+                <label for="r-pass">Пароль</label>
+                <input id="r-pass" name="pass" type="password" placeholder="Минимум 6 символов" autocomplete="new-password" required>
+              </div>
+              <div class="field">
+                <label for="r-region">Ваш регион</label>
+                <select id="r-region" name="region" data-auth-region></select>
+              </div>
+              <div class="field">
+                <label for="r-role">Чем хотите заниматься</label>
+                <select id="r-role" name="role" data-auth-role></select>
+              </div>
+              <label class="check-line">
+                <input type="checkbox" name="agree" value="1" required>
+                <span>Мне 14 лет или больше. Я принимаю
+                  <a href="assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">пользовательское соглашение</a>
+                  и <a href="assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">политику конфиденциальности</a>.</span>
+              </label>
+              <div class="auth-error is-hidden" data-register-error></div>
+              <button class="btn btn--accent btn--block" type="submit">Создать аккаунт</button>
+              <p class="form__note" style="margin-top:12px">Регион нужен, чтобы материалы попадали на карту и в ленту своего региона. Его можно сменить в кабинете.</p>
+            </form>
+          </div>
+
+          <div class="auth-body is-hidden" id="login" data-auth-panel="login">
+            <form data-login-form novalidate>
+              <div class="field">
+                <label for="l-email">Почта</label>
+                <input id="l-email" name="email" type="email" placeholder="you@example.ru" autocomplete="email" required>
+              </div>
+              <div class="field">
+                <label for="l-pass">Пароль</label>
+                <input id="l-pass" name="pass" type="password" placeholder="Ваш пароль" autocomplete="current-password" required>
+              </div>
+              <div class="auth-error is-hidden" data-login-error></div>
+              <button class="btn btn--block" type="submit">Войти</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="auth-hero">
+          <span class="kicker">Что даёт аккаунт</span>
+          <h2>Вы сразу становитесь автором</h2>
+          <ul class="auth-benefits">
+            <li><span>01</span><div><b>Редактор и черновики</b>Пишете сразу после регистрации, черновик сохраняется.</div></li>
+            <li><span>02</span><div><b>Публикация без заявок</b>Материал сразу появляется в ленте и на странице вашего региона.</div></li>
+            <li><span>03</span><div><b>Пресс-карта</b>Номер и срок действия — после пяти опубликованных материалов.</div></li>
+            <li><span>04</span><div><b>Медиашкола</b>Задания, разборы и обратная связь от редактора — бесплатно.</div></li>
+            <li><span>05</span><div><b>Портфолио</b>Все ваши публикации с подписью — ссылку можно отправить кому угодно.</div></li>
+          </ul>
+          <div class="side-note" style="margin-top:20px">
+            <b>Партнёрам и наставникам.</b> Если вы хотите помогать проекту как редактор, наставник или
+            организация — загляните в раздел <a href="partners.html" style="border-bottom:1px solid var(--accent)">«Партнёрам»</a>.
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div data-footer></div>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/map-data.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
