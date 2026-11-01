@@ -4540,3 +4540,25 @@ select option {
 .region-map-mini .map-region {
   fill: #35312a;
 }
+
+/* панели поверх страницы: чуть светлее фона, чтобы читалась граница -------- */
+.search-box,
+.mobile-menu {
+  background: #0d0d0d;
+}
+
+.search-box {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.mobile-menu {
+  border-color: var(--line);
+}
+
+.mobile-menu__head {
+  border-bottom: 1px solid var(--line);
+}
+
+.mobile-menu__link {
+  border-bottom: 1px solid var(--line);
+}
