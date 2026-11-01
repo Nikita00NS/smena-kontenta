@@ -3,128 +3,97 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Присоединиться — Смена контента</title>
-  <meta name="description" content="Стать автором, фотографом, видеографом, редактором или наставником «Смены контента». Как подать заявку и что будет дальше.">
+  <title>Регистрация автора — Смена контента</title>
+  <meta name="description" content="Создайте аккаунт автора «Смены контента»: пресс-карта, черновики, публикации в ленте сайта и на карте регионов. Без заявок и ожидания.">
   <meta name="theme-color" content="#f7f5ef">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/css/site.css">
 </head>
-<body data-page="join">
+<body data-page="auth">
   <div data-header></div>
 
   <main id="main">
     <section class="page-hero">
       <div class="wrap page-hero__grid">
         <div>
-          <span class="kicker">Присоединиться</span>
-          <h1>Мы ищем<br>людей, не резюме</h1>
+          <span class="kicker">Участие</span>
+          <h1>Регистрация<br>автора</h1>
         </div>
         <div class="page-hero__aside">
-          <p class="lead">Не нужно быть журналистом, чтобы начать. Достаточно интереса и готовности регулярно что-то делать — остальному научим по ходу.</p>
-          <p class="meta"><span>Почта для связи:</span> <a data-brand-email href="#" style="color:var(--ink);text-transform:none;letter-spacing:0">hello@example.ru</a></p>
+          <p class="lead">Аккаунт нужен, чтобы публиковать материалы: после регистрации вы сразу получаете пресс-карту автора и доступ к редактору. Никаких заявок на модерацию — пишите и публикуйте.</p>
         </div>
       </div>
     </section>
 
-    <section class="section wrap">
-      <div class="sec-head">
-        <div class="sec-head__left">
-          <span class="kicker">Кого ищем</span>
-          <h2>Шесть способов участвовать</h2>
-        </div>
-      </div>
-      <div class="roles" data-roles></div>
-    </section>
-
-    <section class="section wrap" id="offer">
-      <div class="split" style="align-items:start">
-        <div>
-          <span class="kicker">Заявка</span>
-          <h2 style="font-size:clamp(1.5rem,3vw,2.4rem);margin:10px 0 16px">Расскажите о себе коротко</h2>
-          <p class="lead">Три предложения и одна работа — этого достаточно, чтобы начать разговор. Форма откроет вашу почтовую программу с готовым письмом.</p>
-
-          <form class="form" data-join-form style="margin-top:22px" novalidate>
-            <div class="field">
-              <label for="f-name">Имя</label>
-              <input id="f-name" name="name" type="text" placeholder="Как к вам обращаться" required>
-            </div>
-            <div class="field">
-              <label for="f-city">Город или регион</label>
-              <input id="f-city" name="city" type="text" placeholder="Например, Казань">
-            </div>
-            <div class="field form__full">
-              <label for="f-role">Что вам интересно</label>
-              <select id="f-role" name="role">
-                <option>Автор текстов</option>
-                <option>Фотограф</option>
-                <option>Видеограф и монтаж</option>
-                <option>Редактор</option>
-                <option>Наставник</option>
-                <option>Партнёрство</option>
-                <option>Пока не знаю — просто интересно</option>
-              </select>
-            </div>
-            <div class="field form__full">
-              <label for="f-link">Ссылка на работу или профиль</label>
-              <input id="f-link" name="link" type="text" placeholder="Ссылка на текст, фото, видео или соцсеть">
-            </div>
-            <div class="field form__full">
-              <label for="f-about">О себе</label>
-              <textarea id="f-about" name="about" placeholder="Три предложения: кто вы, что вас цепляет в медиа и о чём хотели бы рассказать"></textarea>
-            </div>
-            <div class="form__full row">
-              <button class="btn btn--accent" type="submit">Отправить заявку</button>
-              <span class="form__note" data-form-status>Форма отправит письмо через ваш почтовый клиент. Никакие данные никуда не сохраняются.</span>
-            </div>
-          </form>
-        </div>
-
-        <aside class="stack">
-          <div class="panel panel--dark">
-            <span class="kicker">Что будет дальше</span>
-            <div class="steps" style="border-color:rgba(247,245,239,.2)">
-              <div class="step" style="border-color:rgba(247,245,239,.2)"><div><h3 style="color:var(--paper)">Ответ в течение недели</h3><p style="color:rgba(247,245,239,.65)">Даже если сейчас не готовы взять в команду — напишем и подскажем, что подтянуть.</p></div></div>
-              <div class="step" style="border-color:rgba(247,245,239,.2)"><div><h3 style="color:var(--paper)">Короткий разговор</h3><p style="color:rgba(247,245,239,.65)">Пятнадцать минут: что интересно, сколько времени есть, какой формат ближе.</p></div></div>
-              <div class="step" style="border-color:rgba(247,245,239,.2)"><div><h3 style="color:var(--paper)">Первое задание</h3><p style="color:rgba(247,245,239,.65)">Маленькая задача с дедлайном и обратной связью. По ней уже видно, как мы работаем вместе.</p></div></div>
-            </div>
+    <section class="section wrap" data-auth>
+      <div class="auth-layout">
+        <div class="auth-card">
+          <div class="auth-tabs" role="tablist">
+            <button class="auth-tab is-on" type="button" data-auth-tab="register" role="tab">Регистрация</button>
+            <button class="auth-tab" type="button" data-auth-tab="login" role="tab">Вход</button>
           </div>
-          <div class="panel">
-            <h3>Предложить историю</h3>
-            <p>Если у вас есть тема, но писать не хочется — всё равно напишите. Мы можем найти автора или сделать материал вместе.</p>
-            <a class="btn btn--sm btn--ghost" data-brand-email href="#">Написать на почту</a>
-          </div>
-          <div class="sb-note side-note">
-            <b>Важно.</b> Мы не публикуем материалы без согласия героев и не берём фотографии из интернета без прав. Если снимок сделан не вами — укажите автора.
-          </div>
-        </aside>
-      </div>
-    </section>
 
-    <section class="section wrap" style="padding-top:0">
-      <div class="sec-head">
-        <div class="sec-head__left">
-          <span class="kicker">Вопросы</span>
-          <h2>Коротко о важном</h2>
+          <div class="auth-body" data-auth-panel="register">
+            <form data-register-form novalidate>
+              <div class="field">
+                <label for="r-name">Имя и фамилия</label>
+                <input id="r-name" name="name" type="text" placeholder="Как подписывать материалы" autocomplete="name" required>
+              </div>
+              <div class="field">
+                <label for="r-email">Почта</label>
+                <input id="r-email" name="email" type="email" placeholder="you@example.ru" autocomplete="email" required>
+              </div>
+              <div class="field">
+                <label for="r-pass">Пароль</label>
+                <input id="r-pass" name="pass" type="password" placeholder="Минимум 6 символов" autocomplete="new-password" required>
+              </div>
+              <div class="field">
+                <label for="r-region">Ваш регион</label>
+                <select id="r-region" name="region" data-auth-region></select>
+              </div>
+              <div class="field">
+                <label for="r-role">Чем хотите заниматься</label>
+                <select id="r-role" name="role" data-auth-role></select>
+              </div>
+              <div class="auth-error is-hidden" data-register-error></div>
+              <button class="btn btn--accent btn--block" type="submit">Создать аккаунт</button>
+              <p class="form__note" style="margin-top:12px">Регион нужен, чтобы материалы попадали на карту и в ленту своего региона. Его можно сменить в кабинете.</p>
+            </form>
+          </div>
+
+          <div class="auth-body is-hidden" data-auth-panel="login">
+            <form data-login-form novalidate>
+              <div class="field">
+                <label for="l-email">Почта</label>
+                <input id="l-email" name="email" type="email" placeholder="you@example.ru" autocomplete="email" required>
+              </div>
+              <div class="field">
+                <label for="l-pass">Пароль</label>
+                <input id="l-pass" name="pass" type="password" placeholder="Ваш пароль" autocomplete="current-password" required>
+              </div>
+              <div class="auth-error is-hidden" data-login-error></div>
+              <button class="btn btn--block" type="submit">Войти</button>
+            </form>
+          </div>
         </div>
-      </div>
-      <div class="faq">
-        <details>
-          <summary>Мне нужно уметь писать «как журналист»?</summary>
-          <p>Нет. Первый материал почти всегда получается неидеальным. Наша задача — помочь довести его до публикации, а не отбирать только готовых авторов.</p>
-        </details>
-        <details>
-          <summary>Это платно?</summary>
-          <p>Нет. Участие в проекте бесплатное, но и гонорары на старте мы не платим: бюджет проекта близок к нулю.</p>
-        </details>
-        <details>
-          <summary>Можно ли участвовать из другого региона?</summary>
-          <p>Да, и это особенно важно: карта регионов будет наполняться именно авторами из разных мест.</p>
-        </details>
-        <details>
-          <summary>Что если я несовершеннолетний?</summary>
-          <p>Мы будем брать письменное согласие родителей на участие и публикацию материалов. Точный минимальный возраст ещё определяется — уточните в письме.</p>
-        </details>
+
+        <div class="auth-hero">
+          <span class="kicker">Что даёт аккаунт</span>
+          <h2>Вы сразу становитесь автором</h2>
+          <ul class="auth-benefits">
+            <li><span>01</span><div><b>Пресс-карта автора</b>Личный номер, регион и роль — можно распечатать.</div></li>
+            <li><span>02</span><div><b>Публикация без заявок</b>Материал сразу появляется в ленте и на странице вашего региона.</div></li>
+            <li><span>03</span><div><b>Черновики</b>Сохраняйте текст и возвращайтесь к нему, когда будет время.</div></li>
+            <li><span>04</span><div><b>Медиашкола</b>Задания, разборы и обратная связь от редактора — бесплатно.</div></li>
+            <li><span>05</span><div><b>Портфолио</b>Все ваши публикации с подписью — ссылку можно отправить кому угодно.</div></li>
+          </ul>
+          <div class="side-note" style="margin-top:20px">
+            <b>Партнёрам и наставникам.</b> Если вы хотите помогать проекту как редактор, наставник или организация —
+            напишите на <a data-brand-email href="#" style="border-bottom:1px solid var(--accent)">hello@example.ru</a>
+            или загляните в раздел <a href="partners.html" style="border-bottom:1px solid var(--accent)">«Партнёрам»</a>.
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -132,6 +101,8 @@
   <div data-footer></div>
 
   <script src="assets/js/data.js"></script>
+  <script src="assets/js/map-data.js"></script>
+  <script src="assets/js/store.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

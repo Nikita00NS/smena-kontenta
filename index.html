@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#f7f5ef">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Смена контента — молодёжное медиа из регионов">
-  <meta property="og:description" content="Карта регионов, истории местных авторов, медиашкола и практика в редакции. Проект на стадии запуска.">
+  <meta property="og:description" content="Карта регионов, истории местных авторов, медиашкола и практика в редакции.">
   <meta property="og:image" content="assets/img/lead-festival.jpg">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -25,16 +25,19 @@
     <!-- Главный материал + лента редакции -->
     <section class="hero" data-hero></section>
 
-    <!-- Карта регионов — главная особенность проекта -->
+    <!-- Пресс-карта проекта -->
+    <div data-presscard></div>
+
+    <!-- Карта регионов — главная особенность -->
     <section class="map-section" id="map" data-map-section aria-label="Карта регионов"></section>
 
     <!-- Свежие материалы -->
     <section class="section wrap">
       <div class="sec-head">
         <div class="sec-head__left">
-          <span class="kicker">02 — Лента</span>
-          <h2>Свежие материалы</h2>
-          <p class="sec-head__text">Тексты, репортажи, фотоистории и подкасты авторов из регионов. Всё написано участниками проекта — или теми, кто только готов ими стать.</p>
+          <span class="kicker">03 — Лента</span>
+          <h2>Свежее в редакции</h2>
+          <p class="sec-head__text">Тексты, репортажи, фотоистории и подкасты авторов из регионов. Опубликовать материал может любой зарегистрированный автор.</p>
         </div>
         <a class="sec-link" href="news.html">Все материалы <span aria-hidden="true">→</span></a>
       </div>
@@ -50,7 +53,7 @@
     <section class="section wrap">
       <div class="sec-head">
         <div class="sec-head__left">
-          <span class="kicker">03 — Форматы</span>
+          <span class="kicker">04 — Форматы</span>
           <h2>В чём можно попробовать себя</h2>
         </div>
         <p class="sec-head__text" style="max-width:38ch">Начинать не обязательно с большого текста. Подойдёт любой формат, в котором вам интересно разбираться.</p>
@@ -64,7 +67,7 @@
         <div>
           <div class="sec-head" style="margin-bottom:14px">
             <div class="sec-head__left">
-              <span class="kicker">04 — Регионы</span>
+              <span class="kicker">05 — Регионы</span>
               <h2>Истории с мест</h2>
             </div>
           </div>
@@ -76,7 +79,6 @@
             Медиа, школа и сообщество в одном месте
           </h3>
           <p>«Смена контента» задумана как пространство, где молодые люди учатся делать материалы, получают обратную связь от редакторов и публикуют истории о своих городах и регионах.</p>
-          <p>Сейчас проект на стадии запуска: есть идея, структура и этот сайт. Команду, редакцию и медиашколу ещё предстоит собрать — и мы открыто об этом говорим.</p>
           <div class="kpi" style="border-color:rgba(247,245,239,.16);background:rgba(247,245,239,.12)">
             <div class="kpi__item" style="background:transparent">
               <b data-total-regions style="color:var(--paper)">—</b>
@@ -92,7 +94,7 @@
             </div>
             <div class="kpi__item" style="background:transparent">
               <b data-total-articles style="color:var(--paper)">—</b>
-              <span style="color:rgba(247,245,239,.55)">демо-материалов</span>
+              <span style="color:rgba(247,245,239,.55)">опубликовано</span>
             </div>
           </div>
           <a class="btn btn--paper btn--block" href="about.html" style="margin-top:6px">Подробнее о проекте</a>
@@ -100,15 +102,53 @@
       </div>
     </section>
 
+    <!-- Авторы -->
+    <section class="section wrap">
+      <div class="sec-head">
+        <div class="sec-head__left">
+          <span class="kicker">06 — Лица</span>
+          <h2>Кто делает материалы</h2>
+          <p class="sec-head__text">Авторы, фотографы, редакторы и наставники. Присоединиться можно в любой момент — регистрация занимает минуту.</p>
+        </div>
+        <a class="sec-link" href="join.html">Стать автором <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="cols-2" style="gap:clamp(20px,3vw,60px)">
+        <div data-authors></div>
+        <div class="panel panel--dark" style="justify-content:center">
+          <span class="kicker">Личный кабинет</span>
+          <h3 style="font-size:clamp(1.3rem,2.2vw,1.8rem);font-family:var(--font-display);font-weight:700;color:var(--paper)">
+            Зарегистрируйтесь и публикуйте
+          </h3>
+          <p>Один аккаунт: пресс-карта автора, черновики, публикации и доступ к медиашколе. Без заявок и ожидания — вы начинаете работать сразу.</p>
+          <div class="row" style="margin-top:8px">
+            <a class="btn btn--accent" href="join.html">Создать аккаунт</a>
+            <a class="btn btn--outline-paper" href="join.html#login">Войти</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Возможности -->
+    <section class="section wrap">
+      <div class="sec-head">
+        <div class="sec-head__left">
+          <span class="kicker">07 — Возможности</span>
+          <h2>Наборы, конкурсы и практика</h2>
+        </div>
+        <a class="sec-link" href="news.html?topic=Возможности">Все возможности <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="cards" data-opportunities></div>
+    </section>
+
     <!-- Медиашкола -->
     <section class="section wrap">
       <div class="split">
-        <div class="school-media">
+        <div class="school-media" data-reveal>
           <img src="assets/img/cover-classroom.jpg" alt="Участники медиашколы работают над материалом" loading="lazy" decoding="async">
           <span class="school-media__badge"><b>2 месяца</b>практики<br>с обратной связью</span>
         </div>
         <div>
-          <span class="kicker">05 — Медиашкола</span>
+          <span class="kicker">08 — Медиашкола</span>
           <h2 style="font-size:clamp(1.6rem,3.2vw,2.8rem);margin-top:10px;margin-bottom:14px">Учимся на реальных материалах, а не на лекциях</h2>
           <p class="lead">Программа строится вокруг задачи: есть тема, срок и редактор. Участник делает материал, получает разбор и делает следующий — уже лучше.</p>
           <ul class="program-list">
@@ -121,7 +161,7 @@
           </ul>
           <div class="row" style="margin-top:22px">
             <a class="btn" href="media-school.html">Программа медиашколы</a>
-            <a class="btn btn--ghost" href="join.html">Подать заявку</a>
+            <a class="btn btn--ghost" href="docs.html">Документы</a>
           </div>
         </div>
       </div>
@@ -132,7 +172,7 @@
       <div class="wrap">
         <div class="sec-head sec-head--paper">
           <div class="sec-head__left">
-            <span class="kicker">06 — План</span>
+            <span class="kicker">09 — План</span>
             <h2>Что уже сделано и что впереди</h2>
           </div>
           <p class="sec-head__text" style="color:rgba(247,245,239,.62);max-width:38ch">Проект молодой: мы не хотим изображать готовое медиа. Вот честная карта движения.</p>
@@ -140,7 +180,7 @@
         <div class="roadmap">
           <div class="roadmap__item"><span>Этап 1</span><h3>Основа</h3><p>Идея, позиционирование, структура сайта и дизайн.</p></div>
           <div class="roadmap__item"><span>Этап 2</span><h3>Команда</h3><p>Ищем авторов, редактора, наставников и координатора.</p></div>
-          <div class="roadmap__item"><span>Этап 3</span><h3>Первые материалы</h3><p>Реальные истории из регионов вместо демо-текстов.</p></div>
+          <div class="roadmap__item"><span>Этап 3</span><h3>Первые материалы</h3><p>Истории из регионов — от авторов, которые уже зарегистрировались.</p></div>
           <div class="roadmap__item"><span>Этап 4</span><h3>Пилот</h3><p>Запуск медиашколы и набора участников в одном регионе.</p></div>
           <div class="roadmap__item"><span>Этап 5</span><h3>Партнёры</h3><p>Договорённости с вузами, молодёжными центрами и СМИ.</p></div>
           <div class="roadmap__item"><span>Этап 6</span><h3>Грант</h3><p>Заявка на конкурс с планом, бюджетом и результатами.</p></div>
@@ -154,13 +194,13 @@
     <section class="cta">
       <div class="wrap cta__grid">
         <div>
-          <span class="kicker" style="color:rgba(255,255,255,.8)">Набор открыт</span>
-          <h2 style="margin-top:10px">Нам нужны люди, которым есть что рассказать</h2>
-          <p>Автор, фотограф, видеограф, редактор, наставник или партнёр — на старте мы готовы обсуждать любые форматы участия. Опыт публикаций не обязателен.</p>
+          <span class="kicker" style="color:rgba(255,255,255,.8)">Регистрация открыта</span>
+          <h2 style="margin-top:10px">Публикуйте без заявок и ожидания</h2>
+          <p>Создайте аккаунт, получите пресс-карту автора и напишите первый материал. Редактор поможет с темой и текстом, а карточка материала появится на карте вашего региона.</p>
         </div>
         <div class="cta__actions">
-          <a class="btn" href="join.html">Присоединиться к проекту</a>
-          <a class="btn btn--ghost" href="join.html#offer">Предложить историю</a>
+          <a class="btn" href="join.html">Создать аккаунт</a>
+          <a class="btn btn--ghost" href="write.html">Написать материал</a>
           <a class="btn btn--ghost" href="partners.html">Стать партнёром</a>
         </div>
       </div>
@@ -170,7 +210,7 @@
     <section class="section wrap">
       <div class="sec-head">
         <div class="sec-head__left">
-          <span class="kicker">07 — Сотрудничество</span>
+          <span class="kicker">10 — Сотрудничество</span>
           <h2>С кем мы хотим работать</h2>
         </div>
         <a class="sec-link" href="partners.html">Условия для партнёров <span aria-hidden="true">→</span></a>
@@ -195,6 +235,7 @@
 
   <script src="assets/js/data.js"></script>
   <script src="assets/js/map-data.js"></script>
+  <script src="assets/js/store.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
