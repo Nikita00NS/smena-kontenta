@@ -4732,3 +4732,36 @@ select option {
     display: none;
   }
 }
+
+/* --- учредители в панели -------------------------------------------------- */
+.admin-person {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.admin-person__n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  padding-top: 4px;
+}
+
+.admin-person .field + .field {
+  grid-column: 2;
+}
+
+/* --- честная заглушка вместо почты ---------------------------------------- */
+.footer-pending,
+.is-pending {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.is-pending {
+  text-decoration: none;
+  cursor: default;
+}

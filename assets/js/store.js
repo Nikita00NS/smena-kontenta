@@ -33,7 +33,11 @@ window.Store = (function () {
       head: "",
       email: "",
       phone: "",
-      city: "",
+      city: "Москва",
+      founders: [
+        { name: "", inn: "", role: "Директор" },
+        { name: "", inn: "", role: "Директор" },
+      ],
     },
     card: {
       prefix: "СК",
@@ -46,10 +50,13 @@ window.Store = (function () {
   function merge(base, patch) {
     var out = {};
     Object.keys(base).forEach(function (k) {
-      out[k] = base[k] && typeof base[k] === "object" ? merge(base[k], {}) : base[k];
+      if (Array.isArray(base[k])) out[k] = base[k].slice();
+      else out[k] = base[k] && typeof base[k] === "object" ? merge(base[k], {}) : base[k];
     });
     Object.keys(patch || {}).forEach(function (k) {
-      if (patch[k] && typeof patch[k] === "object" && !Array.isArray(patch[k])) {
+      if (Array.isArray(patch[k])) {
+        out[k] = patch[k].slice();
+      } else if (patch[k] && typeof patch[k] === "object") {
         out[k] = merge(out[k] || {}, patch[k]);
       } else if (patch[k] !== undefined) {
         out[k] = patch[k];

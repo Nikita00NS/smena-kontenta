@@ -336,7 +336,9 @@
         : '<li><a href="join.html">Регистрация</a></li>' +
           '<li><a href="join.html#login">Вход</a></li>' +
           '<li><a href="docs.html">Памятка автору</a></li>') +
-      '<li><a href="mailto:' + esc(SC.brand.email) + '">' + esc(SC.brand.email) + "</a></li>" +
+      (contactEmail()
+        ? '<li><a href="mailto:' + esc(contactEmail()) + '">' + esc(contactEmail()) + "</a></li>"
+        : '<li><span class="footer-pending">Почта появится к запуску</span></li>') +
       "</ul></div></div>" +
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
@@ -979,6 +981,23 @@
     );
   }
 
+  function foundersFields(list) {
+    var rows = (list && list.length ? list : [{}, {}]).slice(0, 2);
+    while (rows.length < 2) rows.push({});
+    return rows
+      .map(function (f, i) {
+        var n = i + 1;
+        return (
+          '<div class="admin-person"><span class="admin-person__n">0' + n + "</span>" +
+          adminField("ФИО", "f" + n + "-name", f.name || "", "Фамилия Имя Отчество") +
+          adminField("ИНН", "f" + n + "-inn", f.inn || "", "12 цифр", "text") +
+          adminField("Роль", "f" + n + "-role", f.role || "Директор", "Директор") +
+          "</div>"
+        );
+      })
+      .join("");
+  }
+
   function initAdmin() {
     var host = $("[data-admin]");
     if (!host) return;
@@ -1034,16 +1053,24 @@
         "их не будет. Для общей работы с авторами понадобится сервер.</p></div></div></section>" +
 
         '<section class="section wrap"><div class="admin-grid">' +
-        '<form class="admin-card" data-admin-org><h2>Организация и центр</h2>' +
-        '<p class="admin-card__hint">Печатается на пресс-карте и указывается в документах.</p>' +
+        '<form class="admin-card" data-admin-org><h2>Организация</h2>' +
+        '<p class="admin-card__hint">Эти данные печатаются на пресс-карте и указываются в документах.</p>' +
         adminField("Название проекта", "org-name", settings.org.name, "Смена контента") +
-        adminField("Центр / редакция", "org-center", settings.org.center, "Редакция «Смена контента»") +
+        adminField("Кем выдана пресс-карта", "org-center", settings.org.center,
+                   "Редакция «Смена контента»") +
         adminField("Руководитель", "org-head", settings.org.head, "Имя и фамилия") +
         adminField("Почта для связи", "org-email", settings.org.email, "name@example.ru", "email") +
         adminField("Телефон", "org-phone", settings.org.phone, "+7 900 000-00-00", "tel") +
-        adminField("Город", "org-city", settings.org.city, "город запуска") +
+        adminField("Город", "org-city", settings.org.city, "Москва") +
         '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
         '<span class="form__note" data-org-status></span></div></form>' +
+
+        '<form class="admin-card" data-admin-founders><h2>Учредители</h2>' +
+        '<p class="admin-card__hint">Проект ведут два человека — их данные указываются ' +
+        'в политике конфиденциальности и соглашении как оператора.</p>' +
+        foundersFields(settings.org.founders) +
+        '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
+        '<span class="form__note" data-founders-status></span></div></form>' +
 
         '<form class="admin-card" data-admin-card><h2>Пресс-карта</h2>' +
         '<p class="admin-card__hint">Правила, по которым автор получает карту с номером.</p>' +
@@ -1101,6 +1128,25 @@
           });
           render();
         });
+      var founders = $("[data-admin-founders]", host);
+      if (founders)
+        founders.addEventListener("submit", function (e) {
+          e.preventDefault();
+          Store.saveSettings({
+            org: {
+              founders: [1, 2].map(function (n) {
+                return {
+                  name: val("f" + n + "-name"),
+                  inn: val("f" + n + "-inn"),
+                  role: val("f" + n + "-role") || "Директор",
+                };
+              }),
+            },
+          });
+          var st = $("[data-founders-status]", host);
+          if (st) st.textContent = "Сохранено";
+        });
+
       var exp = $("[data-export]", host);
       if (exp)
         exp.addEventListener("click", function () {
@@ -1119,6 +1165,11 @@
   }
 
   /* 7. Главная ============================================================= */
+
+  function contactEmail() {
+    var s = Store ? Store.getSettings() : null;
+    return (s && s.org.email) || SC.brand.email || "";
+  }
 
   function pressCardBlock() {
     var all = allArticles();
@@ -1147,7 +1198,7 @@
       "<span><b>Выдаёт</b>" + esc(settings.org.center || settings.org.name) + "</span>" +
       "<span><b>Пресс-карта автора</b>после " + esc(String(settings.card.minPosts)) +
       " публикаций</span>" +
-      "<span><b>Формат</b>онлайн-медиа</span>" +
+      "<span><b>Регион запуска</b>" + esc(SC.brand.launchRegionName || settings.org.city || "—") + "</span>" +
       "</div>" +
       "</div>" +
       '<div class="presscard__side">' +
@@ -1700,7 +1751,8 @@
 
     var regionSelect = $("[data-auth-region]", box);
     if (regionSelect) {
-      regionSelect.innerHTML = '<option value="">Выберите регион</option>' + regionOptions("");
+      regionSelect.innerHTML = '<option value="">Выберите регион</option>' +
+        regionOptions(SC.brand.launchRegion || "");
     }
     var roleSelect = $("[data-auth-role]", box);
     if (roleSelect) {
@@ -2191,8 +2243,15 @@
   function initPageBits() {
     $$("[data-brand-name]").forEach(function (el) { el.textContent = SC.brand.name; });
     $$("[data-brand-email]").forEach(function (el) {
-      el.textContent = SC.brand.email;
-      el.setAttribute("href", "mailto:" + SC.brand.email);
+      var mail = contactEmail();
+      if (mail) {
+        el.textContent = mail;
+        el.setAttribute("href", "mailto:" + mail);
+      } else {
+        el.textContent = "появится к запуску";
+        el.removeAttribute("href");
+        el.classList.add("is-pending");
+      }
     });
     $$("[data-total-articles]").forEach(function (el) {
       el.textContent = allArticles().length;
