@@ -274,6 +274,7 @@
     { href: "media-school.html", label: "Медиашкола", key: "school" },
     { href: "docs.html", label: "Документы", key: "docs" },
     { href: "about.html", label: "О проекте", key: "about" },
+    { href: "founders.html", label: "Основатели", key: "founders" },
     { href: "partners.html", label: "Партнёрам", key: "partners" },
   ];
 
@@ -2619,6 +2620,53 @@
 
   /* 14. Прочее ============================================================= */
 
+  /* страница основателей: карточки с фото и раскрытием */
+  function initFoundersPage() {
+    var host = $("[data-founders-page]");
+    if (!host) return;
+    var list = (SC.founders || []).filter(function (f) {
+      return f && String(f.name || "").trim();
+    });
+    if (!list.length) {
+      host.innerHTML = '<div class="no-data">Данные основателей появятся здесь.</div>';
+      return;
+    }
+
+    function initials(name) {
+      return Store ? Store.initials(name) : String(name || "").slice(0, 2).toUpperCase();
+    }
+
+    host.innerHTML = list
+      .map(function (f, i) {
+        var photo = f.photo
+          ? '<img class="founder__photo founder__photo--main" src="' + esc(f.photo) + '" alt="' + esc(f.name) + '">'
+          : '<span class="founder__photo founder__photo--mono">' + esc(initials(f.name)) + "</span>";
+        var alt = f.photoAlt
+          ? '<img class="founder__photo founder__photo--alt" src="' + esc(f.photoAlt) + '" alt="">'
+          : "";
+        var bio = f.bio
+          ? esc(f.bio)
+          : "Основатель проекта «Смена контента»: молодёжного медиасообщества с редакциями, " +
+            "медиашколой и картой регионов.";
+        return (
+          '<article class="founder founder--page" id="' + esc(f.id || "f" + i) + '">' +
+          '<div class="founder__photos">' + photo + alt + "</div>" +
+          '<div class="founder__body">' +
+          "<h2>" + esc(f.name) + "</h2>" +
+          '<p class="founder__role">' + esc(f.role || "Основатель") +
+          (f.city ? " · " + esc(f.city) : "") + "</p>" +
+          '<p class="founder__bio">' + bio + "</p>" +
+          '<dl class="founder__facts">' +
+          (f.city ? "<div><dt>Город</dt><dd>" + esc(f.city) + "</dd></div>" : "") +
+          (f.role ? "<div><dt>Роль</dt><dd>" + esc(f.role) + "</dd></div>" : "") +
+          (f.since ? "<div><dt>На проекте с</dt><dd>" + esc(f.since) + "</dd></div>" : "") +
+          "</dl>" +
+          "</div></article>"
+        );
+      })
+      .join("");
+  }
+
   /* партнёры: блок появляется, только когда партнёр добавлен */
   function initPartners() {
     var host = $("[data-partners]");
@@ -2660,7 +2708,8 @@
       .map(function (f, i) {
         var main = f.photo
           ? '<img class="founder__photo founder__photo--main" src="' + esc(f.photo) + '" alt="' + esc(f.name) + '" loading="lazy">'
-          : '<span class="founder__photo founder__photo--empty">фото</span>';
+          : '<span class="founder__photo founder__photo--mono">' +
+            esc(Store.initials(f.name)) + "</span>";
         var alt = f.photoAlt
           ? '<img class="founder__photo founder__photo--alt" src="' + esc(f.photoAlt) + '" alt="" loading="lazy">'
           : "";
@@ -2670,7 +2719,8 @@
           '<div class="founder__body"><h3>' + esc(f.name) + "</h3>" +
           '<p class="founder__role">' + esc(f.role || "Основатель") +
           (f.city ? " · " + esc(f.city) : "") + "</p></div>" +
-          '<div class="founder__more"><p>' + esc(f.bio || "") + "</p></div>" +
+          '<div class="founder__more"><p>' + (esc(f.bio) || "Основатель проекта «Смена контента».") +
+          '</p><a class="founder__link" href="founders.html#' + esc(f.id || "") + '">Подробнее →</a></div>' +
           "</article>"
         );
       })
@@ -2741,6 +2791,7 @@
     if (page === "write") initWrite();
     if (page === "docs") initDocs();
     if (page === "admin") initAdmin();
+    if (page === "founders") initFoundersPage();
 
     initAnimations();
     initHeroParallax();
