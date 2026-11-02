@@ -1,0 +1,136 @@
+@charset "UTF-8";
+/* ============================================================================
+   СМЕНА КОНТЕНТА — светлая тема
+   Подключается после site.css. Включается кнопкой в шапке и запоминается
+   в браузере. Тёмные блоки (карта, подвал, призыв) остаются тёмными — в этом
+   и есть вид проекта: светлая страница с чёрными акцентными полосами.
+   ========================================================================== */
+
+html[data-theme="light"] {
+  --paper: #f7f5ef;
+  --paper-2: #efebe1;
+  --paper-3: #e4dfd1;
+  --ink: #14130f;
+  --ink-soft: #403d34;
+  --muted: #6f6a5c;
+  --line: #d8d3c5;
+  --line-strong: #b9b3a2;
+  --accent: #f5380f;
+  --accent-dark: #cf2a06;
+  --dark: #121110;
+  --dark-2: #1c1a17;
+  --dark-3: #2a2722;
+  --on-dark: #f4f2ed;
+  --shadow: 0 18px 44px rgba(20, 19, 15, 0.14);
+  color-scheme: light;
+  background: var(--paper);
+}
+
+html[data-theme="light"] body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* шапка и панели ----------------------------------------------------------- */
+html[data-theme="light"] .site-header {
+  background: rgba(247, 245, 239, 0.92);
+  border-bottom: 1px solid var(--line);
+}
+
+html[data-theme="light"] .search-box,
+html[data-theme="light"] .mobile-menu {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  box-shadow: 0 24px 60px rgba(20, 19, 15, 0.18);
+}
+
+/* поля ввода --------------------------------------------------------------- */
+html[data-theme="light"] .field input,
+html[data-theme="light"] .field select,
+html[data-theme="light"] .field textarea,
+html[data-theme="light"] .search-inline input,
+html[data-theme="light"] .search-box input,
+html[data-theme="light"] .cover-picker__ui input[type="text"] {
+  background: #ffffff;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+html[data-theme="light"] .field input::placeholder,
+html[data-theme="light"] .field textarea::placeholder,
+html[data-theme="light"] .cover-picker__ui input::placeholder {
+  color: #9a947f;
+}
+
+html[data-theme="light"] select option {
+  background: #ffffff;
+  color: var(--ink);
+}
+
+/* блоки, которые на тёмной теме были почти чёрными ------------------------- */
+html[data-theme="light"] .auth-card,
+html[data-theme="light"] .doc-card,
+html[data-theme="light"] .role,
+html[data-theme="light"] .kpi__item,
+html[data-theme="light"] .write-side__box,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .presscard {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+html[data-theme="light"] .presscard {
+  background: var(--paper-2);
+}
+
+html[data-theme="light"] .presscard::before {
+  background-image: linear-gradient(rgba(20, 19, 15, 0.07) 1px, transparent 1px);
+}
+
+/* логотип: белый вариант на светлом не видно — инвертируем ------------------ */
+html[data-theme="light"] .masthead .logo__img,
+html[data-theme="light"] .mobile-menu .logo__img,
+html[data-theme="light"] .presscard__logo {
+  filter: invert(1);
+}
+
+/* карточки и списки -------------------------------------------------------- */
+html[data-theme="light"] .card,
+html[data-theme="light"] .author-card {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+html[data-theme="light"] .card:hover {
+  box-shadow: var(--shadow);
+}
+
+html[data-theme="light"] .ticker {
+  background: var(--dark);
+  color: var(--on-dark);
+}
+
+/* кнопки ------------------------------------------------------------------- */
+html[data-theme="light"] .btn--ghost {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+html[data-theme="light"] .btn--ghost:hover {
+  background: var(--paper-3);
+}
+
+html[data-theme="light"] .icon-btn {
+  border-color: var(--line-strong);
+}
+
+html[data-theme="light"] .icon-btn:hover {
+  background: var(--paper-3);
+}
+
+/* hover на карте остаётся светлым: карта тёмная ---------------------------- */
+html[data-theme="light"] .map-tooltip,
+html[data-theme="light"] .map-suggest {
+  background: var(--dark-2);
+  color: var(--on-dark);
+}
