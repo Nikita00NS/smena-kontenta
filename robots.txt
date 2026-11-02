@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
 
-# Демонстрационный прототип: перед публикацией проверьте состав регионов и права на изображения.
+Disallow: /admin.html
+Disallow: /profile.html
+Disallow: /write.html
+
+Sitemap: https://smenakontenta.ru/sitemap.xml

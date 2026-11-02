@@ -1,0 +1,66 @@
+# Настройки сайта «Смена контента» для хостинга Sprinthost (Apache)
+# Файл читается автоматически. Трогать его не нужно.
+
+# Главная страница сайта — index.html, а не стандартная заглушка хостинга
+DirectoryIndex index.html index.php index.htm
+
+# Запрет показывать список файлов в папках
+Options -Indexes
+
+# Кодировка по умолчанию
+AddDefaultCharset UTF-8
+
+# Красивая страница для несуществующих адресов
+ErrorDocument 404 /404.html
+
+# Правильные типы файлов
+<IfModule mod_mime.c>
+  AddType font/woff2 .woff2
+  AddType font/woff .woff
+  AddType image/svg+xml .svg
+  AddType application/json .json
+  AddType application/geo+json .geojson
+</IfModule>
+
+# Сжатие текстовых файлов — сайт грузится быстрее
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml text/javascript
+  AddOutputFilterByType DEFLATE application/javascript application/json application/xml
+  AddOutputFilterByType DEFLATE image/svg+xml application/geo+json
+</IfModule>
+
+# Кэш: картинки и шрифты надолго, стили и скрипты — на час, чтобы правки появлялись быстро
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/jpeg "access plus 30 days"
+  ExpiresByType image/png "access plus 30 days"
+  ExpiresByType image/webp "access plus 30 days"
+  ExpiresByType image/svg+xml "access plus 30 days"
+  ExpiresByType font/woff2 "access plus 1 year"
+  ExpiresByType text/css "access plus 1 hour"
+  ExpiresByType application/javascript "access plus 1 hour"
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType application/pdf "access plus 7 days"
+</IfModule>
+
+# Безопасность
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+  # Показывать сайт только по HTTPS, после того как включён сертификат
+  # Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains"
+</IfModule>
+
+# Переадресация на HTTPS и с www на основной домен.
+# Включается в панели хостинга (раздел «SSL»), поэтому здесь закомментировано.
+# Если понадобится включить здесь — раскомментируйте блок ниже,
+# но только после того, как сертификат Let's Encrypt выпущен и работает.
+# <IfModule mod_rewrite.c>
+#   RewriteEngine On
+#   RewriteCond %{HTTPS} !=on
+#   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+#   RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+#   RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
+# </IfModule>
