@@ -1,3 +1,7 @@
+# Как включить: скопировать этот файл на GitHub в .github/workflows/deploy.yml
+# (репозиторий → Add file → Create new file → путь .github/workflows/deploy.yml → вставить содержимое).
+# Ошибка выкладки или доступность сайта смотрится во вкладке Actions.
+
 name: Выкладка на Sprinthost
 
 on:

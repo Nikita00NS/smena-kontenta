@@ -139,7 +139,9 @@ python3 tools/make-logo.py путь/к/новому-логотипу.png
 ### Выкладка автоматическая
 
 Файл `.github/workflows/deploy.yml` при каждом коммите в ветку `main` отправляет
-сайт на хостинг по FTP. Логин и пароль лежат в GitHub Secrets
+сайт на хостинг по FTP. Готовый текст лежит в репозитории как `tools/deploy-sprinthost.yml`:
+его нужно один раз скопировать в `.github/workflows/deploy.yml` через кнопку
+**Add file → Create new file** на GitHub (у автоматики нет прав создавать файлы выкладки). Логин и пароль лежат в GitHub Secrets
 (`FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`) — в коде и в переписке их нет.
 
 Порядок работы: изменил файл → коммит в `main` → через 1–2 минуты сайт обновлён.
