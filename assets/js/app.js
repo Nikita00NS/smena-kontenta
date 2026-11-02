@@ -52,6 +52,15 @@
       .replace(/'/g, "&#39;");
   }
 
+  /* **жирный** и *курсив* внутри абзаца */
+  function inlineMd(text) {
+    return esc(text)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>")
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+
   function fmtDate(iso) {
     var d = new Date(iso);
     return d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear();
@@ -200,7 +209,58 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
     close:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    sun:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/></svg>',
+    moon:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>',
   };
+
+  /* 3. Тема оформления ===================================================== */
+
+  var THEME_KEY = "smena_theme";
+
+  function savedTheme() {
+    try {
+      return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+    } catch (e) {
+      return "dark";
+    }
+  }
+
+  function paintTheme(theme) {
+    var root = document.documentElement;
+    if (theme === "light") root.setAttribute("data-theme", "light");
+    else root.removeAttribute("data-theme");
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", theme === "light" ? "#f7f5ef" : "#0a0a0a");
+    $$("[data-theme-toggle]").forEach(function (btn) {
+      var next = theme === "light" ? "Тёмная тема" : "Светлая тема";
+      btn.setAttribute("aria-label", next);
+      btn.setAttribute("title", next);
+      btn.innerHTML = theme === "light" ? ICONS.moon : ICONS.sun;
+    });
+    $$("[data-theme-label]").forEach(function (el) {
+      el.textContent = theme === "light" ? "Тёмная тема" : "Светлая тема";
+    });
+  }
+
+  function toggleTheme() {
+    var next = savedTheme() === "light" ? "dark" : "light";
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch (e) {}
+    paintTheme(next);
+  }
+
+  function initTheme() {
+    paintTheme(savedTheme());
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest ? e.target.closest("[data-theme-toggle]") : null;
+      if (!btn) return;
+      e.preventDefault();
+      toggleTheme();
+    });
+  }
 
   var LOGO =
     '<img class="logo__img" src="assets/img/logo.png" alt="Смена контента" ' +
@@ -256,6 +316,8 @@
       LOGO + "</a>" +
       '<nav class="nav" aria-label="Основная навигация">' + navHtml + "</nav>" +
       '<div class="header-actions">' +
+      '<button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Светлая тема">' +
+      ICONS.sun + "</button>" +
       '<button class="icon-btn" type="button" data-search-open aria-label="Поиск по сайту">' +
       ICONS.search + "</button>" +
       accountHtml +
@@ -281,6 +343,8 @@
         ? '<a class="mobile-menu__link" href="profile.html">Личный кабинет<span>' +
           esc(Store.initials(user.name)) + "</span></a>"
         : '<a class="mobile-menu__link" href="join.html">Регистрация<span>+</span></a>') +
+      '<button class="mobile-menu__theme" type="button" data-theme-toggle>' +
+      '<b data-theme-label>Светлая тема</b><span>оформление</span></button>' +
       '<div class="mobile-menu__foot">' +
       '<a class="btn btn--block" href="write.html">Опубликовать материал</a>' +
       '<button class="btn btn--block btn--ghost" type="button" data-search-open>Поиск по сайту</button>' +
@@ -1522,11 +1586,27 @@
     }
 
     var au = authorOf(a);
-    var bodyHtml = (a.body || []).map(function (p) {
-      if (p.indexOf("> ") === 0) return "<blockquote>" + esc(p.slice(2)) + "</blockquote>";
-      if (p.indexOf("## ") === 0) return "<h2>" + esc(p.slice(3)) + "</h2>";
-      return "<p>" + esc(p) + "</p>";
-    }).join("");
+    var bodyHtml = (function (blocks) {
+      var out = [];
+      var list = [];
+      function flush() {
+        if (!list.length) return;
+        out.push("<ul>" + list.map(function (li) { return "<li>" + inlineMd(li) + "</li>"; }).join("") + "</ul>");
+        list = [];
+      }
+      (blocks || []).forEach(function (p) {
+        if (p.indexOf("- ") === 0) {
+          list.push(p.slice(2));
+          return;
+        }
+        flush();
+        if (p.indexOf("> ") === 0) out.push("<blockquote>" + inlineMd(p.slice(2)) + "</blockquote>");
+        else if (p.indexOf("## ") === 0) out.push("<h2>" + inlineMd(p.slice(3)) + "</h2>");
+        else out.push("<p>" + inlineMd(p) + "</p>");
+      });
+      flush();
+      return out.join("");
+    })(a.body);
 
     var relatedTitle = "Ещё из этого региона";
     var related = allArticles()
@@ -2076,9 +2156,17 @@
       '<textarea id="w-excerpt" name="excerpt" maxlength="260" rows="3" placeholder="2–3 предложения, которые объясняют суть">' +
       esc(existing ? existing.excerpt : "") + "</textarea></div>" +
       '<div class="field"><label for="w-body">Текст материала</label>' +
-      '<textarea id="w-body" name="body" rows="16" placeholder="Абзацы разделяйте пустой строкой. Цитату начните со знака «>». Подзаголовок — с «##».">' +
+      '<div class="md-toolbar" data-md-toolbar>' +
+      '<button type="button" class="md-btn" data-md="bold" title="Жирный — Ctrl+B"><b>Ж</b></button>' +
+      '<button type="button" class="md-btn" data-md="italic" title="Курсив — Ctrl+I"><i>К</i></button>' +
+      '<button type="button" class="md-btn" data-md="quote" title="Цитата — строка с отступом">Цитата</button>' +
+      '<button type="button" class="md-btn" data-md="h2" title="Подзаголовок">Подзаголовок</button>' +
+      '<button type="button" class="md-btn" data-md="list" title="Список">Список</button>' +
+      '<button type="button" class="md-btn" data-md="link" title="Ссылка">Ссылка</button>' +
+      "</div>" +
+      '<textarea id="w-body" name="body" rows="16" placeholder="Пишите обычным текстом. Кнопки выше добавляют жирный, курсив, цитату, подзаголовок.">' +
       esc(existing ? existing.body.join("\n\n") : "") + "</textarea>" +
-      '<p class="field__hint">Абзацы — через пустую строку. «&gt;» в начале абзаца станет цитатой, «##» — подзаголовком.</p></div>' +
+      '<p class="field__hint">Выделите слово и нажмите <code>Ж</code> или <code>К</code> — получатся жирный и курсив. Абзацы разделяются пустой строкой, цитата и подзаголовок добавляются кнопками.</p></div>' +
       '<div class="write-cover field"><label>Обложка</label>' +
       '<div class="cover-picker">' +
       '<div class="cover-picker__preview" data-cover-preview>' +
@@ -2132,6 +2220,73 @@
     var fileInput = $("[data-cover-file]", host);
     var urlInput = $("[data-cover-url]", host);
     var action = "draft";
+    var bodyEl = $("#w-body", host);
+    var toolbar = $("[data-md-toolbar]", host);
+
+    function wrapSelection(mark, hint) {
+      var start = bodyEl.selectionStart;
+      var end = bodyEl.selectionEnd;
+      var value = bodyEl.value;
+      var sel = value.slice(start, end) || hint;
+      bodyEl.value = value.slice(0, start) + mark + sel + mark + value.slice(end);
+      bodyEl.focus();
+      bodyEl.selectionStart = start + mark.length;
+      bodyEl.selectionEnd = start + mark.length + sel.length;
+    }
+
+    function prefixLine(prefix, hint) {
+      var value = bodyEl.value;
+      var pos = bodyEl.selectionStart;
+      var lineStart = value.lastIndexOf("\n", pos - 1) + 1;
+      var lineEnd = value.indexOf("\n", pos);
+      if (lineEnd === -1) lineEnd = value.length;
+      var line = value.slice(lineStart, lineEnd);
+      var already = line.indexOf(prefix) === 0;
+      var next = already ? line.slice(prefix.length) : prefix + (line || hint);
+      bodyEl.value = value.slice(0, lineStart) + next + value.slice(lineEnd);
+      bodyEl.focus();
+      bodyEl.selectionStart = bodyEl.selectionEnd = lineStart + next.length;
+    }
+
+    if (toolbar) {
+      toolbar.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-md]");
+        if (!btn) return;
+        e.preventDefault();
+        var kind = btn.getAttribute("data-md");
+        if (kind === "bold") wrapSelection("**", "жирный текст");
+        if (kind === "italic") wrapSelection("*", "курсив");
+        if (kind === "quote") prefixLine("> ", "текст цитаты");
+        if (kind === "h2") prefixLine("## ", "подзаголовок");
+        if (kind === "list") prefixLine("- ", "пункт списка");
+        if (kind === "link") {
+          var start = bodyEl.selectionStart;
+          var end = bodyEl.selectionEnd;
+          var value = bodyEl.value;
+          var text = value.slice(start, end) || "текст ссылки";
+          var ins = "[" + text + "](https://)";
+          bodyEl.value = value.slice(0, start) + ins + value.slice(end);
+          bodyEl.focus();
+          var linkStart = start + text.length + 3;
+          bodyEl.selectionStart = linkStart;
+          bodyEl.selectionEnd = linkStart + 8;
+        }
+      });
+    }
+
+    if (bodyEl) {
+      bodyEl.addEventListener("keydown", function (e) {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        if (e.key === "b" || e.key === "B") {
+          e.preventDefault();
+          wrapSelection("**", "жирный текст");
+        }
+        if (e.key === "i" || e.key === "I") {
+          e.preventDefault();
+          wrapSelection("*", "курсив");
+        }
+      });
+    }
 
     function setStatus(text, isError) {
       statusEl.textContent = text || "";
@@ -2272,6 +2427,7 @@
   }
 
   function boot() {
+    initTheme();
     mountHeader();
     mountFooter();
     mountSearch();

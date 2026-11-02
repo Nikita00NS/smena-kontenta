@@ -193,8 +193,8 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-text);
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: 18px;
+  line-height: 1.62;
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -285,7 +285,7 @@ p:last-child {
 
 .meta {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -2207,13 +2207,13 @@ p:last-child {
 
 .author__name {
   font-weight: 600;
-  font-size: 0.9rem;
-  line-height: 1.2;
+  font-size: 1.02rem;
+  line-height: 1.25;
 }
 
 .author__role {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
@@ -4764,4 +4764,102 @@ select option {
 .is-pending {
   text-decoration: none;
   cursor: default;
+}
+
+/* ==========================================================================
+   20. СВЕТЛАЯ ТЕМА, ПАНЕЛЬ ФОРМАТИРОВАНИЯ, КРУПНЫЙ ТЕКСТ
+   ========================================================================== */
+
+/* кнопка переключения темы ------------------------------------------------ */
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.header-actions {
+  gap: 10px;
+}
+
+/* на узких экранах в шапке остаётся одна понятная кнопка — меню ----------- */
+@media (max-width: 1000px) {
+  .header-actions {
+    gap: 8px;
+  }
+  .header-actions [data-theme-toggle],
+  .header-actions [data-search-open] {
+    display: none;
+  }
+  .mobile-menu__theme {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 18px 4px;
+    color: inherit;
+    font-size: 1rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .mobile-menu__theme span {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+}
+
+@media (min-width: 1001px) {
+  .mobile-menu__theme {
+    display: none;
+  }
+}
+
+/* панель форматирования в редакторе --------------------------------------- */
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.md-btn {
+  border: 1px solid var(--line-strong);
+  background: var(--paper-2);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 6px 13px;
+  font-family: var(--font-text);
+  font-size: 0.85rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.md-btn:hover {
+  background: var(--paper-3);
+  border-color: var(--accent);
+}
+
+.md-btn b,
+.md-btn i {
+  font-size: 0.95rem;
+}
+
+.md-btn kbd {
+  display: none;
+}
+
+/* подсказка под редактором */
+.field__hint code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--ink-soft);
+  background: var(--paper-3);
+  padding: 1px 5px;
+  border-radius: 4px;
 }
