@@ -1072,7 +1072,7 @@
     }
 
     var settings = Store.getSettings();
-    var isOwner = user.number === 101 || user.role === "Редактор";
+    var isOwner = Store.can(user, "manage") || user.number === 101;
 
     if (!isOwner) {
       host.innerHTML =
@@ -1096,17 +1096,41 @@
         '<div class="admin-table__row">' +
         "<div><b>" + esc(a.name) + "</b><small>" + esc(a.email) + "</small></div>" +
         "<div>" + esc(a.role || "—") + "</div>" +
-        "<div>" + esc(a.region || "—") + "</div>" +
+        "<div>" + esc(a.team || "индивидуально") + "</div>" +
         "<div>" + a.posts + " публ.</div>" +
         '<div><span class="status ' + (hasCard ? "status--pub" : "status--draft") + '">' +
         (hasCard ? "карта выдана" : "нет карты") + "</span></div>" +
+        '<div><select class="admin-access" data-access="' + a.id + '">' +
+        Store.ACCESS.map(function (r) {
+          return '<option' + (r === (a.access || "Автор") ? " selected" : "") + ">" + esc(r) + "</option>";
+        }).join("") +
+        "</select></div>" +
         "</div>"
+      );
+    }
+
+    function pendingRow(p) {
+      return (
+        '<div class="admin-review" data-review-row="' + p.id + '">' +
+        '<div class="admin-review__top"><b>' + esc(p.title) + "</b>" +
+        '<span class="status status--pending">на проверке</span></div>' +
+        '<div class="admin-review__meta">' + esc(p.authorName) + " · " + esc(p.format || "") +
+        " · " + esc(regionName(p.region) || "регион не выбран") + " · " + esc(String(p.read || 0)) + " мин</div>" +
+        '<p class="admin-review__excerpt">' + esc(p.excerpt || "") + "</p>" +
+        '<div class="admin-review__actions">' +
+        '<a class="btn btn--sm btn--ghost" href="write.html?id=' + p.id + '">Открыть текст</a>' +
+        '<input class="admin-review__note" type="text" placeholder="Замечание автору (если правки)" data-note="' + p.id + '">' +
+        '<button class="btn btn--sm" type="button" data-approve="' + p.id + '">Опубликовать</button>' +
+        '<button class="btn btn--sm btn--ghost" type="button" data-reject="' + p.id + '">Вернуть на правки</button>' +
+        "</div></div>"
       );
     }
 
     function render() {
       settings = Store.getSettings();
       var authors = Store.listUsers();
+      var pending = Store.pendingPosts();
+      var teams = Store.listTeams();
       host.innerHTML =
         '<section class="page-hero"><div class="wrap page-hero__grid"><div>' +
         '<span class="kicker">Служебное</span><h1>Панель<br>проекта</h1></div>' +
@@ -1140,11 +1164,39 @@
         '<p class="admin-card__hint">Правила, по которым автор получает карту с номером.</p>' +
         adminField("Серия", "card-prefix", settings.card.prefix, "СК") +
         adminField("Год", "card-year", settings.card.year, "2026", "number") +
-        adminField("Публикаций до выдачи", "card-min", settings.card.minPosts, "5", "number") +
+        adminField("Публикаций до личной карты", "card-min", settings.card.minPosts, "5", "number") +
+        adminField("Публикаций до карты редакции", "card-team-min", settings.card.teamMinPosts, "20", "number") +
         adminField("Срок действия, месяцев", "card-valid", settings.card.validMonths, "12", "number") +
         '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
         '<span class="form__note" data-card-status></span></div></form>' +
         "</div></section>" +
+
+        '<section class="section wrap" style="padding-top:0">' +
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Проверка</span>' +
+        "<h2>Материалы на проверке</h2></div>" +
+        '<span class="sec-link">' + pending.length + " в очереди</span></div>" +
+        (pending.length
+          ? pending.map(pendingRow).join("")
+          : '<div class="empty"><h3>Очередь пуста</h3><p>Когда автор отправит материал на проверку, ' +
+            "он появится здесь: можно прочитать, опубликовать или вернуть с замечанием.</p></div>") +
+        "</section>" +
+
+        '<section class="section wrap" style="padding-top:0">' +
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Редакции</span>' +
+        "<h2>Команды проекта</h2></div></div>" +
+        (teams.length
+          ? '<div class="admin-table">' + teams.map(function (t) {
+              return '<div class="admin-table__row">' +
+                "<div><b>" + esc(t.name) + "</b><small>код " + esc(t.code) + "</small></div>" +
+                "<div>" + esc(regionName(t.region) || "—") + "</div>" +
+                "<div>" + t.members + " чел.</div>" +
+                "<div>" + t.published + " публ.</div>" +
+                '<div><span class="status ' + (t.published >= settings.card.teamMinPosts ? "status--pub" : "status--draft") + '">' +
+                (t.published >= settings.card.teamMinPosts ? "карта редакции" : "до карты " + (settings.card.teamMinPosts - t.published)) +
+                "</span></div></div>";
+            }).join("") + "</div>"
+          : '<div class="empty"><h3>Команд пока нет</h3><p>Автор может создать редакцию в личном кабинете.</p></div>') +
+        "</section>" +
 
         '<section class="section wrap" style="padding-top:0">' +
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Авторы</span>' +
@@ -1187,6 +1239,7 @@
               prefix: val("card-prefix") || "СК",
               year: Number(val("card-year")) || new Date().getFullYear(),
               minPosts: Math.max(1, Number(val("card-min")) || 5),
+              teamMinPosts: Math.max(1, Number(val("card-team-min")) || 20),
               validMonths: Math.max(1, Number(val("card-valid")) || 12),
             },
           });
@@ -1210,6 +1263,41 @@
           var st = $("[data-founders-status]", host);
           if (st) st.textContent = "Сохранено";
         });
+
+      $$("[data-approve]", host).forEach(function (b) {
+        b.addEventListener("click", function () {
+          Store.reviewPost(b.getAttribute("data-approve"), "approve", "");
+          render();
+        });
+      });
+
+      $$("[data-reject]", host).forEach(function (b) {
+        b.addEventListener("click", function () {
+          var id = b.getAttribute("data-reject");
+          var noteEl = $('[data-note="' + id + '"]', host);
+          var note = noteEl ? noteEl.value.trim() : "";
+          if (!note) {
+            window.alert("Напишите автору, что нужно поправить — это поле рядом.");
+            if (noteEl) noteEl.focus();
+            return;
+          }
+          Store.reviewPost(id, "reject", note);
+          render();
+        });
+      });
+
+      $$("[data-access]", host).forEach(function (sel) {
+        sel.addEventListener("change", function () {
+          var data = JSON.parse(window.localStorage.getItem("smena_content_v1") || "{}");
+          data.users = (data.users || []).map(function (u) {
+            return u.id === sel.getAttribute("data-access")
+              ? Object.assign({}, u, { access: sel.value })
+              : u;
+          });
+          window.localStorage.setItem("smena_content_v1", JSON.stringify(data));
+          render();
+        });
+      });
 
       var exp = $("[data-export]", host);
       if (exp)
@@ -1327,6 +1415,22 @@
         'после неё вы получаете пресс-карту и можете писать материалы. ' +
         '<a href="join.html">Зарегистрироваться</a></div>' +
         "</aside></div></div>";
+    } else if (heroHost) {
+      heroHost.innerHTML =
+        '<div class="wrap"><div class="hero-empty" data-reveal>' +
+        '<div class="hero-empty__text">' +
+        '<span class="kicker">Лента пока пустая</span>' +
+        '<h1>Здесь появятся материалы авторов из регионов</h1>' +
+        '<p class="lead">Проект только открывается. Первые тексты, репортажи и фотоистории ' +
+        "появятся здесь, как только авторы их опубликуют — без выдуманных новостей и заглушек.</p>" +
+        '<div class="row"><a class="btn btn--accent" href="join.html">Стать автором</a>' +
+        '<a class="btn btn--ghost" href="#map">Посмотреть карту регионов</a></div>' +
+        "</div>" +
+        '<div class="hero-empty__side">' +
+        '<div class="hero-empty__item"><b>01</b><span>Регистрация — минута</span></div>' +
+        '<div class="hero-empty__item"><b>02</b><span>Материал проверяет редакция</span></div>' +
+        '<div class="hero-empty__item"><b>03</b><span>Публикация и пресс-карта</span></div>' +
+        "</div></div></div>";
     }
 
     var ticker = $("[data-ticker]");
@@ -1335,11 +1439,13 @@
         return '<a class="ticker__item" href="' + articleUrl(a.id) + '"><time>' +
           fmtTime(a.date) + "</time>" + esc(a.title) + "</a>";
       }).join("");
-      ticker.innerHTML =
-        '<div class="ticker__inner">' +
-        '<div class="ticker__label"><span>Лента</span></div>' +
-        '<div class="ticker__viewport"><div class="ticker__track">' +
-        items + items + "</div></div></div>";
+      ticker.innerHTML = items
+        ? '<div class="ticker__inner"><div class="ticker__label"><span>Лента</span></div>' +
+          '<div class="ticker__viewport"><div class="ticker__track">' + items + items +
+          "</div></div></div>"
+        : '<div class="ticker__inner"><div class="ticker__label"><span>Лента</span></div>' +
+          '<div class="ticker__viewport"><div class="ticker__text">Лента наполняется — ' +
+          "первыми будут материалы авторов проекта</div></div></div>";
     }
 
     var pcHost = $("[data-presscard]");
@@ -1410,15 +1516,18 @@
     // лица проекта
     var authorsHost = $("[data-authors]");
     if (authorsHost) {
-      authorsHost.innerHTML = (SC.authors || [])
-        .slice(0, 8)
-        .map(function (a, i) {
-          return '<div class="author-card" data-reveal data-delay="' + (i % 4) + '">' +
-            '<span class="author-card__ava">' + esc(a.initials) + "</span>" +
-            '<div><div class="author-card__name">' + esc(a.name) + "</div>" +
-            '<div class="author-card__role">' + esc(a.role) + "</div></div></div>";
-        })
-        .join("");
+      var faces = (SC.authors || []).slice(0, 8);
+      authorsHost.innerHTML = faces.length
+        ? faces
+            .map(function (a, i) {
+              return '<div class="author-card" data-reveal data-delay="' + (i % 4) + '">' +
+                '<span class="author-card__ava">' + esc(a.initials) + "</span>" +
+                '<div><div class="author-card__name">' + esc(a.name) + "</div>" +
+                '<div class="author-card__role">' + esc(a.role) + "</div></div></div>";
+            })
+            .join("")
+        : '<div class="no-data">Лица проекта появятся здесь, когда авторы зарегистрируются ' +
+          "и опубликуют первые материалы.</div>";
     }
 
     // возможности
@@ -1426,9 +1535,9 @@
     if (oppHost) {
       var opp = all.filter(function (a) { return a.topic === "Возможности"; }).slice(0, 3);
       var fallback = all.slice(0, 3);
-      oppHost.innerHTML = (opp.length ? opp : fallback)
-        .map(function (a) { return card(a); })
-        .join("");
+      oppHost.innerHTML = (opp.length ? opp : fallback).length
+        ? (opp.length ? opp : fallback).map(function (a) { return card(a); }).join("")
+        : '<div class="no-data">Возможности появятся вместе с первыми материалами.</div>';
     }
   }
 
@@ -1914,15 +2023,20 @@
         '<span class="presscard__code">не выдана</span></div>' +
         '<div class="presscard__name">' + esc(card.name) + "</div>" +
         '<div class="presscard__desc">' + esc(card.role) + " · " + esc(card.region) + "</div>" +
+        '<div class="presscard__editorial">' + esc(card.editorial) + "</div>" +
         '<div class="card-progress">' +
         '<div class="card-progress__head"><b>' + card.posts + " из " + card.need +
         "</b><span>осталось " + card.left + " " +
         plural(card.left, ["материал", "материала", "материалов"]) +
         "</span></div>" +
         '<div class="card-progress__bar"><i style="width:' + percent + '%"></i></div>' +
-        '<p class="card-progress__note">Пресс-карта с номером выдаётся после ' + card.need +
-        " опубликованных материалов. Она подтверждает, что вы автор проекта: с ней можно " +
-        "брать интервью и ходить на события как журналист «Смены контента».</p>" +
+        '<p class="card-progress__note">' +
+        (card.scope === "team"
+          ? "Карта выдаётся, когда редакция «" + esc(card.teamName) + "» наберёт " + card.need +
+            " опубликованных материалов — тогда её получает каждый участник команды."
+          : "Карта выдаётся после " + card.need + " опубликованных материалов. С ней можно " +
+            "брать интервью и ходить на события как журналист проекта.") +
+        "</p>" +
         "</div>" +
         '<div class="presscard__row">' +
         "<span><b>Публикаций</b>" + card.posts + "</span>" +
@@ -1942,6 +2056,7 @@
       '<span class="presscard__code">' + esc(card.number) + "</span></div>" +
       '<div class="presscard__name">' + esc(card.name) + "</div>" +
       '<div class="presscard__desc">' + esc(card.role) + " · " + esc(card.region) + "</div>" +
+      '<div class="presscard__editorial">' + esc(card.editorial) + "</div>" +
       '<div class="presscard__row">' +
       "<span><b>Выдана</b>" + fmtDate(card.issuedAt) + "</span>" +
       "<span><b>Действует до</b>" + fmtDate(card.validUntil) + "</span>" +
@@ -1973,29 +2088,82 @@
       var card = Store.pressCard();
       var published = Store.listPosts({ authorId: user.id, status: "published" });
       var drafts = Store.listPosts({ authorId: user.id, status: "draft" });
+      var pending = Store.listPosts({ authorId: user.id, status: "pending" });
+      var rejected = Store.listPosts({ authorId: user.id, status: "rejected" });
+      var mine = drafts.concat(pending, rejected, published);
       document.title = user.name + " — личный кабинет";
 
+      var STATUS = {
+        draft: { label: "черновик", cls: "status--draft" },
+        pending: { label: "на проверке", cls: "status--pending" },
+        rejected: { label: "нужны правки", cls: "status--rejected" },
+        published: { label: "опубликовано", cls: "status--pub" },
+      };
+
       var postRow = function (p) {
-        var isDraft = p.status === "draft";
+        var st = STATUS[p.status] || STATUS.draft;
+        var canPublish = Store.can(user, "publish");
+        var action = "";
+        if (p.status === "draft" || p.status === "rejected") {
+          action =
+            '<button class="btn btn--sm btn--accent" type="button" data-submit="' + p.id + '">' +
+            (canPublish ? "Опубликовать" : "Отправить на проверку") + "</button>";
+        } else if (p.status === "pending") {
+          action = '<span class="post-row__wait">Ждёт редактора</span>';
+        } else {
+          action = '<a class="btn btn--sm btn--ghost" href="article.html?id=' +
+            encodeURIComponent("u:" + p.id) + '">Открыть</a>';
+        }
         return (
           '<div class="post-row">' +
           '<div class="post-row__main">' +
-          '<div class="post-row__meta"><span class="status ' + (isDraft ? "status--draft" : "status--pub") +
-          '">' + (isDraft ? "черновик" : "опубликовано") + "</span><span>" +
-          fmtDate(p.updatedAt || p.date) + "</span><span>" + esc(p.format) + " · " +
-          esc(regionName(p.region)) + "</span></div>" +
+          '<div class="post-row__meta"><span class="status ' + st.cls + '">' + st.label +
+          "</span><span>" + fmtDate(p.updatedAt || p.date) + "</span><span>" + esc(p.format) +
+          " · " + esc(regionName(p.region)) + "</span></div>" +
           '<div class="post-row__title">' + esc(p.title) + "</div>" +
+          (p.status === "rejected" && p.reviewNote
+            ? '<div class="post-row__note">Замечание редактора: ' + esc(p.reviewNote) + "</div>"
+            : "") +
           "</div>" +
-          '<div class="post-row__actions">' +
-          (isDraft
-            ? '<button class="btn btn--sm btn--accent" type="button" data-publish="' + p.id + '">Опубликовать</button>'
-            : '<a class="btn btn--sm btn--ghost" href="article.html?id=' +
-              encodeURIComponent("u:" + p.id) + '">Открыть</a>') +
+          '<div class="post-row__actions">' + action +
           '<a class="btn btn--sm btn--ghost" href="write.html?id=' + p.id + '">Изменить</a>' +
           '<button class="btn btn--sm btn--ghost" type="button" data-delete="' + p.id + '">Удалить</button>' +
           "</div></div>"
         );
       };
+
+      var team = Store.myTeam();
+      var teamCard = Store.pressCard();
+      var teamBlock = team
+        ? '<div class="panel panel--team">' +
+          '<div class="panel__head"><h3>' + esc(team.name) + "</h3>" +
+          '<span class="panel__tag">ваша редакция</span></div>' +
+          "<p>" + (team.about ? esc(team.about) : "Команда проекта.") + "</p>" +
+          '<div class="team-stats"><span><b>' + team.members + "</b> участников</span>" +
+          "<span><b>" + team.published + "</b> публикаций</span>" +
+          "<span><b>" + Math.max(0, (teamCard ? teamCard.need : 20) - team.published) + "</b> до командной карты</span></div>" +
+          '<p class="team-code">Код для приглашения: <code>' + esc(team.code) + "</code></p>" +
+          '<div class="row"><button class="btn btn--sm btn--ghost" type="button" data-team-leave>Выйти из команды</button></div>' +
+          "</div>"
+        : '<div class="panel panel--team">' +
+          "<h3>Вы в индивидуальной редакции</h3>" +
+          "<p>Пока вы работаете один: пресс-карта появится после " +
+          (teamCard ? teamCard.need : 5) + " материалов. Если соберётесь с друзьями — " +
+          "создайте свою редакцию: тогда карта выдаётся всей команде после " +
+          Store.getSettings().card.teamMinPosts + " публикаций.</p>" +
+          '<form class="team-form" data-team-create>' +
+          '<div class="field"><label for="t-name">Название команды</label>' +
+          '<input id="t-name" name="name" type="text" placeholder="Например, НоВоСебирьСети" maxlength="60"></div>' +
+          '<div class="field"><label for="t-about">О чём вы</label>' +
+          '<input id="t-about" name="about" type="text" placeholder="Коротко: город и темы" maxlength="120"></div>' +
+          '<div class="row"><button class="btn btn--sm" type="submit">Создать команду</button>' +
+          '<span class="form__note" data-team-status></span></div></form>' +
+          '<form class="team-form team-form--join" data-team-join>' +
+          '<div class="field"><label for="t-code">Или присоединитесь по коду</label>' +
+          '<input id="t-code" name="code" type="text" placeholder="Шесть символов от команды" maxlength="12"></div>' +
+          '<div class="row"><button class="btn btn--sm btn--ghost" type="submit">Вступить</button>' +
+          '<span class="form__note" data-team-join-status></span></div></form>' +
+          "</div>";
 
       host.innerHTML =
         '<section class="profile-hero"><div class="wrap">' +
@@ -2029,21 +2197,23 @@
         '<div class="kpi kpi--stack">' +
         '<div class="kpi__item"><b>' + published.length + "</b><span>публикаций</span></div>" +
         '<div class="kpi__item"><b>' + drafts.length + "</b><span>черновиков</span></div>" +
+        '<div class="kpi__item"><b>' + pending.length + "</b><span>на проверке</span></div>" +
         '<div class="kpi__item"><b>' + (user.region ? esc(regionName(user.region).split(" ")[0]) : "—") +
         "</b><span>ваш регион</span></div>" +
         "</div>" +
+        teamBlock +
         '<div class="panel"><h3>Как это работает</h3>' +
-        '<p>Материал, который вы публикуете, сразу появляется в ленте сайта и на странице ' +
-        "своего региона. Черновики видите только вы.</p></div>" +
+        '<p>Материал проходит проверку редакции: сначала статус «на проверке», потом ' +
+        "«опубликовано» или «нужны правки» с замечанием. Черновики видите только вы.</p></div>" +
         "</div></div>" +
 
         // материалы
         '<div class="profile-posts" style="margin-top:44px">' +
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Мои материалы</span>' +
-        "<h2>Публикации и черновики</h2></div>" +
+        "<h2>Материалы и статусы</h2></div>" +
         '<a class="sec-link" href="write.html">Новый материал <span aria-hidden="true">→</span></a></div>' +
-        (published.length || drafts.length
-          ? drafts.map(postRow).join("") + published.map(postRow).join("")
+        (mine.length
+          ? mine.map(postRow).join("")
           : '<div class="empty"><h3>Пока ничего не опубликовано</h3>' +
             "<p>Начните с простого: история из вашего двора, района или вуза. " +
             "Памятка автору подскажет, с чего начать.</p>" +
@@ -2100,10 +2270,52 @@
         });
       });
 
-      $$("[data-publish]", host).forEach(function (b) {
+      $$("[data-submit]", host).forEach(function (b) {
         b.addEventListener("click", function () {
-          var res = Store.publishPost(b.getAttribute("data-publish"));
-          if (res.ok) window.location.href = "article.html?id=" + encodeURIComponent("u:" + res.post.id);
+          var res = Store.submitPost(b.getAttribute("data-submit"));
+          if (!res.ok) {
+            window.alert(res.error || "Не удалось отправить материал.");
+            return;
+          }
+          render();
+        });
+      });
+
+      var teamCreate = $("[data-team-create]", host);
+      if (teamCreate) {
+        teamCreate.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var fd = new FormData(teamCreate);
+          var res = Store.createTeam({ name: fd.get("name"), about: fd.get("about"), region: user.region });
+          var note = $("[data-team-status]", host);
+          if (!res.ok) {
+            if (note) note.textContent = res.error || "Не получилось";
+            return;
+          }
+          render();
+        });
+      }
+
+      var teamJoin = $("[data-team-join]", host);
+      if (teamJoin) {
+        teamJoin.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var fd = new FormData(teamJoin);
+          var res = Store.joinTeam(fd.get("code"));
+          var note = $("[data-team-join-status]", host);
+          if (!res.ok) {
+            if (note) note.textContent = res.error || "Не получилось";
+            return;
+          }
+          render();
+        });
+      }
+
+      $$("[data-team-leave]", host).forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (!window.confirm("Выйти из команды? Публикации останутся, но карта будет считаться по личным материалам.")) return;
+          Store.leaveTeam();
+          render();
         });
       });
 
@@ -2202,8 +2414,13 @@
       '<div class="write-side__box">' +
       '<div class="write-status" data-write-status></div>' +
       '<button class="btn btn--block" type="submit" data-action="draft">Сохранить черновик</button>' +
-      '<button class="btn btn--accent btn--block" type="submit" data-action="publish">Опубликовать</button>' +
-      '<p class="form__note">Публикация сразу появится в ленте сайта с вашим именем.</p>' +
+      '<button class="btn btn--accent btn--block" type="submit" data-action="submit">' +
+      (Store && Store.can(user, "publish") ? "Опубликовать" : "Отправить на проверку") + "</button>" +
+      '<p class="form__note">' +
+      (Store && Store.can(user, "publish")
+        ? "У вас права редакции: материал выйдет сразу."
+        : "Материал проверит редакция — обычно в течение дня. Черновик останется у вас.") +
+      "</p>" +
       "</div>" +
       '<div class="write-side__box write-side__box--muted">' +
       "<h3>Перед публикацией</h3><ul class=\"check-list\">" +
@@ -2328,7 +2545,7 @@
       var body = String(d.get("body") || "").trim();
       var region = String(d.get("region") || "");
 
-      if (action === "publish") {
+      if (action === "submit") {
         if (title.length < 8) return setStatus("Заголовок слишком короткий — минимум 8 символов.", true);
         if (excerpt.length < 20) return setStatus("Добавьте короткое описание: 20+ символов.", true);
         if (body.length < 200) return setStatus("Текст пока короткий: нужно хотя бы 200 символов.", true);
@@ -2347,15 +2564,22 @@
           region: region,
           image: String(d.get("image") || ""),
           imageAlt: String(d.get("imageAlt") || ""),
-          status: action === "publish" ? "published" : "draft",
+          status: "draft",
         },
         existing ? existing.id : null
       );
 
       if (!res.ok) return setStatus(res.error || "Не удалось сохранить.", true);
 
-      if (action === "publish") {
-        window.location.href = "article.html?id=" + encodeURIComponent("u:" + res.post.id);
+      if (action === "submit") {
+        var sent = Store.submitPost(res.post.id);
+        if (!sent.ok) return setStatus(sent.error || "Не удалось отправить материал.", true);
+        setStatus(sent.message || "Готово");
+        setTimeout(function () {
+          window.location.href = sent.direct
+            ? "article.html?id=" + encodeURIComponent("u:" + res.post.id)
+            : "profile.html";
+        }, 600);
       } else {
         setStatus("Черновик сохранён");
         if (!existing) {
@@ -2395,6 +2619,78 @@
 
   /* 14. Прочее ============================================================= */
 
+  /* партнёры: блок появляется, только когда партнёр добавлен */
+  function initPartners() {
+    var host = $("[data-partners]");
+    var section = $("[data-partners-section]");
+    if (!host || !section) return;
+    var list = (SC.partners || []).filter(function (p) {
+      return p && String(p.name || "").trim();
+    });
+    if (!list.length) return;
+    section.hidden = false;
+    host.innerHTML = list
+      .map(function (p) {
+        var inner =
+          (p.logo ? '<img class="partner__logo" src="' + esc(p.logo) + '" alt="' + esc(p.name) + '" loading="lazy">' : "") +
+          '<div class="partner__body"><h3>' + esc(p.name) + "</h3>" +
+          (p.about ? "<p>" + esc(p.about) + "</p>" : "") +
+          (p.url ? '<span class="partner__link">' + esc(p.url.replace(/^https?:\/\//, "")) + "</span>" : "") +
+          "</div>";
+        return p.url
+          ? '<a class="partner" href="' + esc(p.url) + '" target="_blank" rel="noopener">' + inner + "</a>"
+          : '<div class="partner">' + inner + "</div>";
+      })
+      .join("");
+  }
+
+  /* основатели на странице «О проекте»: две фотографии и раскрытие */
+  function initFounders() {
+    var host = $("[data-founders]");
+    var section = $("[data-founders-section]");
+    if (!host || !section) return;
+
+    var list = (SC.founders || []).filter(function (f) {
+      return f && String(f.name || "").trim();
+    });
+    if (!list.length) return;
+    section.hidden = false;
+
+    host.innerHTML = list
+      .map(function (f, i) {
+        var main = f.photo
+          ? '<img class="founder__photo founder__photo--main" src="' + esc(f.photo) + '" alt="' + esc(f.name) + '" loading="lazy">'
+          : '<span class="founder__photo founder__photo--empty">фото</span>';
+        var alt = f.photoAlt
+          ? '<img class="founder__photo founder__photo--alt" src="' + esc(f.photoAlt) + '" alt="" loading="lazy">'
+          : "";
+        return (
+          '<article class="founder" data-founder="' + i + '" tabindex="0" role="button" aria-expanded="false">' +
+          '<div class="founder__photos">' + main + alt + "</div>" +
+          '<div class="founder__body"><h3>' + esc(f.name) + "</h3>" +
+          '<p class="founder__role">' + esc(f.role || "Основатель") +
+          (f.city ? " · " + esc(f.city) : "") + "</p></div>" +
+          '<div class="founder__more"><p>' + esc(f.bio || "") + "</p></div>" +
+          "</article>"
+        );
+      })
+      .join("");
+
+    $$("[data-founder]", host).forEach(function (card) {
+      function toggle() {
+        var open = card.classList.toggle("is-open");
+        card.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+      card.addEventListener("click", toggle);
+      card.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggle();
+        }
+      });
+    });
+  }
+
   function initPageBits() {
     $$("[data-brand-name]").forEach(function (el) { el.textContent = SC.brand.name; });
     $$("[data-brand-email]").forEach(function (el) {
@@ -2428,6 +2724,8 @@
 
   function boot() {
     initTheme();
+    initFounders();
+    initPartners();
     mountHeader();
     mountFooter();
     mountSearch();

@@ -23,7 +23,7 @@ window.Store = (function () {
   var KEY = "smena_content_v1";
   var listeners = [];
 
-  var EMPTY = { users: [], posts: [], session: null, settings: null };
+  var EMPTY = { users: [], posts: [], teams: [], session: null, settings: null };
 
   /* данные проекта: их заполняет редакция в панели управления */
   var DEFAULT_SETTINGS = {
@@ -43,6 +43,7 @@ window.Store = (function () {
       prefix: "СК",
       year: new Date().getFullYear(),
       minPosts: 5,
+      teamMinPosts: 20,
       validMonths: 12,
     },
   };
@@ -73,6 +74,7 @@ window.Store = (function () {
       return {
         users: data.users || [],
         posts: data.posts || [],
+        teams: data.teams || [],
         session: data.session || null,
         settings: data.settings || null,
       };
@@ -134,6 +136,23 @@ window.Store = (function () {
     return Math.max(2, Math.round(words / 160));
   }
 
+  /* права доступа: что человек может делать в редакции */
+  var ACCESS = ["Владелец", "Главный редактор", "Редактор", "Автор"];
+
+  /* кому что можно. Проверяется и в интерфейсе, и в самих операциях store */
+  var RIGHTS = {
+    "Владелец": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards"],
+    "Главный редактор": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards"],
+    "Редактор": ["publish", "review", "deleteAny", "manage"],
+    "Автор": [],
+  };
+
+  function can(user, action) {
+    if (!user) return false;
+    var list = RIGHTS[user.access || "Автор"] || [];
+    return list.indexOf(action) !== -1;
+  }
+
   var ROLES = [
     "Автор текстов",
     "Фотограф",
@@ -179,6 +198,8 @@ window.Store = (function () {
       pass: hash(pass),
       region: input.region || "",
       role: input.role || ROLES[0],
+      access: data.users.length === 0 ? "Владелец" : "Автор",
+      teamId: null,
       bio: "",
       createdAt: new Date().toISOString(),
       number: 100 + data.users.length + 1,
@@ -222,6 +243,8 @@ window.Store = (function () {
         region: patch.region != null ? patch.region : u.region,
         role: patch.role != null ? patch.role : u.role,
         bio: patch.bio != null ? String(patch.bio) : u.bio,
+        access: u.access || "Автор",
+        teamId: u.teamId || null,
         createdAt: u.createdAt,
         number: u.number,
       };
@@ -302,7 +325,9 @@ window.Store = (function () {
           region: patch.region,
           image: patch.image || "",
           imageAlt: patch.imageAlt || "",
-          status: patch.status || p.status,
+          status:
+            patch.status ||
+            (p.status === "published" && !can(user, "review") ? "pending" : p.status),
           read: readTime(body),
           updatedAt: now,
           date: patch.status === "published" && p.status !== "published" ? now : p.date,
@@ -340,7 +365,8 @@ window.Store = (function () {
     var user = currentUser();
     if (!user) return { ok: false };
     data.posts = data.posts.filter(function (p) {
-      return !(p.id === id && p.authorId === user.id);
+      if (p.id !== id) return true;
+      return !(p.authorId === user.id || can(user, "deleteAny"));
     });
     write(data);
     return { ok: true };
@@ -394,6 +420,227 @@ window.Store = (function () {
       });
   }
 
+  /* -------------------------------------------------------------- сообщества */
+
+  var TRANSLIT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh",
+    "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o",
+    "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "c",
+    "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+  };
+
+  function slugify(text) {
+    return String(text || "")
+      .toLowerCase()
+      .split("")
+      .map(function (ch) {
+        return TRANSLIT[ch] != null ? TRANSLIT[ch] : ch;
+      })
+      .join("")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+  }
+
+  function makeCode(teams) {
+    var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    var code;
+    do {
+      code = "";
+      for (var i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    } while (
+      teams.some(function (t) {
+        return t.code === code;
+      })
+    );
+    return code;
+  }
+
+  function listTeams() {
+    var data = read();
+    return data.teams
+      .map(function (t) {
+        var members = data.users.filter(function (u) {
+          return u.teamId === t.id;
+        });
+        var ids = members.map(function (m) {
+          return m.id;
+        });
+        var published = data.posts.filter(function (p) {
+          return p.status === "published" && ids.indexOf(p.authorId) !== -1;
+        }).length;
+        return {
+          id: t.id,
+          name: t.name,
+          slug: t.slug || slugify(t.name),
+          region: t.region || "",
+          about: t.about || "",
+          code: t.code,
+          createdBy: t.createdBy,
+          createdAt: t.createdAt,
+          members: members.length,
+          published: published,
+        };
+      })
+      .sort(function (a, b) {
+        return b.published - a.published || b.members - a.members;
+      });
+  }
+
+  function getTeam(id) {
+    return (
+      listTeams().filter(function (t) {
+        return t.id === id || t.slug === id || t.code === String(id || "").toUpperCase();
+      })[0] || null
+    );
+  }
+
+  function myTeam() {
+    var user = currentUser();
+    if (!user || !user.teamId) return null;
+    return getTeam(user.teamId);
+  }
+
+  function createTeam(input) {
+    var data = read();
+    var user = currentUser();
+    if (!user) return { ok: false, error: "Сначала войдите в аккаунт." };
+    if (user.teamId) return { ok: false, error: "Вы уже в команде. Сначала выйдите из неё." };
+
+    var name = String(input.name || "").trim();
+    if (name.length < 3) return { ok: false, error: "Название команды — хотя бы три символа." };
+    if (name.length > 60) return { ok: false, error: "Слишком длинное название — до 60 символов." };
+    if (
+      data.teams.some(function (t) {
+        return t.name.toLowerCase() === name.toLowerCase();
+      })
+    )
+      return { ok: false, error: "Команда с таким названием уже есть. Придумайте другое." };
+
+    var team = {
+      id: uid("t_"),
+      name: name,
+      slug: slugify(name) || uid("team").slice(0, 8),
+      region: input.region || user.region || "",
+      about: String(input.about || "").trim().slice(0, 400),
+      code: makeCode(data.teams),
+      createdBy: user.id,
+      createdAt: new Date().toISOString(),
+    };
+    data.teams.push(team);
+    data.users = data.users.map(function (u) {
+      if (u.id !== user.id) return u;
+      return Object.assign({}, u, {
+        teamId: team.id,
+        access: u.access === "Автор" ? "Редактор" : u.access,
+      });
+    });
+    if (!write(data)) return { ok: false, error: "Не удалось сохранить команду." };
+    return { ok: true, team: team };
+  }
+
+  function joinTeam(code) {
+    var data = read();
+    var user = currentUser();
+    if (!user) return { ok: false, error: "Сначала войдите в аккаунт." };
+    if (user.teamId) return { ok: false, error: "Вы уже в команде — сначала выйдите из текущей." };
+    var clean = String(code || "").trim().toUpperCase();
+    var team = data.teams.filter(function (t) {
+      return t.code === clean || (t.slug || "").toLowerCase() === String(code || "").trim().toLowerCase();
+    })[0];
+    if (!team) return { ok: false, error: "Команда с таким кодом не найдена. Проверьте код." };
+    data.users = data.users.map(function (u) {
+      if (u.id !== user.id) return u;
+      return Object.assign({}, u, { teamId: team.id });
+    });
+    write(data);
+    return { ok: true, team: team };
+  }
+
+  function leaveTeam() {
+    var data = read();
+    var user = currentUser();
+    if (!user) return { ok: false, error: "Нужно войти." };
+    if (!user.teamId) return { ok: false, error: "Вы не в команде." };
+    data.users = data.users.map(function (u) {
+      if (u.id !== user.id) return u;
+      return Object.assign({}, u, { teamId: null });
+    });
+    write(data);
+    return { ok: true };
+  }
+
+  /* ------------------------------------------------------------- проверка */
+
+  function submitPost(id) {
+    var data = read();
+    var user = currentUser();
+    if (!user) return { ok: false, error: "Нужно войти." };
+    var post = data.posts.filter(function (p) {
+      return p.id === id && p.authorId === user.id;
+    })[0];
+    if (!post) return { ok: false, error: "Материал не найден." };
+    if (post.status === "pending") return { ok: false, error: "Материал уже на проверке." };
+
+    var direct = can(user, "publish");
+    var now = new Date().toISOString();
+    data.posts = data.posts.map(function (p) {
+      if (p.id !== id) return p;
+      return Object.assign({}, p, {
+        status: direct ? "published" : "pending",
+        date: direct ? now : p.date,
+        submittedAt: now,
+        reviewNote: "",
+        reviewedAt: direct ? now : null,
+        reviewedBy: direct ? user.id : null,
+      });
+    });
+    write(data);
+    return {
+      ok: true,
+      direct: direct,
+      message: direct
+        ? "Материал опубликован — у вас права редакции."
+        : "Материал отправлен на проверку. Редакция увидит его в очереди.",
+    };
+  }
+
+  function reviewPost(id, decision, note) {
+    var data = read();
+    var user = currentUser();
+    if (!can(user, "review")) return { ok: false, error: "Недостаточно прав для проверки." };
+    var post = data.posts.filter(function (p) {
+      return p.id === id;
+    })[0];
+    if (!post) return { ok: false, error: "Материал не найден." };
+    var now = new Date().toISOString();
+    data.posts = data.posts.map(function (p) {
+      if (p.id !== id) return p;
+      return Object.assign({}, p, {
+        status: decision === "approve" ? "published" : "rejected",
+        date: decision === "approve" ? now : p.date,
+        reviewedAt: now,
+        reviewedBy: user.id,
+        reviewNote: String(note || "").trim(),
+      });
+    });
+    write(data);
+    return { ok: true };
+  }
+
+  function pendingPosts() {
+    return listPosts({ status: "pending" }).map(function (p) {
+      var data = read();
+      var author = data.users.filter(function (u) {
+        return u.id === p.authorId;
+      })[0];
+      return Object.assign({}, p, {
+        authorName: author ? author.name : "Автор",
+        authorAccess: author ? author.access || "Автор" : "Автор",
+      });
+    });
+  }
+
   /* ------------------------------------------------------------- пресс-карта */
 
   function getSettings() {
@@ -417,18 +664,43 @@ window.Store = (function () {
   /* Пресс-карта выдаётся после нужного числа публикаций:
      до этого показываем прогресс, а не номер. */
   function pressCard() {
+    var data = read();
     var user = currentUser();
     if (!user) return null;
+
     var settings = getSettings();
     var card = settings.card;
-    var published = listPosts({ authorId: user.id, status: "published" });
-    var need = Math.max(1, Number(card.minPosts) || 1);
-    var issued = published.length >= need;
+    var team = user.teamId ? getTeam(user.teamId) : null;
+    var scope = team ? "team" : "individual";
 
+    var pool;
+    var need;
+    if (team) {
+      var ids = data.users
+        .filter(function (u) {
+          return u.teamId === team.id;
+        })
+        .map(function (u) {
+          return u.id;
+        });
+      pool = data.posts.filter(function (p) {
+        return p.status === "published" && ids.indexOf(p.authorId) !== -1;
+      });
+      need = Math.max(1, Number(card.teamMinPosts) || 20);
+    } else {
+      pool = data.posts.filter(function (p) {
+        return p.status === "published" && p.authorId === user.id;
+      });
+      need = Math.max(1, Number(card.minPosts) || 5);
+    }
+
+    var have = pool.length;
+    var issued = have >= need;
     var issuedAt = null;
     var validUntil = null;
+
     if (issued) {
-      var byDate = published.slice().sort(function (a, b) {
+      var byDate = pool.slice().sort(function (a, b) {
         return new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt);
       });
       var hit = byDate[need - 1] || byDate[byDate.length - 1];
@@ -438,9 +710,14 @@ window.Store = (function () {
 
     return {
       issued: issued,
-      posts: published.length,
+      scope: scope,
+      posts: have,
       need: need,
-      left: Math.max(0, need - published.length),
+      left: Math.max(0, need - have),
+      teamName: team ? team.name : "",
+      editorial: team
+        ? "Редакция «" + team.name + "»"
+        : "Индивидуальная редакция «" + (settings.org.name || "Смена контента") + "»",
       number: issued
         ? card.prefix + "-" + card.year + "-" + String(user.number).padStart(3, "0")
         : null,
@@ -462,11 +739,19 @@ window.Store = (function () {
       var posts = data.posts.filter(function (p) {
         return p.authorId === u.id && p.status === "published";
       }).length;
+      var team = u.teamId
+        ? data.teams.filter(function (t) {
+            return t.id === u.teamId;
+          })[0]
+        : null;
       return {
         id: u.id,
         name: u.name,
         email: u.email,
         role: u.role,
+        access: u.access || "Автор",
+        team: team ? team.name : "",
+        teamId: u.teamId || null,
         region: regionLabel(u.region),
         posts: posts,
         createdAt: u.createdAt,
@@ -484,7 +769,7 @@ window.Store = (function () {
       var data = JSON.parse(json);
       if (!data || !Array.isArray(data.users) || !Array.isArray(data.posts))
         return { ok: false, error: "Файл не похож на резервную копию." };
-      if (!write({ users: data.users, posts: data.posts, session: data.session || null, settings: data.settings || null }))
+      if (!write({ users: data.users, posts: data.posts, teams: data.teams || [], session: data.session || null, settings: data.settings || null }))
         return { ok: false, error: "Не удалось записать данные." };
       return { ok: true };
     } catch (e) {
@@ -508,6 +793,17 @@ window.Store = (function () {
     savePost: savePost,
     deletePost: deletePost,
     publishPost: publishPost,
+    submitPost: submitPost,
+    reviewPost: reviewPost,
+    pendingPosts: pendingPosts,
+    ACCESS: ACCESS,
+    can: can,
+    listTeams: listTeams,
+    getTeam: getTeam,
+    myTeam: myTeam,
+    createTeam: createTeam,
+    joinTeam: joinTeam,
+    leaveTeam: leaveTeam,
     publishedAsArticles: publishedAsArticles,
     pressCard: pressCard,
     getSettings: getSettings,
