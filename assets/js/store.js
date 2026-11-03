@@ -1022,6 +1022,10 @@ window.Store = (function () {
     });
   }
 
+  function apiSetPass(oldPass, newPass) {
+    return api("setpass", { old: String(oldPass || ""), new: String(newPass || "") });
+  }
+
   function apiRemove(password, id) {
     return api("remove", { password: String(password || ""), id: id }).then(function (res) {
       if (res && res.ok) pullRemote();
@@ -1064,6 +1068,7 @@ window.Store = (function () {
     apiQueue: apiQueue,
     apiReview: apiReview,
     apiRemove: apiRemove,
+    apiSetPass: apiSetPass,
     pressCard: pressCard,
     getSettings: getSettings,
     saveSettings: saveSettings,

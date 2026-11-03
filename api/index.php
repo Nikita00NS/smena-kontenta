@@ -411,6 +411,19 @@ if ($act === 'review') {
     respond(array('ok' => true, 'post' => public_post($posts[$id])));
 }
 
+if ($act === 'setpass') {
+    $in = body();
+    $old = isset($in['old']) ? (string) $in['old'] : '';
+    $new = isset($in['new']) ? (string) $in['new'] : '';
+    if (!is_editor($DATA_DIR, $old)) fail('Текущий пароль неверный.', 403);
+    if (slen($new) < 10) fail('Новый пароль короче десяти символов.');
+    $cfg = read_json($DATA_DIR . '/config.json', array());
+    $cfg['editor'] = password_hash($new, PASSWORD_DEFAULT);
+    $cfg['changedAt'] = date('c');
+    if (!write_json($DATA_DIR . '/config.json', $cfg)) fail('Не удалось сохранить пароль.', 500);
+    respond(array('ok' => true));
+}
+
 if ($act === 'remove') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';

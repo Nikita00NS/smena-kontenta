@@ -1323,7 +1323,16 @@
         esc(savedPass()) + '"></div>' +
         '<button class="btn btn--sm" type="button" data-server-load>Показать очередь</button></div>' +
         '<p class="form__note" data-server-status></p></div>' +
-        '<div data-server-list></div>';
+        '<div data-server-list></div>' +
+        '<details class="panel" style="margin-top:16px"><summary>Сменить пароль редакции</summary>' +
+        '<div class="row" style="margin-top:12px;align-items:flex-end">' +
+        '<div class="field" style="margin:0"><label for="server-pass-old">Текущий пароль</label>' +
+        '<input id="server-pass-old" type="password" autocomplete="current-password"></div>' +
+        '<div class="field" style="margin:0"><label for="server-pass-new">Новый пароль</label>' +
+        '<input id="server-pass-new" type="password" autocomplete="new-password" placeholder="Не короче 10 символов"></div>' +
+        '<button class="btn btn--sm" type="button" data-server-setpass>Сменить</button></div>' +
+        '<p class="form__note">Пароль по умолчанию знает только владелец проекта. Смените его ' +
+        "до того, как о панели узнают посторонние.</p></details>";
       host.appendChild(wrap);
 
       var passEl = $("#server-pass", wrap);
@@ -1383,6 +1392,28 @@
       }
 
       $("[data-server-load]", wrap).addEventListener("click", load);
+
+      var setBtn = $("[data-server-setpass]", wrap);
+      if (setBtn)
+        setBtn.addEventListener("click", function () {
+          var oldPass = $("#server-pass-old", wrap).value.trim();
+          var newPass = $("#server-pass-new", wrap).value.trim();
+          if (newPass.length < 10) {
+            setStatus("Новый пароль должен быть не короче десяти символов.");
+            return;
+          }
+          setBtn.disabled = true;
+          Store.apiSetPass(oldPass, newPass).then(function (res) {
+            setBtn.disabled = false;
+            if (!res || !res.ok) {
+              setStatus((res && res.error) || "Не удалось сменить пароль.");
+              return;
+            }
+            if (passEl) passEl.value = newPass;
+            rememberPass(newPass);
+            setStatus("Пароль редакции изменён.");
+          });
+        });
 
       listEl.addEventListener("click", function (e) {
         var approve = e.target.closest("[data-server-approve]");
