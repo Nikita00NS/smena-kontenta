@@ -1,0 +1,13 @@
+# Приёмная материалов: служебная папка сайта
+Options -Indexes
+AddDefaultCharset UTF-8
+
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+</IfModule>
+
+# Данные лежат в api/data и закрыты отдельным .htaccess
+<FilesMatch "\.(json|tmp|log)$">
+  Require all denied
+  Deny from all
+</FilesMatch>

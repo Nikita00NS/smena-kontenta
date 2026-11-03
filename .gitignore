@@ -1,0 +1,9 @@
+# данные приёмной: живут только на хостинге, в репозиторий не попадают
+api/data/*.json
+api/data/*.tmp
+api/data/probe.json
+
+# служебное
+.DS_Store
+*.log
+node_modules/
