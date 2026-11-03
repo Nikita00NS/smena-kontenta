@@ -441,7 +441,9 @@
         .map(function (h, i) {
           var sub = h.kind === "region"
             ? (h.region.district || "Регион") + " · " + h.count + " " + plural(h.count, ["материал", "материала", "материалов"])
-            : h.article.topic + " · " + (regionName(h.article.region) || "Регион");
+            : h.kind === "page"
+              ? h.note
+              : h.article.topic + " · " + (regionName(h.article.region) || "Регион");
           return (
             '<a class="search-hit' + (i === activeIndex ? " is-active" : "") +
             '" href="' + h.url + '"><div><div class="search-hit__t">' + esc(h.title) +
@@ -450,6 +452,21 @@
         })
         .join("");
     }
+
+    // постоянные страницы сайта: без них поиск по «медиашкола» или «документы»
+    // отвечал «ничего не нашлось», хотя страницы есть
+    var PAGES = [
+      { title: "Все материалы", url: "news.html", note: "Лента редакции", keys: "материалы лента новости публикации статьи" },
+      { title: "Карта регионов", url: "index.html#map", note: "Главная страница", keys: "карта регионы регион география" },
+      { title: "Медиашкола", url: "media-school.html", note: "Программа обучения", keys: "медиашкола школа обучение практика программа курсы" },
+      { title: "Документы и пресс-кит", url: "docs.html", note: "Файлы проекта", keys: "документы пресс-кит pdf политика соглашение памятка редакция" },
+      { title: "О проекте", url: "about.html", note: "Миссия и принципы", keys: "о проекте миссия принципы план развитие идея" },
+      { title: "Основатели", url: "founders.html", note: "Кто делает проект", keys: "основатели основатель команда авторы проекта кто делает" },
+      { title: "Партнёрам", url: "partners.html", note: "Сотрудничество", keys: "партнёры партнерам сотрудничество вузы колледжи центры сми" },
+      { title: "Регистрация автора", url: "join.html", note: "Создать аккаунт", keys: "регистрация аккаунт войти вход автор участвовать" },
+      { title: "Написать материал", url: "write.html", note: "Редактор", keys: "написать материал редактор черновик публикация" },
+      { title: "Пресс-карта автора", url: "profile.html", note: "Личный кабинет", keys: "пресс-карта карта кабинет профиль портфолио" },
+    ];
 
     function search(q) {
       q = q.trim().toLowerCase();
@@ -468,6 +485,16 @@
           (regionName(a.region) || "")).toLowerCase();
         if (hay.indexOf(q) !== -1) {
           found.push({ kind: "article", article: a, title: a.title, url: articleUrl(a.id) });
+        }
+      });
+      PAGES.forEach(function (pg) {
+        if ((pg.title + " " + pg.note + " " + pg.keys).toLowerCase().indexOf(q) !== -1) {
+          found.push({ kind: "page", page: pg, title: pg.title, note: pg.note, url: pg.url });
+        }
+      });
+      (SC.docs || []).forEach(function (doc) {
+        if ((doc.title + " " + (doc.desc || "")).toLowerCase().indexOf(q) !== -1) {
+          found.push({ kind: "page", page: doc, title: doc.title, note: "Документ PDF", url: doc.file });
         }
       });
       (MAP.regions || []).forEach(function (r) {
@@ -567,6 +594,7 @@
       '<div class="card__body">' + kicker +
       '<h3 class="card__title">' + esc(a.title) + "</h3>" +
       (v === "feature" ? '<p class="card__excerpt">' + esc(a.excerpt) + "</p>" : "") +
+      '<div class="card__by">' + esc(authorOf(a).name || "Редакция") + "</div>" +
       '<div class="card__foot"><div class="meta"><span>' +
       esc(regionName(a.region) || "Россия") + '</span><span class="meta__dot"></span><span>' +
       fmtDate(a.date) + '</span></div><span class="mono" style="color:var(--muted)">' +
@@ -584,6 +612,7 @@
       '<a class="card card--row" href="' + articleUrl(a.id) + '">' + img +
       '<div class="card__body"><span class="kicker">' + esc(a.topic) + "</span>" +
       '<h3 class="card__title">' + esc(a.title) + "</h3>" +
+      '<div class="card__by">' + esc(authorOf(a).name || "Редакция") + "</div>" +
       '<div class="meta"><span>' + esc(regionName(a.region) || "Россия") +
       '</span><span class="meta__dot"></span><span>' + fmtDate(a.date) + "</span></div>" +
       "</div></a>"
