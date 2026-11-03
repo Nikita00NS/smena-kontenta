@@ -781,9 +781,9 @@
       "и предложим опубликовать первую." +
       "</p>" +
       '<div class="map-counter">' +
-      "<div><b data-count=\"" + totalRegions + "\">0</b><span>регионов на карте</span></div>" +
-      "<div><b data-count=\"" + regionsWithContent + "\">0</b><span>уже с материалами</span></div>" +
-      "<div><b data-count=\"" + totalArticles + "\">0</b><span>публикаций</span></div>" +
+      "<div><b data-count=\"" + totalRegions + "\">" + totalRegions + "</b><span>регионов на карте</span></div>" +
+      "<div><b data-count=\"" + regionsWithContent + "\">" + regionsWithContent + "</b><span>уже с материалами</span></div>" +
+      "<div><b data-count=\"" + totalArticles + "\">" + totalArticles + "</b><span>публикаций</span></div>" +
       "</div></div></div>" +
       '<div class="map-layout">' +
       '<div data-map-host></div>' +
@@ -956,16 +956,26 @@
     if (el.dataset.counted) return;
     el.dataset.counted = "1";
     var target = parseInt(el.getAttribute("data-count"), 10) || 0;
+    if (!target) {
+      el.textContent = "0";
+      return;
+    }
     var start = performance.now();
     var dur = 900;
+    el.textContent = "0";
+    function finish() {
+      el.textContent = String(target);
+    }
     function step(now) {
       var p = Math.min(1, Math.max(0, (now - start) / dur));
       var eased = 1 - Math.pow(1 - p, 3);
       el.textContent = String(Math.round(target * eased));
       if (p < 1) requestAnimationFrame(step);
-      else el.textContent = String(target);
+      else finish();
     }
     requestAnimationFrame(step);
+    // страховка: если браузер «заморозил» кадры, число всё равно появится
+    setTimeout(finish, dur + 300);
   }
 
   function initReadingProgress() {
@@ -1358,7 +1368,7 @@
       '<div class="presscard__side">' +
       '<div class="presscard__stats">' +
       stats.map(function (st) {
-        return '<div><b data-count="' + st.n + '">0</b><span>' + st.l + "</span></div>";
+        return '<div><b data-count="' + st.n + '">' + st.n + "</b><span>" + st.l + "</span></div>";
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
