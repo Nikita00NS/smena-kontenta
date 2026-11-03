@@ -239,7 +239,7 @@ window.Store = (function () {
           emit();
           return { ok: true, user: res.user, remote: true };
         }
-        if (res && res.offline) {
+        if (res && (res.offline || res.serverBroken)) {
           var local = register(payload);
           if (local.ok) local.offline = true;
           return local;
@@ -263,7 +263,7 @@ window.Store = (function () {
           emit();
           return { ok: true, user: res.user, remote: true };
         }
-        if (res && res.offline) return login(email, pass);
+        if (res && (res.offline || res.serverBroken)) return login(email, pass);
         /* аккаунт был создан раньше только в браузере: переносим на сервер,
            чтобы человек не потерял доступ к своим материалам */
         var legacy = login(email, pass);
@@ -1123,7 +1123,11 @@ window.Store = (function () {
       })
       .then(function (res) {
         return res.json().catch(function () {
-          return { ok: false, error: "Сервер ответил не JSON — возможно, PHP на хостинге выключен." };
+          return {
+            ok: false,
+            serverBroken: true,
+            error: "Сервер ответил не JSON — возможно, PHP на хостинге выключен.",
+          };
         });
       })
       .catch(function () {
