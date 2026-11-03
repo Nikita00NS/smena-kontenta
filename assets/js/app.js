@@ -378,7 +378,7 @@
       '<div class="footer-top">' +
       '<div class="footer-brand">' +
       '<img class="logo__img" src="assets/img/logo.png" alt="Смена контента" width="199" height="36" loading="lazy">' +
-      "<p>" + esc(SC.brand.tagline) + ". Медиа, медиашкола и сообщество авторов из регионов России.</p>" +
+      "<p>" + esc(SC.brand.tagline) + ". Рассказываем истории из регионов и учим их делать.</p>" +
       '<p class="footer-status"><span class="dot"></span>Проект готовится к запуску: собираем команду и первые материалы.</p>' +
       "</div>" +
       '<div class="footer-col"><h3>Редакция</h3><ul>' +
@@ -959,10 +959,11 @@
     var start = performance.now();
     var dur = 900;
     function step(now) {
-      var p = Math.min(1, (now - start) / dur);
+      var p = Math.min(1, Math.max(0, (now - start) / dur));
       var eased = 1 - Math.pow(1 - p, 3);
-      el.textContent = Math.round(target * eased);
+      el.textContent = String(Math.round(target * eased));
       if (p < 1) requestAnimationFrame(step);
+      else el.textContent = String(target);
     }
     requestAnimationFrame(step);
   }
@@ -1622,11 +1623,18 @@
         ? list.map(function (a, i) {
             return card(a, "default", ' data-reveal data-delay="' + (i % 3) + '"');
           }).join("")
-        : '<div class="empty"><h3>Ничего не нашлось</h3>' +
-          "<p>Попробуйте убрать фильтры или поискать по другому слову. " +
-          "А если вы знаете историю, которой ещё нет на сайте, — опубликуйте её сами.</p>" +
-          '<div class="empty__actions"><a class="btn btn--sm" href="news.html">Сбросить фильтры</a>' +
-          '<a class="btn btn--sm btn--ghost" href="write.html">Написать материал</a></div></div>';
+        : (state.topic || state.format || state.region || state.district || state.q
+            ? '<div class="empty"><h3>Ничего не нашлось</h3>' +
+              "<p>Попробуйте убрать фильтры или поискать по другому слову. " +
+              "А если вы знаете историю, которой ещё нет на сайте, — опубликуйте её сами.</p>" +
+              '<div class="empty__actions"><a class="btn btn--sm" href="news.html">Сбросить фильтры</a>' +
+              '<a class="btn btn--sm btn--ghost" href="write.html">Написать материал</a></div></div>'
+            : '<div class="empty"><h3>Публикаций пока нет</h3>' +
+              "<p>Лента только открылась. Первый материал может быть ваш — из вашего города, " +
+              "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
+              "пресс-карту автора.</p>" +
+              '<div class="empty__actions"><a class="btn btn--sm" href="join.html">Стать автором</a>' +
+              '<a class="btn btn--sm btn--ghost" href="assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       if (countHost) {
         countHost.textContent = "Найдено: " + list.length + " " +
