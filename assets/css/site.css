@@ -5331,3 +5331,17 @@ html[data-theme="light"] .founder__photo--mono {
   text-transform: uppercase;
   color: var(--accent);
 }
+
+/* --- подпись автора в карточке -------------------------------------------- */
+.card__by {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 8px 0 2px;
+}
+
+.card:hover .card__by {
+  color: var(--ink-soft);
+}
