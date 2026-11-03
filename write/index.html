@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Новый материал — Смена контента</title>
-  <script>try{if(localStorage.getItem("smena_theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}</script>
+  <script>try{if(localStorage.getItem("smena_theme")==="light")document.documentElement.setAttribute("data-theme","light");var a=localStorage.getItem("smena_accent");document.documentElement.setAttribute("data-accent",["orange","teal","blue","violet","green","pink"].indexOf(a)>=0?a:"orange");}catch(e){}</script>
   <meta name="description" content="Редактор материалов «Смены контента»: напишите текст, добавьте обложку и опубликуйте его в ленте сайта.">
   <link rel="canonical" href="https://smenakontenta.ru/write">
   <meta name="robots" content="noindex, follow">

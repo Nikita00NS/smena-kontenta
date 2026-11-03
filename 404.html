@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Страница не найдена — Смена контента</title>
-  <script>try{if(localStorage.getItem("smena_theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}</script>
+  <script>try{if(localStorage.getItem("smena_theme")==="light")document.documentElement.setAttribute("data-theme","light");var a=localStorage.getItem("smena_accent");document.documentElement.setAttribute("data-accent",["orange","teal","blue","violet","green","pink"].indexOf(a)>=0?a:"orange");}catch(e){}</script>
   <meta name="robots" content="noindex, follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Смена контента">

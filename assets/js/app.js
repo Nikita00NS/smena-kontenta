@@ -263,6 +263,198 @@
     });
   }
 
+  /* Акцентный цвет: палитра при первом заходе и в настройках профиля.
+     Выбор запоминается в браузере, по умолчанию оранжевый. */
+  var ACCENTS = [
+    { id: "orange", label: "Оранжевый", css: "#ff3d14" },
+    { id: "teal", label: "Бирюзовый", css: "#10b5a3" },
+    { id: "blue", label: "Синий", css: "#3f7bff" },
+    { id: "violet", label: "Фиолетовый", css: "#8b5cf6" },
+    { id: "green", label: "Зелёный", css: "#1fa85c" },
+    { id: "pink", label: "Розовый", css: "#ff3d8b" },
+  ];
+  var ACCENT_KEY = "smena_accent";
+  var ONBOARD_KEY = "smena_onboard_v1";
+
+  function accentList() {
+    return ACCENTS;
+  }
+
+  function readAccent() {
+    try {
+      var v = localStorage.getItem(ACCENT_KEY);
+      return ACCENTS.some(function (a) { return a.id === v; }) ? v : "orange";
+    } catch (e) {
+      return "orange";
+    }
+  }
+
+  function paintAccent(id) {
+    var ok = ACCENTS.some(function (a) { return a.id === id; });
+    document.documentElement.setAttribute("data-accent", ok ? id : "orange");
+  }
+
+  function syncSwatches(id) {
+    $$("[data-accent-pick]").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-accent-pick") === id));
+    });
+  }
+
+  function setAccent(id) {
+    try {
+      localStorage.setItem(ACCENT_KEY, id);
+    } catch (e) {}
+    paintAccent(id);
+    syncSwatches(id);
+  }
+
+  function swatchesHtml() {
+    return '<div class="onboard__swatches">' +
+      ACCENTS.map(function (a) {
+        return '<button class="onboard__swatch" type="button" data-accent-pick="' + a.id +
+          '" aria-pressed="false" style="--sw:' + a.css + '" title="' + esc(a.label) + '">' +
+          '<span>' + esc(a.label) + "</span></button>";
+      }).join("") + "</div>";
+  }
+
+  function initAccent() {
+    paintAccent(readAccent());
+    syncSwatches(readAccent());
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest ? e.target.closest("[data-accent-pick]") : null;
+      if (!b) return;
+      e.preventDefault();
+      setAccent(b.getAttribute("data-accent-pick"));
+    });
+  }
+
+  /* Первый заход: логотип, приветствие, выбор цвета, короткий гид.
+     Пройденный онбординг больше не показывается. */
+  function onboardSeen() {
+    try {
+      return !!localStorage.getItem(ONBOARD_KEY);
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function initOnboard() {
+    if (onboardSeen()) return;
+
+    var el = document.createElement("div");
+    el.className = "onboard";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-label", "Знакомство со «Сменой контента»");
+    el.innerHTML =
+      '<div class="onboard__grid">' +
+        '<div class="onboard__logo">' +
+          '<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">' +
+            '<path d="M6 12 L30 34 L6 56" fill="none" stroke="' + "currentColor" + '" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path>' +
+            '<path d="M30 12 L54 34 L30 56" fill="none" stroke="var(--accent)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path>' +
+          "</svg>" +
+          '<div class="onboard__logo-mark">Смена<span>контента</span></div>' +
+          '<div class="onboard__dots" aria-hidden="true"><i class="is-on"></i><i></i><i></i></div>' +
+        "</div>" +
+
+        '<section class="onboard__step is-on" data-ob-step="0">' +
+          "<h2>Привет. Это «Смена контента»</h2>" +
+          "<p>Молодёжное медиа, медиашкола и сообщество авторов из регионов России. " +
+          "Сначала выберите цвет интерфейса — его можно поменять в любой момент.</p>" +
+          swatchesHtml() +
+          '<div class="onboard__actions">' +
+            '<button class="btn btn--accent" type="button" data-onboard-next>Дальше</button>' +
+            '<button class="onboard__skip" type="button" data-onboard-skip>Пропустить, оставить оранжевый</button>' +
+          "</div>" +
+        "</section>" +
+
+        '<section class="onboard__step" data-ob-step="1">' +
+          "<h2>Коротко: что здесь есть</h2>" +
+          '<ul class="onboard__tour">' +
+            "<li><div><b>Материалы</b><span>Тексты, репортажи, фотоистории, видео и подкасты авторов. Ленту можно фильтровать по темам.</span></div></li>" +
+            "<li><div><b>Карта регионов</b><span>84 региона, у каждого — свои авторы и редакции. Где материалов пока нет, мы честно об этом пишем.</span></div></li>" +
+            "<li><div><b>Медиашкола</b><span>Практика и разборы: как писать, снимать и монтировать так, чтобы это читали.</span></div></li>" +
+            "<li><div><b>Личный кабинет</b><span>Здесь материалы проходят проверку редакции, копятся баллы и открывается пресс-карта.</span></div></li>" +
+          "</ul>" +
+          '<div class="onboard__actions">' +
+            '<button class="btn btn--accent" type="button" data-onboard-next>Понятно</button>' +
+            '<button class="onboard__skip" type="button" data-onboard-prev>Назад</button>' +
+          "</div>" +
+        "</section>" +
+
+        '<section class="onboard__step" data-ob-step="2">' +
+          "<h2>Добро пожаловать</h2>" +
+          "<p>Публикует материалы редакция: всё, что вы пришлёте, сначала проходит проверку. " +
+          "Зарегистрироваться можно без заявок, а пресс-карта выдаётся по заявке — после пяти " +
+          "опубликованных материалов или трёх материалов от редакции.</p>" +
+          '<div class="onboard__actions">' +
+            '<a class="btn btn--accent" href="/join" data-onboard-done>Войти на сайт</a>' +
+            '<button class="btn btn--ghost" type="button" data-onboard-done>Просто посмотреть</button>' +
+          "</div>" +
+        "</section>" +
+      "</div>";
+
+    document.body.appendChild(el);
+    document.body.classList.add("is-locked");
+
+    var steps = $$(".onboard__step", el);
+    var dots = $$(".onboard__dots i", el);
+    var current = 0;
+
+    function show(i) {
+      current = Math.max(0, Math.min(steps.length - 1, i));
+      steps.forEach(function (st, n) {
+        st.classList.toggle("is-on", n === current);
+      });
+      dots.forEach(function (d, n) {
+        d.classList.toggle("is-on", n === current);
+      });
+      var focusBtn = el.querySelector(".onboard__step.is-on .btn");
+      if (focusBtn) focusBtn.focus({ preventScroll: true });
+    }
+
+    function finish() {
+      try {
+        localStorage.setItem(ONBOARD_KEY, "1");
+      } catch (e) {}
+      el.classList.add("is-out");
+      document.body.classList.remove("is-locked");
+      setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 460);
+    }
+
+    el.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t.closest) return;
+      if (t.closest("[data-onboard-skip]")) {
+        e.preventDefault();
+        finish();
+        return;
+      }
+      if (t.closest("[data-onboard-done]")) {
+        finish();
+        return;
+      }
+      if (t.closest("[data-onboard-next]")) {
+        e.preventDefault();
+        show(current + 1);
+        return;
+      }
+      if (t.closest("[data-onboard-prev]")) {
+        e.preventDefault();
+        show(current - 1);
+      }
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (!document.body.contains(el)) return;
+      if (e.key === "Escape") finish();
+    });
+
+    show(0);
+  }
+
   var LOGO =
     '<img class="logo__img" src="/assets/img/logo.png" alt="Смена контента" ' +
     'width="199" height="36" decoding="async">';
@@ -1781,9 +1973,6 @@
           "первыми будут материалы авторов проекта</div></div></div>";
     }
 
-    var pcHost = $("[data-presscard]");
-    if (pcHost) pcHost.innerHTML = pressCardBlock();
-
     mountMapSection();
 
     // лента с фильтрами по темам
@@ -1840,10 +2029,18 @@
 
     var regionalHost = $("[data-regional]");
     if (regionalHost) {
-      regionalHost.innerHTML = all
-        .slice(5, 11)
-        .map(function (a) { return cardRow(a); })
-        .join("");
+      var regional = all.slice(1, 7);
+      regionalHost.innerHTML =
+        (regional.length
+          ? regional.map(function (a) { return cardRow(a); }).join("")
+          : "") +
+        (regional.length < 3
+          ? '<div class="fill-note"><b>Историй из регионов пока немного</b>' +
+            "<p>Материалов ровно столько, сколько написали авторы — мы не придумываем новости. " +
+            "Ваш город может стать следующим на карте.</p>" +
+            '<div class="row"><a class="btn btn--accent btn--sm" href="/join">Стать автором</a>' +
+            '<a class="btn btn--ghost btn--sm" href="/#map">Открыть карту</a></div></div>'
+          : "");
     }
 
     // лица проекта
@@ -1859,8 +2056,18 @@
                 '<div class="author-card__role">' + esc(a.role) + "</div></div></div>";
             })
             .join("")
-        : '<div class="no-data">Лица проекта появятся здесь, когда авторы зарегистрируются ' +
-          "и опубликуют первые материалы.</div>";
+        : ["Автор текстов", "Фотограф", "Видеограф"]
+            .map(function (role) {
+              return '<div class="author-card author-card--slot">' +
+                '<span class="author-card__ava" aria-hidden="true">+</span>' +
+                '<div><div class="author-card__name">Место свободно</div>' +
+                '<div class="author-card__role">' + esc(role) + "</div></div></div>";
+            })
+            .join("") +
+          '<div class="fill-note fill-note--flat"><b>Здесь будут настоящие имена</b>' +
+          "<p>Мы не показываем выдуманных авторов: карточки появятся, когда участники " +
+          "зарегистрируются и опубликуют первые материалы.</p>" +
+          '<a class="btn btn--accent btn--sm" href="/join">Занять место</a></div>';
     }
 
     // возможности
@@ -1868,9 +2075,18 @@
     if (oppHost) {
       var opp = all.filter(function (a) { return a.topic === "Возможности"; }).slice(0, 3);
       var fallback = all.slice(0, 3);
-      oppHost.innerHTML = (opp.length ? opp : fallback).length
-        ? (opp.length ? opp : fallback).map(function (a) { return card(a); }).join("")
-        : '<div class="no-data">Возможности появятся вместе с первыми материалами.</div>';
+      var oppList = opp.length ? opp : fallback;
+      oppHost.innerHTML = oppList.length
+        ? oppList.map(function (a) { return card(a); }).join("")
+        : '<a class="fill-card" href="/media-school"><span class="kicker">Медиашкола</span>' +
+          '<b>Учиться делать материалы</b><p>Практика, разборы и наставники: от первой заметки ' +
+          'до собственного проекта.</p><span class="fill-card__go">Перейти →</span></a>' +
+          '<a class="fill-card" href="/docs"><span class="kicker">Пресс-карта</span>' +
+          '<b>Стать автором с картой</b><p>Пять опубликованных материалов — и у вас пресс-карта ' +
+          'автора проекта.</p><span class="fill-card__go">Как это работает →</span></a>' +
+          '<a class="fill-card" href="/#map"><span class="kicker">Редакции</span>' +
+          '<b>Своя редакция в регионе</b><p>Заявление на имя основателя, набор штата и работа ' +
+          'с авторами своего региона.</p><span class="fill-card__go">Открыть карту →</span></a>';
     }
   }
 
@@ -2437,6 +2653,79 @@
       var mine = drafts.concat(pending, rejected, published);
       document.title = user.name + " — личный кабинет";
 
+      /* баллы: считаем по форматам опубликованных материалов */
+      var formatValue = {};
+      (SC.points || []).forEach(function (pt) {
+        formatValue[pt.format] = Number(pt.value) || 0;
+      });
+      var byFormat = {};
+      var postPoints = 0;
+      published.forEach(function (post) {
+        var v = formatValue[post.format];
+        if (v == null) v = 10;
+        postPoints += v;
+        byFormat[post.format] = (byFormat[post.format] || 0) + 1;
+      });
+      var bonus = published.length ? 10 : 0;
+      if (card && card.issued) bonus += 15;
+      var totalPoints = postPoints + bonus;
+
+      /* особый ПИН: выдаётся авторам с пресс-картой и участникам редакции */
+      var pin = "";
+      if (card && (card.issued || Store.myTeam())) {
+        try {
+          var pinKey = "smena_pin_" + (Store.authorKey ? Store.authorKey() : user.id);
+          pin = localStorage.getItem(pinKey) || "";
+          if (!pin) {
+            pin = String(Math.floor(100000 + Math.random() * 900000));
+            localStorage.setItem(pinKey, pin);
+          }
+        } catch (e) {
+          pin = "";
+        }
+      }
+
+      var pointsRows = (SC.points || [])
+        .map(function (pt) {
+          return "<tr><td>" + esc(pt.format) + "</td><td>" + esc(pt.note || "") +
+            "</td><td>" + (byFormat[pt.format] ? byFormat[pt.format] + " × " : "") +
+            "+" + esc(String(pt.value)) + "</td></tr>";
+        })
+        .join("");
+      var bonusRows = (SC.pointsBonus || [])
+        .map(function (b) {
+          return "<tr><td>" + esc(b.name) + "</td><td>" + esc(b.note || "") +
+            "</td><td>+" + esc(String(b.value)) + "</td></tr>";
+        })
+        .join("");
+
+      var pointsBlock =
+        '<div class="profile-posts points" style="margin-top:44px">' +
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Разбалловка</span>' +
+        "<h2>Баллы за материалы</h2></div></div>" +
+        '<div class="kpi" style="margin-bottom:18px">' +
+        '<div class="kpi__item"><b class="points__total">' + totalPoints + "</b><span>баллов всего</span></div>" +
+        '<div class="kpi__item"><b>' + postPoints + "</b><span>за материалы</span></div>" +
+        '<div class="kpi__item"><b>' + bonus + "</b><span>бонусы</span></div>" +
+        '<div class="kpi__item"><b>' + published.length + "</b><span>опубликовано</span></div>" +
+        "</div>" +
+        '<p class="muted" style="max-width:640px">Баллы начисляются только за опубликованные материалы, ' +
+        "которые прошли проверку редакции. Черновик и материал на проверке баллов не дают.</p>" +
+        '<table class="points__table"><thead><tr><th>Формат</th><th>Что это</th><th>Баллы</th></tr></thead>' +
+        "<tbody>" + pointsRows + "</tbody></table>" +
+        (bonusRows
+          ? '<table class="points__table" style="margin-top:18px"><thead><tr><th>Бонус</th>' +
+            "<th>Когда</th><th>Баллы</th></tr></thead><tbody>" + bonusRows + "</tbody></table>"
+          : "") +
+        (pin
+          ? '<div class="pin-card" style="margin-top:22px;max-width:560px"><div>' +
+            '<span class="kicker">Особый ПИН</span>' +
+            '<b class="pin-card__code">' + esc(pin) + "</b>" +
+            "<p>Выдаётся авторам с пресс-картой и участникам редакционной команды. " +
+            "По нему вас опознают на мероприятиях проекта. Никому не передавайте.</p></div></div>"
+          : "") +
+        "</div>";
+
       var STATUS = {
         draft: { label: "черновик", cls: "status--draft" },
         pending: { label: "на проверке", cls: "status--pending" },
@@ -2551,6 +2840,8 @@
         "«опубликовано» или «нужны правки» с замечанием. Черновики видите только вы.</p></div>" +
         "</div></div>" +
 
+        pointsBlock +
+
         // материалы
         '<div class="profile-posts" style="margin-top:44px">' +
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Мои материалы</span>' +
@@ -2583,6 +2874,9 @@
         '<div class="field form__full"><label for="p-bio">О себе</label>' +
         '<textarea id="p-bio" name="bio" placeholder="Пара предложений: о чём хотите рассказывать">' +
         esc(user.bio || "") + "</textarea></div>" +
+        '<div class="form__full"><label>Акцентный цвет</label>' + swatchesHtml() +
+        '<p class="form__note" style="margin:8px 0 0">Цвет интерфейса. ' +
+        "По умолчанию оранжевый, выбор запоминается в этом браузере.</p></div>" +
         '<div class="form__full row"><button class="btn" type="submit">Сохранить</button>' +
         '<span class="form__note" data-profile-status>' + esc(savedNote) + "</span></div>" +
         "</form>" +
@@ -2594,6 +2888,7 @@
 
       initAnimations();
       mountCardApplication();
+      syncSwatches(readAccent());
 
       var form = $("[data-profile-form]", host);
       if (form) {
@@ -3156,14 +3451,19 @@
     host.innerHTML = list
       .map(function (p) {
         var inner =
-          (p.logo ? '<img class="partner__logo" src="' + esc(p.logo) + '" alt="' + esc(p.name) + '" loading="lazy">' : "") +
-          '<div class="partner__body"><h3>' + esc(p.name) + "</h3>" +
+          (p.logo
+            ? '<img class="partner__logo" src="' + esc(p.logo) + '" alt="' + esc(p.name) + '" loading="lazy">'
+            : p.mark
+              ? '<div class="partner__mark" aria-hidden="true">' + esc(p.mark) + "</div>"
+              : "") +
+          '<div class="partner__body">' + (p.mark ? "" : "<h3>" + esc(p.name) + "</h3>") +
           (p.about ? "<p>" + esc(p.about) + "</p>" : "") +
           (p.url ? '<span class="partner__link">' + esc(p.url.replace(/^https?:\/\//, "")) + "</span>" : "") +
           "</div>";
         return p.url
-          ? '<a class="partner" href="' + esc(p.url) + '" target="_blank" rel="noopener">' + inner + "</a>"
-          : '<div class="partner">' + inner + "</div>";
+          ? '<a class="partner" href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
+              esc(p.name) + '">' + inner + "</a>"
+          : '<div class="partner" title="' + esc(p.name) + '">' + inner + "</div>";
       })
       .join("");
   }
@@ -3250,6 +3550,8 @@
 
   function boot() {
     initTheme();
+    initAccent();
+    initOnboard();
     initFounders();
     initPartners();
     mountHeader();
