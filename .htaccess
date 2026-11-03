@@ -7,6 +7,10 @@ DirectoryIndex index.html index.php index.htm
 # Запрет показывать список файлов в папках
 Options -Indexes
 
+# Адреса разделов без косой черты на конце: /about, а не /about/
+# Служебные папки (assets, api) открываются как обычно — файлы в них, не папки.
+DirectorySlash Off
+
 # Кодировка по умолчанию
 AddDefaultCharset UTF-8
 
@@ -36,9 +40,6 @@ AddDefaultCharset UTF-8
   RewriteRule ^article/?$ /article/index.html [L]
   RewriteRule ^founders/?$ /founders/index.html [L]
 
-  # /about/ и /about — один адрес, оставляем без косой черты
-  RewriteCond %{REQUEST_URI} ^/(news|about|partners|region|media-school|docs|join|profile|write|admin|article|founders)/$
-  RewriteRule ^(.+)/$ /$1 [R=301,L]
 </IfModule>
 
 # Красивая страница для несуществующих адресов
