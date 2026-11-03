@@ -2938,7 +2938,7 @@ p:last-child {
 
 @media (max-width: 720px) {
   body {
-    font-size: 16px;
+    font-size: 17px;
   }
   :root {
     --header-h: 62px;
