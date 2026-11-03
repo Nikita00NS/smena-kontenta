@@ -401,8 +401,8 @@ p:last-child {
 .topbar {
   border-bottom: 1px solid var(--line);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
+  font-size: 11.5px;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -3046,10 +3046,15 @@ p:last-child {
   color: var(--ink);
   border: 1px solid var(--line-strong);
   border-radius: 999px;
-  padding: 2px 9px;
-  font-size: 9.5px;
+  padding: 2px 10px;
+  font-size: 10.5px;
   letter-spacing: 0.12em;
   white-space: nowrap;
+}
+
+.badge-live:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .badge-live::before {

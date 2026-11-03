@@ -305,7 +305,7 @@
     host.innerHTML =
       '<div class="topbar"><div class="wrap topbar__in">' +
       '<div class="topbar__left">' +
-      '<span class="badge-live">Медиа в разработке</span>' +
+      '<a class="badge-live" href="join.html">Набор авторов открыт</a>' +
       "<span>" + dateLine + "</span>" +
       "</div>" +
       '<div class="topbar__right">' +
@@ -379,7 +379,7 @@
       '<div class="footer-brand">' +
       '<img class="logo__img" src="assets/img/logo.png" alt="Смена контента" width="199" height="36" loading="lazy">' +
       "<p>" + esc(SC.brand.tagline) + ". Рассказываем истории из регионов и учим их делать.</p>" +
-      '<p class="footer-status"><span class="dot"></span>Проект готовится к запуску: собираем команду и первые материалы.</p>' +
+      '<p class="footer-status"><span class="dot"></span>Набор авторов открыт: собираем первые материалы из регионов.</p>' +
       "</div>" +
       '<div class="footer-col"><h3>Редакция</h3><ul>' +
       '<li><a href="news.html">Все материалы</a></li>' +
@@ -403,7 +403,7 @@
           '<li><a href="docs.html">Памятка автору</a></li>') +
       (contactEmail()
         ? '<li><a href="mailto:' + esc(contactEmail()) + '">' + esc(contactEmail()) + "</a></li>"
-        : '<li><span class="footer-pending">Почта появится к запуску</span></li>') +
+        : '<li><span class="footer-pending">Рабочая почта проекта пока не заведена</span></li>') +
       "</ul></div></div>" +
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
@@ -1656,6 +1656,9 @@
               '<div class="empty__actions"><a class="btn btn--sm" href="join.html">Стать автором</a>' +
               '<a class="btn btn--sm btn--ghost" href="assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
+      var note = $("[data-news-note]");
+      if (note) note.hidden = allArticles().length === 0;
+
       if (countHost) {
         countHost.textContent = "Найдено: " + list.length + " " +
           plural(list.length, ["материал", "материала", "материалов"]);
@@ -1911,7 +1914,7 @@
       "</div>" +
       '<div class="row" style="margin-top:20px">' +
       '<a class="btn btn--paper btn--sm" href="write.html">Опубликовать материал</a>' +
-      '<a class="btn btn--outline-paper btn--sm" href="index.html#map">Другая карта</a></div>' +
+      '<a class="btn btn--outline-paper btn--sm" href="index.html#map">Выбрать другой регион</a></div>' +
       "</div>" +
       '<div class="region-map-mini">' + miniMap + "</div>" +
       "</div></div>" +
@@ -2777,7 +2780,7 @@
         el.textContent = mail;
         el.setAttribute("href", "mailto:" + mail);
       } else {
-        el.textContent = "появится к запуску";
+        el.textContent = "почта пока не заведена";
         el.removeAttribute("href");
         el.classList.add("is-pending");
       }
