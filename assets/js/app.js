@@ -130,8 +130,9 @@
     if (Store) {
       try {
         extra = Store.publishedAsArticles();
+        if (Store.remoteArticles) extra = extra.concat(Store.remoteArticles());
       } catch (e) {
-        extra = [];
+        extra = extra || [];
       }
     }
     return base
@@ -1188,8 +1189,9 @@
         '<div class="page-hero__aside"><p class="lead">Здесь заполняются данные организации и ' +
         "правила выдачи пресс-карт. Всё, что вы сохраните, сразу появляется на сайте: в пресс-карте, " +
         "подвале и документах.</p>" +
-        '<p class="admin-note">Данные хранятся в этом браузере: на другом устройстве ' +
-        "их не будет. Для общей работы с авторами понадобится сервер.</p></div></div></section>" +
+        '<p class="admin-note">Материалы авторов приходят на сервер проекта — их видно ' +
+        "с любого устройства в блоке «Материалы авторов» ниже. Настройки вроде названия " +
+        "и правил пресс-карты пока хранятся в этом браузере.</p></div></div></section>" +
 
         '<section class="section wrap"><div class="admin-grid">' +
         '<form class="admin-card" data-admin-org><h2>Организация</h2>' +
@@ -1261,6 +1263,152 @@
         "</section>";
 
       bind();
+      mountServerQueue(host);
+    }
+
+    /* --- очередь материалов, присланных авторами с их устройств ------------- */
+    var SERVER_PASS = "smena_editor_pass";
+    var serverState = { pending: [], total: 0, published: 0, status: "", busy: false, loaded: false };
+
+    function savedPass() {
+      try {
+        return window.localStorage.getItem(SERVER_PASS) || "";
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function rememberPass(value) {
+      try {
+        window.localStorage.setItem(SERVER_PASS, value);
+      } catch (e) {
+        /* пусто */
+      }
+    }
+
+    function serverRow(p) {
+      return (
+        '<div class="admin-review" data-server-row="' + esc(p.id) + '">' +
+        '<div class="admin-review__top"><b>' + esc(p.title) + "</b>" +
+        '<span class="status status--pending">ждёт решения</span></div>' +
+        '<div class="admin-review__meta">' + esc(p.authorName) +
+        (p.authorRole ? " · " + esc(p.authorRole) : "") +
+        " · " + esc(regionName(p.region) || "регион не выбран") +
+        " · " + esc(fmtDate(p.submittedAt || p.date)) + "</div>" +
+        '<p class="admin-review__excerpt">' + esc(p.excerpt || "") + "</p>" +
+        '<details class="admin-review__full"><summary>Показать текст</summary>' +
+        "<div>" + esc(String(p.body || "").slice(0, 6000)) + "</div></details>" +
+        '<div class="admin-review__actions">' +
+        '<input class="admin-review__note" type="text" placeholder="Замечание автору (если правки)" data-server-note="' + esc(p.id) + '">' +
+        '<button class="btn btn--sm" type="button" data-server-approve="' + esc(p.id) + '">Опубликовать</button>' +
+        '<button class="btn btn--sm btn--ghost" type="button" data-server-reject="' + esc(p.id) + '">Вернуть на правки</button>' +
+        "</div></div>"
+      );
+    }
+
+    function mountServerQueue(host) {
+      var wrap = document.createElement("section");
+      wrap.className = "section wrap";
+      wrap.setAttribute("style", "padding-top:0");
+      wrap.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left">' +
+        '<span class="kicker">С сайта</span><h2>Материалы авторов</h2>' +
+        '<p class="sec-head__text">Сюда попадают материалы, отправленные с любых устройств — ' +
+        "через общую приёмную на хостинге. Пароль редакции задаётся в файле api/index.php " +
+        "и нужен, чтобы одобрять чужие тексты.</p></div></div>" +
+        '<div class="panel"><div class="row" style="align-items:flex-end">' +
+        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
+        '<label for="server-pass">Пароль редакции</label>' +
+        '<input id="server-pass" type="password" autocomplete="current-password" placeholder="Пароль доступа к очереди" value="' +
+        esc(savedPass()) + '"></div>' +
+        '<button class="btn btn--sm" type="button" data-server-load>Показать очередь</button></div>' +
+        '<p class="form__note" data-server-status></p></div>' +
+        '<div data-server-list></div>';
+      host.appendChild(wrap);
+
+      var passEl = $("#server-pass", wrap);
+      var statusEl = $("[data-server-status]", wrap);
+      var listEl = $("[data-server-list]", wrap);
+
+      function setStatus(text) {
+        if (statusEl) statusEl.textContent = text;
+      }
+
+      function paint() {
+        if (serverState.busy) {
+          setStatus("Загружаем…");
+          return;
+        }
+        if (serverState.status) setStatus(serverState.status);
+        if (!serverState.loaded) return;
+        listEl.innerHTML = serverState.pending.length
+          ? serverState.pending.map(serverRow).join("")
+          : '<div class="empty"><h3>Очередь пуста</h3><p>Все присланные материалы уже разобраны. ' +
+            "Опубликовано всего: " + serverState.published + " из " + serverState.total + ".</p></div>";
+      }
+
+      function load() {
+        var pass = passEl ? passEl.value.trim() : "";
+        if (!pass) {
+          setStatus("Введите пароль редакции — он задаётся в файле api/index.php.");
+          return;
+        }
+        rememberPass(pass);
+        serverState.busy = true;
+        serverState.status = "";
+        paint();
+        Store.apiQueue(pass)
+          .then(function (res) {
+            serverState.busy = false;
+            if (!res || !res.ok) {
+              serverState.loaded = false;
+              serverState.status = (res && res.error) || "Сервер не ответил. Проверьте, что PHP работает.";
+              paint();
+              return;
+            }
+            serverState.loaded = true;
+            serverState.pending = res.pending || [];
+            serverState.total = res.total || 0;
+            serverState.published = res.published || 0;
+            serverState.status = "В очереди: " + serverState.pending.length + ". Опубликовано: " +
+              serverState.published + " из " + serverState.total + ".";
+            paint();
+          })
+          .catch(function () {
+            serverState.busy = false;
+            serverState.loaded = false;
+            serverState.status = "Нет связи с сервером.";
+            paint();
+          });
+      }
+
+      $("[data-server-load]", wrap).addEventListener("click", load);
+
+      listEl.addEventListener("click", function (e) {
+        var approve = e.target.closest("[data-server-approve]");
+        var reject = e.target.closest("[data-server-reject]");
+        var button = approve || reject;
+        if (!button) return;
+        var id = button.getAttribute(approve ? "data-server-approve" : "data-server-reject");
+        var noteEl = $('[data-server-note="' + id + '"]', listEl);
+        var note = noteEl ? noteEl.value.trim() : "";
+        button.disabled = true;
+        setStatus("Отправляем решение…");
+        Store.apiReview(passEl.value.trim(), id, approve ? "approve" : "reject", note).then(function (res) {
+          button.disabled = false;
+          if (!res || !res.ok) {
+            setStatus((res && res.error) || "Не удалось сохранить решение.");
+            return;
+          }
+          serverState.status = approve
+            ? "Материал опубликован — он уже в ленте и на странице региона."
+            : "Материал возвращён автору с замечанием.";
+          load();
+        });
+      });
+
+      // если пароль уже сохранён, очередь подтягивается сама
+      if (savedPass()) load();
     }
 
     function bind() {
@@ -2303,9 +2451,9 @@
         '<div class="form__full row"><button class="btn" type="submit">Сохранить</button>' +
         '<span class="form__note" data-profile-status>' + esc(savedNote) + "</span></div>" +
         "</form>" +
-        '<div class="storage-note">Аккаунт и материалы хранятся в этом браузере. ' +
-        "Чтобы авторы видели работы друг друга с разных устройств, понадобится бесплатный " +
-        "сервер (например, Supabase) — это следующий шаг проекта.</div>" +
+        '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
+        "Отправленный материал уходит в общую приёмную редакции: он доходит до неё с любого " +
+        "устройства, а после одобрения его видят все посетители сайта.</div>" +
         "</div>" +
         "</section>";
 
@@ -2390,6 +2538,17 @@
     }
 
     render();
+
+    // статусы материалов, которые ушли в общую приёмную на хостинге
+    if (Store.syncMine) {
+      Store.syncMine()
+        .then(function (ok) {
+          if (ok) render();
+        })
+        .catch(function () {
+          /* сервер недоступен — показываем локальные данные */
+        });
+    }
   }
 
   /* 13. Редактор материала ================================================= */
@@ -2857,9 +3016,31 @@
     initHeroParallax();
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
+  /* страницы ждут короткой проверки сервера: так материалы, одобренные
+     редакцией, появляются в ленте сразу при загрузке страницы */
+  var started = false;
+  function start() {
+    if (started) return;
+    started = true;
     boot();
+  }
+
+  function afterServer() {
+    try {
+      if (Store && Store.ready && typeof Store.ready.then === "function") {
+        Store.ready.then(start, start);
+        setTimeout(start, 3000);
+        return;
+      }
+    } catch (e) {
+      /* пусто */
+    }
+    start();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", afterServer);
+  } else {
+    afterServer();
   }
 })();

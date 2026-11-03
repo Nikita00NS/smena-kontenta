@@ -7,11 +7,11 @@
    данные видны только на этом устройстве.
 
    Что это значит для проекта:
-   • прямо сейчас можно зарегистрироваться, получить пресс-карту, написать
-     материал и опубликовать его — он появится в ленте и на странице региона;
-   • когда понадобится, чтобы авторы видели материалы друг друга с разных
-     устройств, этот файл заменяется на обращение к бесплатному серверу
-     (например, Supabase / Firebase). Всё остальное меню и вёрстка останутся.
+   • аккаунт, черновики и пресс-карта живут в этом браузере;
+   • отправленный материал уходит в общую приёмную на хостинге (api/index.php),
+     поэтому редактор видит его с любого устройства, а после одобрения материал
+     появляется у всех посетителей — см. блок «общая приёмная» ниже;
+   • если PHP на хостинге недоступен, сайт продолжает работать локально.
 
    Пароль не передаётся никуда и не хранится в открытом виде, но это НЕ
    полноценная защита: для публичного запуска нужен серверный вход.
@@ -596,6 +596,10 @@ window.Store = (function () {
       });
     });
     write(data);
+    var fresh = data.posts.filter(function (p) {
+      return p.id === id;
+    })[0];
+    pushPost(fresh, user, direct);
     return {
       ok: true,
       direct: direct,
@@ -777,6 +781,254 @@ window.Store = (function () {
     }
   }
 
+  /* ================= общая приёмная на сервере (PHP на хостинге) ==========
+     Сайт статический: без этого блока материалы автора остаются только в его
+     браузере. С блоком материал уходит на хостинг, редактор видит его с любого
+     устройства, а после одобрения он появляется у всех посетителей.
+     Если PHP недоступен (открыли файл локально), всё работает как раньше.
+     ====================================================================== */
+
+  var API_URL = "api/index.php";
+  var REMOTE_KEY = "smena_remote_v1";
+  var AUTHOR_KEY = "smena_author_key";
+
+  function makeKey() {
+    var bytes = [];
+    if (window.crypto && window.crypto.getRandomValues) {
+      var arr = new Uint8Array(16);
+      window.crypto.getRandomValues(arr);
+      for (var i = 0; i < arr.length; i++) bytes.push(("0" + arr[i].toString(16)).slice(-2));
+      return bytes.join("");
+    }
+    return (
+      Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+    );
+  }
+
+  /* ключ автора: по нему человек видит статус своих материалов */
+  function authorKey() {
+    var key = "";
+    try {
+      key = window.localStorage.getItem(AUTHOR_KEY) || "";
+    } catch (e) {
+      key = "";
+    }
+    if (key.length < 12) {
+      key = makeKey();
+      try {
+        window.localStorage.setItem(AUTHOR_KEY, key);
+      } catch (e) {
+        /* пусто */
+      }
+    }
+    return key;
+  }
+
+  function remoteRead() {
+    try {
+      var raw = window.localStorage.getItem(REMOTE_KEY);
+      var data = raw ? JSON.parse(raw) : null;
+      return { posts: (data && data.posts) || [], ts: (data && data.ts) || 0 };
+    } catch (e) {
+      return { posts: [], ts: 0 };
+    }
+  }
+
+  function remoteWrite(posts) {
+    try {
+      window.localStorage.setItem(REMOTE_KEY, JSON.stringify({ posts: posts, ts: Date.now() }));
+    } catch (e) {
+      /* пусто */
+    }
+  }
+
+  function api(action, payload) {
+    if (!window.fetch) return Promise.reject(new Error("браузер не умеет fetch"));
+    var data = Object.assign({ action: action }, payload || {});
+    return window
+      .fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "same-origin",
+      })
+      .then(function (res) {
+        return res.json().catch(function () {
+          return { ok: false, error: "Сервер ответил не JSON — возможно, PHP на хостинге выключен." };
+        });
+      });
+  }
+
+  function pullRemote() {
+    return api("state")
+      .then(function (data) {
+        if (data && data.ok) {
+          remoteWrite(data.posts || []);
+          emit();
+          return true;
+        }
+        return false;
+      })
+      .catch(function () {
+        return false;
+      });
+  }
+
+  /* готовность сервера: страницы ждут её не дольше 2,5 секунды */
+  var ready = (function () {
+    var request = pullRemote();
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (!settled) {
+          settled = true;
+          resolve(false);
+        }
+      }, 2500);
+      request.then(function (value) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        }
+      });
+    });
+  })();
+
+  /* материалы с сервера в том виде, в каком их ждут страницы сайта */
+  function remoteArticles() {
+    return remoteRead()
+      .posts.filter(function (p) {
+        return p.status === "published";
+      })
+      .map(function (p) {
+        return {
+          id: "s:" + p.id,
+          remoteId: p.id,
+          title: p.title,
+          excerpt: p.excerpt,
+          body: String(p.body || "")
+            .split(/\n{2,}/)
+            .map(function (part) {
+              return part.trim();
+            })
+            .filter(Boolean),
+          region: p.region,
+          topic: p.topic,
+          format: p.format,
+          author: {
+            name: p.authorName || "Автор",
+            role: p.authorRole || "",
+            initials: initials(p.authorName || "А"),
+            isUser: true,
+          },
+          date: p.date,
+          read: p.read || 4,
+          image: p.image || "",
+          imageAlt: p.title,
+          isUserPost: true,
+          fromServer: true,
+        };
+      });
+  }
+
+  /* отправка материала в приёмную редакции */
+  function pushPost(post, user, direct) {
+    if (!post || !user) return Promise.resolve(false);
+    var payload = {
+      authorKey: authorKey(),
+      authorName: user.name,
+      authorRole: user.role || "",
+      authorRegion: user.region || "",
+      title: post.title,
+      excerpt: post.excerpt,
+      body: (post.body || []).join("\n\n"),
+      topic: post.topic,
+      format: post.format,
+      region: post.region,
+      image: post.image || "",
+      read: post.read || 4,
+      direct: !!direct,
+    };
+    return api("submit", payload)
+      .then(function (res) {
+        var data = read();
+        data.posts = data.posts.map(function (p) {
+          if (p.id !== post.id) return p;
+          return Object.assign({}, p, {
+            remoteId: res && res.ok ? res.post.id : "",
+            remoteError: res && res.ok ? "" : (res && res.error) || "не удалось отправить редакции",
+          });
+        });
+        write(data);
+        if (res && res.ok) pullRemote();
+        return !!(res && res.ok);
+      })
+      .catch(function () {
+        var data = read();
+        data.posts = data.posts.map(function (p) {
+          if (p.id !== post.id) return p;
+          return Object.assign({}, p, {
+            remoteError: "нет связи с сервером — материал сохранён в браузере",
+          });
+        });
+        write(data);
+        return false;
+      });
+  }
+
+  /* статусы своих материалов с сервера: одобрили, отклонили, ждут */
+  function syncMine() {
+    return api("mine", { authorKey: authorKey() })
+      .then(function (res) {
+        if (!res || !res.ok) return false;
+        var mine = res.posts || [];
+        var data = read();
+        data.posts = data.posts.map(function (p) {
+          var found = null;
+          for (var i = 0; i < mine.length; i++) {
+            if (p.remoteId && mine[i].id === p.remoteId) found = mine[i];
+          }
+          if (!found) return p;
+          return Object.assign({}, p, {
+            status: found.status,
+            reviewNote: found.reviewNote || "",
+            reviewedAt: found.reviewedAt || null,
+            date: found.status === "published" ? found.date : p.date,
+          });
+        });
+        write(data);
+        return true;
+      })
+      .catch(function () {
+        return false;
+      });
+  }
+
+  /* очередь редакции и решения — тоже на сервере */
+  function apiQueue(password) {
+    return api("queue", { password: String(password || "") });
+  }
+
+  function apiReview(password, id, decision, note) {
+    return api("review", {
+      password: String(password || ""),
+      id: id,
+      decision: decision,
+      note: note || "",
+    }).then(function (res) {
+      if (res && res.ok) pullRemote();
+      return res;
+    });
+  }
+
+  function apiRemove(password, id) {
+    return api("remove", { password: String(password || ""), id: id }).then(function (res) {
+      if (res && res.ok) pullRemote();
+      return res;
+    });
+  }
+
   function onChange(fn) {
     listeners.push(fn);
   }
@@ -805,6 +1057,13 @@ window.Store = (function () {
     joinTeam: joinTeam,
     leaveTeam: leaveTeam,
     publishedAsArticles: publishedAsArticles,
+    ready: ready,
+    remoteArticles: remoteArticles,
+    authorKey: authorKey,
+    syncMine: syncMine,
+    apiQueue: apiQueue,
+    apiReview: apiReview,
+    apiRemove: apiRemove,
     pressCard: pressCard,
     getSettings: getSettings,
     saveSettings: saveSettings,
