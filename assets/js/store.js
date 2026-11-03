@@ -264,11 +264,35 @@ window.Store = (function () {
           return { ok: true, user: res.user, remote: true };
         }
         if (res && res.offline) return login(email, pass);
+        /* аккаунт был создан раньше только в браузере: переносим на сервер,
+           чтобы человек не потерял доступ к своим материалам */
+        var legacy = login(email, pass);
+        if (legacy.ok) return migrateAccount(legacy.user, pass);
         return { ok: false, error: (res && res.error) || "Не удалось войти." };
       })
       .catch(function () {
         return login(email, pass);
       });
+  }
+
+  /* перенос старого локального аккаунта на сервер при первом входе */
+  function migrateAccount(localUser, pass) {
+    return api("reg", {
+      name: localUser.name,
+      email: localUser.email,
+      pass: pass,
+      region: localUser.region || "",
+      role: localUser.role || ROLES[0],
+    }).then(function (res) {
+      if (res && res.ok && res.token) {
+        saveToken(res.token);
+        cacheUser(res.user);
+        mirrorUser(res.user);
+        emit();
+        return { ok: true, user: res.user, migrated: true };
+      }
+      return { ok: false, error: (res && res.error) || "Не удалось перенести аккаунт." };
+    });
   }
 
   /* копия серверного профиля в локальном списке: чтобы лента, карта
