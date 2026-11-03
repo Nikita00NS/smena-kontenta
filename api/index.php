@@ -81,7 +81,7 @@ function body() {
     if ($cache !== null) return $cache;
     $raw = file_get_contents('php://input');
     if ($raw === false || $raw === '') return array();
-    if (strlen($raw) > 1200000) fail('Слишком большой запрос.', 413);
+    if (strlen($raw) > 9000000) fail('Запрос больше 9 МБ — уменьшите файл.', 413);
     $data = json_decode($raw, true);
     $cache = is_array($data) ? $data : array();
     return $cache;
@@ -171,6 +171,10 @@ function public_post($post) {
         'format' => $post['format'],
         'region' => $post['region'],
         'image' => isset($post['image']) ? $post['image'] : '',
+        'imageAlt' => isset($post['imageAlt']) ? $post['imageAlt'] : '',
+        'gallery' => isset($post['gallery']) && is_array($post['gallery']) ? $post['gallery'] : array(),
+        'video' => isset($post['video']) ? $post['video'] : '',
+        'audio' => isset($post['audio']) ? $post['audio'] : '',
         'read' => isset($post['read']) ? $post['read'] : 4,
         'date' => isset($post['date']) ? $post['date'] : $post['submittedAt'],
         'authorName' => $post['authorName'],
@@ -281,6 +285,184 @@ function selftest_full($dir) {
     respond(array('ok' => $ok, 'steps' => $steps, 'материалов_было' => $before, 'материалов_стало' => $after));
 }
 
+/* ============================================================================
+   АККАУНТЫ, РОЛИ И МЕДИА
+   Аккаунты живут на сервере, поэтому вход работает с любого устройства:
+   телефон, компьютер, другой браузер. Пароль хранится только в виде хеша.
+   ========================================================================== */
+
+const ROLES = array(
+    'Директор',
+    'Администрация',
+    'Редакционный администратор региона',
+    'Редакционный основатель',
+    'Пользователь',
+);
+
+const CRAFT = array('Автор текстов', 'Фотограф', 'Видеограф', 'Дизайнер', 'Редактор', 'Наставник');
+
+const TOKEN_DAYS = 60;
+const MAX_AVATAR_CHARS = 400000;
+const MAX_MEDIA_CHARS = 8000000;
+
+function users_file($dir) { return $dir . '/users.json'; }
+function tokens_file($dir) { return $dir . '/tokens.json'; }
+
+function read_users($dir) {
+    $users = read_json(users_file($dir), array());
+    return is_array($users) ? $users : array();
+}
+
+function public_user($u) {
+    return array(
+        'id' => $u['id'],
+        'name' => $u['name'],
+        'email' => isset($u['email']) ? $u['email'] : '',
+        'region' => isset($u['region']) ? $u['region'] : '',
+        'role' => isset($u['role']) ? $u['role'] : 'Автор текстов',
+        'access' => isset($u['access']) ? $u['access'] : 'Пользователь',
+        'bio' => isset($u['bio']) ? $u['bio'] : '',
+        'avatar' => isset($u['avatar']) ? $u['avatar'] : '',
+        'createdAt' => isset($u['createdAt']) ? $u['createdAt'] : '',
+        'number' => isset($u['number']) ? $u['number'] : 0,
+    );
+}
+
+function new_token($dir, $userId) {
+    $tokens = read_json(tokens_file($dir), array());
+    if (!is_array($tokens)) $tokens = array();
+    $now = time();
+    foreach ($tokens as $token => $info) {
+        if (!is_array($info) || (int) $info['exp'] < $now) unset($tokens[$token]);
+    }
+    $token = bin2hex(random_bytes(24));
+    $tokens[$token] = array('id' => $userId, 'exp' => $now + TOKEN_DAYS * 86400);
+    write_json(tokens_file($dir), $tokens);
+    return $token;
+}
+
+function user_by_token($dir, $token) {
+    if (!$token) return null;
+    $tokens = read_json(tokens_file($dir), array());
+    if (!is_array($tokens) || !isset($tokens[$token])) return null;
+    $info = $tokens[$token];
+    if ((int) $info['exp'] < time()) return null;
+    $users = read_users($dir);
+    foreach ($users as $user) {
+        if ($user['id'] === $info['id']) return $user;
+    }
+    return null;
+}
+
+function norm_email($value) {
+    $email = strtolower(trim((string) $value));
+    if (!preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u', $email)) return '';
+    return $email;
+}
+
+function data_url_file($value, $allowed, $maxChars, &$error) {
+    $error = '';
+    if (!is_string($value) || $value === '') { $error = 'Файл не передан.'; return null; }
+    if (strlen($value) > $maxChars) { $error = 'Файл слишком большой.'; return null; }
+    if (!preg_match('#^data:([a-z0-9.+/-]+);base64,(.+)$#is', $value, $m)) {
+        $error = 'Не удалось прочитать файл.';
+        return null;
+    }
+    $mime = strtolower($m[1]);
+    if (!isset($allowed[$mime])) { $error = 'Такой формат не поддерживается.'; return null; }
+    $bin = base64_decode($m[2], true);
+    if ($bin === false || $bin === '') { $error = 'Файл повреждён.'; return null; }
+    return array('ext' => $allowed[$mime], 'mime' => $mime, 'bin' => $bin);
+}
+
+function media_dir($dir) {
+    $path = $dir . '/uploads';
+    if (!is_dir($path)) @mkdir($path, 0755, true);
+    return $path;
+}
+
+function media_public_url($name) {
+    return '/api/index.php?action=media&id=' . rawurlencode($name);
+}
+
+/* защита от перебора: не больше 20 попыток входа в час с одного адреса */
+function check_login_rate($dir) {
+    $file = $dir . '/login-rate.json';
+    $ip = client_ip();
+    $now = time();
+    $data = read_json($file, array());
+    if (!is_array($data)) $data = array();
+    $list = isset($data[$ip]) ? $data[$ip] : array();
+    $list = array_values(array_filter($list, function ($t) use ($now) { return $now - (int) $t < 3600; }));
+    if (count($list) >= 20) fail('Слишком много попыток входа. Подождите час или сбросьте пароль.', 429);
+    $list[] = $now;
+    $data[$ip] = $list;
+    write_json($file, $data);
+}
+
+/* ------------------------------------------------- самопроверка аккаунтов */
+function selftest_auth($dir) {
+    $steps = array();
+    $users = read_users($dir);
+    $before = count($users);
+
+    $email = 'selftest+' . bin2hex(random_bytes(3)) . '@example.ru';
+    $pass = 'test-' . bin2hex(random_bytes(4));
+    $user = array(
+        'id' => 'u_test_' . bin2hex(random_bytes(4)),
+        'name' => 'Самопроверка',
+        'email' => $email,
+        'pass' => password_hash($pass, PASSWORD_DEFAULT),
+        'region' => 'moskva',
+        'role' => 'Автор текстов',
+        'access' => 'Пользователь',
+        'bio' => '',
+        'avatar' => '',
+        'createdAt' => date('c'),
+        'number' => 0,
+    );
+    $users[] = $user;
+    $steps['запись_users.json'] = write_json(users_file($dir), $users);
+    $steps['чтение_обратно'] = count(read_users($dir)) === $before + 1;
+    $steps['пароль_сверяется'] = password_verify($pass, password_hash($pass, PASSWORD_DEFAULT));
+    $steps['чужой_пароль_не_пускает'] = !password_verify($pass . 'x', password_hash($pass, PASSWORD_DEFAULT));
+
+    $token = new_token($dir, $user['id']);
+    $found = user_by_token($dir, $token);
+    $steps['токен_открывает_профиль'] = $found && $found['id'] === $user['id'];
+    $steps['битый_токен_не_пускает'] = user_by_token($dir, 'нет-такого-токена') === null;
+
+    $public = public_user($user);
+    $steps['пароль_не_утекает'] = !isset($public['pass']);
+    $steps['аватар_в_ответе'] = array_key_exists('avatar', $public);
+    $steps['статус_в_ответе'] = isset($public['access']) && $public['access'] === 'Пользователь';
+
+    $steps['папка_медиа_создана'] = is_dir(media_dir($dir));
+    $steps['размер_аватара_ограничен'] = MAX_AVATAR_CHARS > 0 && MAX_MEDIA_CHARS > MAX_AVATAR_CHARS;
+
+    // убираем тестового пользователя и его токены
+    $users = array_values(array_filter(read_users($dir), function ($u) use ($user) {
+        return $u['id'] !== $user['id'];
+    }));
+    $steps['удаление_тестового'] = write_json(users_file($dir), $users) && count(read_users($dir)) === $before;
+
+    $tokens = read_json(tokens_file($dir), array());
+    if (is_array($tokens)) {
+        unset($tokens[$token]);
+        write_json(tokens_file($dir), $tokens);
+    }
+
+    $ok = true;
+    foreach ($steps as $value) { if (!$value) $ok = false; }
+    respond(array(
+        'ok' => $ok,
+        'аккаунтов_было' => $before,
+        'аккаунтов_стало' => count(read_users($dir)),
+        'роли' => ROLES,
+        'шаги' => $steps,
+    ));
+}
+
 /* ---------------------------------------------------------------------- запуск */
 if (!ensure_dir($DATA_DIR)) {
     respond(array(
@@ -297,6 +479,10 @@ if ($act === 'selftest') {
 
 if ($act === 'selftest_full') {
     selftest_full($DATA_DIR);
+}
+
+if ($act === 'selftest_auth') {
+    selftest_auth($DATA_DIR);
 }
 
 if ($act === 'state') {
@@ -355,7 +541,13 @@ if ($act === 'submit') {
         'topic' => text(isset($in['topic']) ? $in['topic'] : '', 60),
         'format' => text(isset($in['format']) ? $in['format'] : '', 60),
         'region' => text(isset($in['region']) ? $in['region'] : '', 80),
-        'image' => text(isset($in['image']) ? $in['image'] : '', 300),
+        'image' => text(isset($in['image']) ? $in['image'] : '', 400),
+        'imageAlt' => text(isset($in['imageAlt']) ? $in['imageAlt'] : '', 200),
+        'gallery' => array_values(array_slice(array_map(function ($u) {
+            return text(is_string($u) ? $u : '', 400);
+        }, isset($in['gallery']) && is_array($in['gallery']) ? $in['gallery'] : array()), 0, 12)),
+        'video' => text(isset($in['video']) ? $in['video'] : '', 400),
+        'audio' => text(isset($in['audio']) ? $in['audio'] : '', 400),
         'read' => isset($in['read']) ? max(1, min(60, (int) $in['read'])) : 4,
         'number' => $maxNumber + 1,
         'status' => $direct ? 'published' : 'pending',
@@ -586,4 +778,172 @@ if ($act === 'remove') {
     respond(array('ok' => true));
 }
 
-fail('Неизвестное действие. Доступны: state, submit, mine, queue, review, remove, selftest.', 404);
+/* ------------------------------------------------------------------ аккаунты */
+
+if ($act === 'reg') {
+    $in = body();
+    check_rate($DATA_DIR);
+    $name = text(isset($in['name']) ? $in['name'] : '', 80);
+    $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    $pass = isset($in['pass']) ? (string) $in['pass'] : '';
+    $region = text(isset($in['region']) ? $in['region'] : '', 60);
+    $craft = text(isset($in['role']) ? $in['role'] : '', 60);
+
+    if (slen($name) < 2) fail('Напишите имя — хотя бы два символа.');
+    if (!$email) fail('Проверьте адрес почты — кажется, там опечатка.');
+    if (slen($pass) < 6) fail('Пароль должен быть не короче шести символов.');
+    if ($craft === '' || !in_array($craft, CRAFT, true)) $craft = 'Автор текстов';
+
+    $users = read_users($DATA_DIR);
+    foreach ($users as $u) {
+        if (strtolower((string) $u['email']) === $email) {
+            fail('Аккаунт с такой почтой уже есть. Нажмите «Войти».', 409);
+        }
+    }
+    if (count($users) >= 50000) fail('Слишком много аккаунтов.', 507);
+
+    $id = 'u_' . bin2hex(random_bytes(6));
+    $user = array(
+        'id' => $id,
+        'name' => $name,
+        'email' => $email,
+        'pass' => password_hash($pass, PASSWORD_DEFAULT),
+        'region' => $region,
+        'role' => $craft,
+        'access' => count($users) === 0 ? 'Директор' : 'Пользователь',
+        'bio' => '',
+        'avatar' => '',
+        'createdAt' => date('c'),
+        'number' => 100 + count($users) + 1,
+    );
+    $users[] = $user;
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить аккаунт.', 500);
+    respond(array('ok' => true, 'user' => public_user($user), 'token' => new_token($DATA_DIR, $id)));
+}
+
+if ($act === 'login') {
+    $in = body();
+    check_login_rate($DATA_DIR);
+    $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    $pass = isset($in['pass']) ? (string) $in['pass'] : '';
+    if (!$email || $pass === '') fail('Введите почту и пароль.');
+
+    $users = read_users($DATA_DIR);
+    foreach ($users as $u) {
+        if (strtolower((string) $u['email']) === $email) {
+            if (!password_verify($pass, (string) $u['pass'])) {
+                fail('Пароль не подошёл. Проверьте раскладку и регистр.', 403);
+            }
+            respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
+        }
+    }
+    fail('Аккаунт с такой почтой не найден. Зарегистрируйтесь — это минута.', 404);
+}
+
+if ($act === 'me') {
+    $in = body();
+    $token = isset($in['token']) ? (string) $in['token'] : (isset($_GET['token']) ? (string) $_GET['token'] : '');
+    $user = user_by_token($DATA_DIR, $token);
+    if (!$user) fail('Сессии нет — нужно войти заново.', 401);
+    respond(array('ok' => true, 'user' => public_user($user)));
+}
+
+if ($act === 'logout') {
+    $in = body();
+    $token = isset($in['token']) ? (string) $in['token'] : '';
+    $tokens = read_json(tokens_file($DATA_DIR), array());
+    if (is_array($tokens) && isset($tokens[$token])) {
+        unset($tokens[$token]);
+        write_json(tokens_file($DATA_DIR), $tokens);
+    }
+    respond(array('ok' => true));
+}
+
+if ($act === 'profile-save') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $user['id']) continue;
+
+        $name = text(isset($in['name']) ? $in['name'] : $u['name'], 80);
+        if (slen($name) >= 2) $users[$i]['name'] = $name;
+        if (isset($in['bio'])) $users[$i]['bio'] = text($in['bio'], 600);
+        if (isset($in['region'])) $users[$i]['region'] = text($in['region'], 60);
+        if (isset($in['role'])) {
+            $craft = text($in['role'], 60);
+            if (in_array($craft, CRAFT, true)) $users[$i]['role'] = $craft;
+        }
+
+        if (!empty($in['avatar'])) {
+            $err = '';
+            $file = data_url_file($in['avatar'], array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'), MAX_AVATAR_CHARS, $err);
+            if (!$file) fail($err);
+            $dir = media_dir($DATA_DIR);
+            $fname = 'ava_' . $user['id'] . '_' . time() . '.' . $file['ext'];
+            if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) fail('Не удалось сохранить аватар.', 500);
+            @chmod($dir . '/' . $fname, 0644);
+            $users[$i]['avatar'] = media_public_url($fname);
+        }
+        if (!empty($in['avatarClear'])) $users[$i]['avatar'] = '';
+
+        if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить профиль.', 500);
+        respond(array('ok' => true, 'user' => public_user($users[$i])));
+    }
+    fail('Аккаунт не найден.', 404);
+}
+
+/* -------------------------------------------------------------------- медиа */
+
+if ($act === 'media-upload') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Загружать файлы можно только из аккаунта. Войдите.', 401);
+
+    $allowed = array(
+        'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
+        'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a', 'audio/ogg' => 'ogg', 'audio/wav' => 'wav', 'audio/x-wav' => 'wav',
+        'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov',
+    );
+    $err = '';
+    $file = data_url_file(isset($in['data']) ? $in['data'] : '', $allowed, MAX_MEDIA_CHARS, $err);
+    if (!$file) fail($err, 413);
+
+    $dir = media_dir($DATA_DIR);
+    if (!is_dir($dir)) fail('Папка для файлов недоступна.', 500);
+    $fname = 'm_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $file['ext'];
+    if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) {
+        fail('Файл слишком большой для хостинга или нет прав на запись.', 500);
+    }
+    @chmod($dir . '/' . $fname, 0644);
+    respond(array('ok' => true, 'url' => media_public_url($fname), 'mime' => $file['mime'], 'size' => strlen($file['bin'])));
+}
+
+if ($act === 'media') {
+    $id = isset($_GET['id']) ? basename((string) $_GET['id']) : '';
+    if ($id === '' || !preg_match('/^[A-Za-z0-9_.-]+$/', $id)) {
+        http_response_code(404);
+        exit;
+    }
+    $path = media_dir($DATA_DIR) . '/' . $id;
+    if (!file_exists($path)) {
+        http_response_code(404);
+        exit;
+    }
+    $ext = strtolower(pathinfo($id, PATHINFO_EXTENSION));
+    $types = array(
+        'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif',
+        'mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'ogg' => 'audio/ogg', 'wav' => 'audio/wav',
+        'mp4' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime',
+    );
+    header('Content-Type: ' . (isset($types[$ext]) ? $types[$ext] : 'application/octet-stream'));
+    header('Content-Length: ' . filesize($path));
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header('Accept-Ranges: bytes');
+    readfile($path);
+    exit;
+}
+
+fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, selftest.', 404);

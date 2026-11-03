@@ -43,6 +43,15 @@
     return Array.prototype.slice.call((root || document).querySelectorAll(sel));
   }
 
+  function fileToDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || "")); };
+      reader.onerror = function () { reject(new Error("Не удалось прочитать файл.")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
   function esc(str) {
     return String(str == null ? "" : str)
       .replace(/&/g, "&amp;")
@@ -465,7 +474,6 @@
     { href: "/news", label: "Материалы", key: "news" },
     { href: "/#map", label: "Регионы", key: "region" },
     { href: "/media-school", label: "Медиашкола", key: "school" },
-    { href: "/docs", label: "Документы", key: "docs" },
     { href: "/about", label: "О проекте", key: "about" },
     { href: "/founders", label: "Основатели", key: "founders" },
     { href: "/partners", label: "Партнёрам", key: "partners" },
@@ -489,7 +497,9 @@
 
     var accountHtml = user
       ? '<a class="user-chip" href="/profile" aria-label="Личный кабинет">' +
-        '<span class="user-chip__ava">' + esc(Store.initials(user.name)) + "</span>" +
+        (user.avatar
+          ? '<img class="user-chip__ava user-chip__ava--img" src="' + esc(user.avatar) + '" alt="">'
+          : '<span class="user-chip__ava">' + esc(Store.initials(user.name)) + "</span>") +
         '<span class="user-chip__name">' + esc(user.name.split(" ")[0]) + "</span></a>"
       : '<a class="btn btn--sm btn--ghost login-link" href="/join#login">Войти</a>' +
         '<a class="btn btn--sm" href="/join">Регистрация</a>';
@@ -826,7 +836,7 @@
       '<svg class="map-svg" viewBox="' + MAP.viewBox + '" role="group" ' +
       'aria-label="Карта регионов России. Выберите регион, чтобы увидеть его материалы." ' +
       'data-svg><g data-layer>' +
-      regions.map(function (r, i) {
+      regions.filter(function (r) { return r.d; }).map(function (r, i) {
         var n = countByRegion(r.slug);
         return (
           '<path class="map-region' + (n > 0 ? " has-content" : "") + '" d="' + r.d +
@@ -1028,6 +1038,7 @@
       'Показать список регионов<span data-toggle-mark>+</span></button>' +
       "</aside></div>" +
       '<div class="region-list" data-region-list></div>' +
+      '<div class="region-noshape" data-region-noshape></div>' +
       "</div>";
 
     var pick = $("[data-pick]", section);
@@ -1064,6 +1075,24 @@
         }).join("") + "</ul></div>"
       );
     }).join("");
+
+    /* Регионы, которых нет в геоданных 2021 года: контуров нет, страницы есть.
+       Честно говорим об этом, а не выкидываем их с карты. */
+    var noShape = MAP.regions.filter(function (r) { return !r.d; });
+    var noShapeHost = $("[data-region-noshape]", section);
+    if (noShapeHost) {
+      noShapeHost.innerHTML = noShape.length
+        ? '<h3 class="region-noshape__title">Ещё ' + noShape.length + " " +
+          plural(noShape.length, ["регион", "региона", "регионов"]) +
+          " — страницы работают, контуров на карте пока нет</h3>" +
+          '<div class="region-noshape__chips">' +
+          noShape.map(function (r) {
+            var n = countByRegion(r.slug);
+            return '<a class="chip-sm" href="' + regionUrl(r.slug) + '">' + esc(r.name) +
+              "<span>" + (n ? n : "—") + "</span></a>";
+          }).join("") + "</div>"
+        : "";
+    }
 
     $("[data-regions-toggle]", section).addEventListener("click", function () {
       var open = list.classList.toggle("is-open");
@@ -1346,7 +1375,7 @@
         (hasCard ? "карта выдана" : "нет карты") + "</span></div>" +
         '<div><select class="admin-access" data-access="' + a.id + '">' +
         Store.ACCESS.map(function (r) {
-          return '<option' + (r === (a.access || "Автор") ? " selected" : "") + ">" + esc(r) + "</option>";
+          return '<option' + (r === (a.access || "Пользователь") ? " selected" : "") + ">" + esc(r) + "</option>";
         }).join("") +
         "</select></div>" +
         "</div>"
@@ -2327,6 +2356,25 @@
       "</div>" +
       '<div class="wrap"><div class="article-layout">' +
       '<div><div class="prose">' + bodyHtml + "</div>" +
+      (a.audio
+        ? '<div class="article-audio"><span class="kicker">Аудио</span>' +
+          '<audio controls preload="metadata" src="' + esc(a.audio) + '"></audio></div>'
+        : "") +
+      (a.video
+        ? '<div class="article-video"><span class="kicker">Видео</span>' +
+          '<video controls preload="metadata" playsinline src="' + esc(a.video) + '"></video></div>'
+        : "") +
+      (a.gallery && a.gallery.length
+        ? '<div class="article-gallery"><span class="kicker">Альбом · ' + a.gallery.length + ' ' +
+          plural(a.gallery.length, ["кадр", "кадра", "кадров"]) + "</span>" +
+          '<div class="article-gallery__grid">' +
+          a.gallery
+            .map(function (url, i) {
+              return '<a class="article-gallery__item" href="' + esc(url) + '" target="_blank" rel="noopener">' +
+                '<img src="' + esc(url) + '" alt="Фотография ' + (i + 1) + ' к материалу" loading="lazy"></a>';
+            })
+            .join("") + "</div></div>"
+        : "") +
       '<div class="article-tags">' +
       '<a class="tag" href="/news?topic=' + encodeURIComponent(a.topic) + '">' + esc(a.topic) + "</a>" +
       '<a class="tag" href="/news?format=' + encodeURIComponent(a.format) + '">' + esc(a.format) + "</a>" +
@@ -2536,20 +2584,28 @@
           }
           return;
         }
-        var res = Store.register({
+        var out = $("[data-register-error]", box);
+        var submitBtn = $("button[type=submit]", regForm);
+        if (submitBtn) submitBtn.disabled = true;
+        Store.signUp({
           name: data.get("name"),
           email: data.get("email"),
           pass: data.get("pass"),
           region: data.get("region"),
           role: data.get("role"),
-        });
-        var out = $("[data-register-error]", box);
-        if (!res.ok) {
-          out.textContent = res.error;
+        }).then(function (res) {
+          if (submitBtn) submitBtn.disabled = false;
+          if (!res.ok) {
+            out.textContent = res.error;
+            out.classList.remove("is-hidden");
+            return;
+          }
+          window.location.href = next === "/profile" ? "/profile?new=1" : next;
+        }, function (err) {
+          if (submitBtn) submitBtn.disabled = false;
+          out.textContent = (err && err.message) || "Не получилось создать аккаунт. Попробуйте ещё раз.";
           out.classList.remove("is-hidden");
-          return;
-        }
-        window.location.href = next === "/profile" ? "/profile?new=1" : next;
+        });
       });
     }
 
@@ -2558,14 +2614,22 @@
       loginForm.addEventListener("submit", function (e) {
         e.preventDefault();
         var data = new FormData(loginForm);
-        var res = Store.login(data.get("email"), data.get("pass"));
         var out = $("[data-login-error]", box);
-        if (!res.ok) {
-          out.textContent = res.error;
+        var loginBtn = $("button[type=submit]", loginForm);
+        if (loginBtn) loginBtn.disabled = true;
+        Store.signIn(data.get("email"), data.get("pass")).then(function (res) {
+          if (loginBtn) loginBtn.disabled = false;
+          if (!res.ok) {
+            out.textContent = res.error;
+            out.classList.remove("is-hidden");
+            return;
+          }
+          window.location.href = next;
+        }, function (err) {
+          if (loginBtn) loginBtn.disabled = false;
+          out.textContent = (err && err.message) || "Не удалось войти. Попробуйте ещё раз.";
           out.classList.remove("is-hidden");
-          return;
-        }
-        window.location.href = next;
+        });
       });
     }
   }
@@ -2802,11 +2866,19 @@
         '<section class="profile-hero"><div class="wrap">' +
         '<div class="profile-hero__grid">' +
         '<div class="profile-id">' +
-        '<span class="profile-id__ava">' + esc(Store.initials(user.name)) + "</span>" +
+        '<button class="profile-ava" type="button" data-avatar-open ' +
+        'aria-label="Изменить фотографию профиля">' +
+        (user.avatar
+          ? '<img src="' + esc(user.avatar) + '" alt="Фото профиля">'
+          : '<span class="profile-id__ava">' + esc(Store.initials(user.name)) + "</span>") +
+        '<span class="profile-ava__hint">сменить</span></button>' +
+        '<input type="file" accept="image/*" data-avatar-input hidden>' +
         "<div><h1>" + esc(user.name) + "</h1>" +
-        '<p class="profile-id__role">' + esc(user.role) +
+        '<p class="profile-id__role"><span class="status-badge">' + esc(user.access || "Пользователь") +
+        "</span>" + esc(user.role) +
         (user.region ? " · " + esc(regionName(user.region)) : "") + "</p>" +
-        '<p class="profile-id__since">На проекте с ' + fmtDate(user.createdAt) + "</p></div>" +
+        '<p class="profile-id__since">На проекте с ' + fmtDate(user.createdAt) +
+        (card.number ? " · карта " + esc(card.number) : "") + "</p></div>" +
         "</div>" +
         '<div class="profile-hero__actions">' +
         '<a class="btn btn--accent" href="/write">Написать материал</a>' +
@@ -2895,11 +2967,38 @@
         form.addEventListener("submit", function (e) {
           e.preventDefault();
           var d = new FormData(form);
-          Store.updateUser({ name: d.get("name"), role: d.get("role"), region: d.get("region"), bio: d.get("bio") });
-          savedNote = "Сохранено";
-          render();
+          Store.saveProfile({
+            name: d.get("name"),
+            role: d.get("role"),
+            region: d.get("region"),
+            bio: d.get("bio"),
+          }).then(function (res) {
+            savedNote = res && res.ok === false ? "Не сохранилось: " + res.error : "Сохранено";
+            render();
+          });
         });
       }
+      var avatarBtn = $("[data-avatar-open]", host);
+      var avatarInput = $("[data-avatar-input]", host);
+      if (avatarBtn && avatarInput) {
+        avatarBtn.addEventListener("click", function () { avatarInput.click(); });
+        avatarInput.addEventListener("change", function () {
+          var file = avatarInput.files && avatarInput.files[0];
+          if (!file) return;
+          avatarBtn.classList.add("is-busy");
+          Store.uploadMedia(file)
+            .catch(function () { return fileToDataUrl(file); })
+            .then(function (avatar) { return Store.saveProfile({ avatar: avatar }); })
+            .then(function () {
+              avatarBtn.classList.remove("is-busy");
+              render();
+            }, function (err) {
+              avatarBtn.classList.remove("is-busy");
+              window.alert((err && err.message) || "Не удалось загрузить фотографию.");
+            });
+        });
+      }
+
       var printBtn = $("[data-print]", host);
       if (printBtn) printBtn.addEventListener("click", function () { window.print(); });
 
@@ -3121,6 +3220,12 @@
     var topics = SC.topics || [];
     var formats = (SC.formats || []).map(function (f) { return f.name; });
 
+    var media = {
+      gallery: (existing && existing.gallery) || [],
+      video: (existing && existing.video) || "",
+      audio: (existing && existing.audio) || "",
+    };
+
     host.innerHTML =
       '<section class="section wrap">' +
       '<div class="write-head">' +
@@ -3169,6 +3274,28 @@
       '<input id="w-alt" name="imageAlt" type="text" placeholder="Что на фотографии" value="' +
       esc(existing ? existing.imageAlt : "") + '"></div>' +
       "</div>" +
+      '<div class="write-media field"><label>Альбом: остальные фотографии</label>' +
+      '<div class="media-grid" data-gallery-grid></div>' +
+      '<div class="media-actions">' +
+      '<label class="btn btn--sm btn--ghost" for="w-gallery">Добавить фото</label>' +
+      '<input id="w-gallery" type="file" accept="image/*" multiple class="visually-hidden" data-gallery-file>' +
+      "</div>" +
+      '<p class="field__hint">Главное фото — обложка выше. Здесь остальные кадры, до 11 штук. ' +
+      "Файлы сжимаются и хранятся на платформе: чужие ссылки и видеохостинги не нужны.</p></div>" +
+      '<div class="write-media field"><label>Видео</label>' +
+      '<div class="media-slot" data-video-slot></div>' +
+      '<div class="media-actions">' +
+      '<label class="btn btn--sm btn--ghost" for="w-video">Загрузить видео</label>' +
+      '<input id="w-video" type="file" accept="video/mp4,video/webm,video/quicktime" class="visually-hidden" data-video-file>' +
+      "</div>" +
+      '<p class="field__hint">MP4, WebM или MOV, до 6 МБ. Видео живёт на нашей платформе.</p></div>' +
+      '<div class="write-media field"><label>Аудио</label>' +
+      '<div class="media-slot" data-audio-slot></div>' +
+      '<div class="media-actions">' +
+      '<label class="btn btn--sm btn--ghost" for="w-audio">Загрузить аудио</label>' +
+      '<input id="w-audio" type="file" accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav" class="visually-hidden" data-audio-file>' +
+      "</div>" +
+      '<p class="field__hint">MP3, M4A, OGG или WAV, до 6 МБ — для подкастов и интервью.</p></div>' +
       '<div class="write-side">' +
       '<div class="write-side__box">' +
       '<div class="field"><label for="w-topic">Тема</label><select id="w-topic" name="topic">' +
@@ -3293,17 +3420,118 @@
       fileInput.addEventListener("change", function () {
         var file = fileInput.files && fileInput.files[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) {
-          setStatus("Файл больше 5 МБ — выберите поменьше.", true);
-          return;
-        }
-        resizeImage(file, function (dataUrl) {
-          urlInput.value = dataUrl;
-          preview.innerHTML = '<img src="' + dataUrl + '" alt="">';
-          setStatus("Обложка загружена");
+        setStatus("Загружаем обложку…");
+        Store.uploadMedia(file)
+          .catch(function () {
+            return new Promise(function (resolve) { resizeImage(file, resolve); });
+          })
+          .then(function (url) {
+            urlInput.value = url;
+            preview.innerHTML = '<img src="' + url + '" alt="">';
+            setStatus("Обложка загружена");
+          }, function (err) {
+            setStatus((err && err.message) || "Не удалось загрузить обложку.", true);
+          });
+      });
+    }
+
+    /* альбом, видео и аудио: всё грузим на платформу */
+    var galleryGrid = $("[data-gallery-grid]", form);
+    var videoSlot = $("[data-video-slot]", form);
+    var audioSlot = $("[data-audio-slot]", form);
+
+    function drawGallery() {
+      if (!galleryGrid) return;
+      galleryGrid.innerHTML = media.gallery.length
+        ? media.gallery
+            .map(function (url, i) {
+              return '<figure class="media-thumb"><img src="' + esc(url) + '" alt="Фото ' + (i + 2) + '">' +
+                '<button type="button" data-gallery-remove="' + i + '" aria-label="Убрать фото">×</button></figure>';
+            })
+            .join("")
+        : '<p class="media-empty">Фотографий в альбоме пока нет.</p>';
+      $$("[data-gallery-remove]", galleryGrid).forEach(function (b) {
+        b.addEventListener("click", function () {
+          media.gallery.splice(Number(b.getAttribute("data-gallery-remove")), 1);
+          drawGallery();
         });
       });
     }
+
+    function drawSlot(kind, host) {
+      if (!host) return;
+      var url = media[kind];
+      if (!url) {
+        host.innerHTML = '<p class="media-empty">Файл не выбран.</p>';
+        return;
+      }
+      host.innerHTML =
+        (kind === "video"
+          ? '<video controls preload="metadata" src="' + esc(url) + '"></video>'
+          : '<audio controls preload="metadata" src="' + esc(url) + '"></audio>') +
+        '<button class="btn btn--sm btn--ghost" type="button" data-' + kind + '-remove>Убрать</button>';
+      var rm = host.querySelector("[data-" + kind + "-remove]");
+      if (rm) {
+        rm.addEventListener("click", function () {
+          media[kind] = "";
+          drawSlot(kind, host);
+        });
+      }
+    }
+
+    drawGallery();
+    drawSlot("video", videoSlot);
+    drawSlot("audio", audioSlot);
+
+    var galleryInput = $("[data-gallery-file]", form);
+    if (galleryInput) {
+      galleryInput.addEventListener("change", function () {
+        var files = Array.prototype.slice.call(galleryInput.files || []);
+        if (!files.length) return;
+        var room = 11 - media.gallery.length;
+        if (room <= 0) {
+          setStatus("В альбоме уже 11 фото — больше не влезет.", true);
+          return;
+        }
+        setStatus("Загружаем фотографии…");
+        files.slice(0, room).reduce(function (chain, file) {
+          return chain.then(function () {
+            return Store.uploadMedia(file).then(function (url) {
+              media.gallery.push(url);
+              drawGallery();
+            });
+          });
+        }, Promise.resolve()).then(function () {
+          galleryInput.value = "";
+          setStatus("Фотографии добавлены в альбом");
+        }, function (err) {
+          galleryInput.value = "";
+          setStatus((err && err.message) || "Не удалось загрузить фотографии.", true);
+        });
+      });
+    }
+
+    function bindSingle(kind, selector, slot) {
+      var input = $(selector, form);
+      if (!input) return;
+      input.addEventListener("change", function () {
+        var file = input.files && input.files[0];
+        if (!file) return;
+        setStatus("Загружаем файл…");
+        Store.uploadMedia(file).then(function (url) {
+          media[kind] = url;
+          drawSlot(kind, slot);
+          input.value = "";
+          setStatus(kind === "video" ? "Видео готово" : "Аудио готово");
+        }, function (err) {
+          input.value = "";
+          setStatus((err && err.message) || "Не удалось загрузить файл.", true);
+        });
+      });
+    }
+
+    bindSingle("video", "[data-video-file]", videoSlot);
+    bindSingle("audio", "[data-audio-file]", audioSlot);
 
     $$("[data-action]", form).forEach(function (b) {
       b.addEventListener("click", function () { action = b.getAttribute("data-action"); });
@@ -3336,6 +3564,9 @@
           region: region,
           image: String(d.get("image") || ""),
           imageAlt: String(d.get("imageAlt") || ""),
+          gallery: media.gallery.slice(),
+          video: media.video,
+          audio: media.audio,
           status: "draft",
         },
         existing ? existing.id : null

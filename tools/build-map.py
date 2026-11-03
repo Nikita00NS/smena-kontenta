@@ -187,6 +187,15 @@ def project(points):
     return [albers(lon, lat) for lon, lat in points]
 
 
+EXTRA_REGIONS = [
+    {"name": "Севастополь", "short": "Севастополь", "slug": "sevastopol", "district": "Южный ФО"},
+    {"name": "Донецкая Народная Республика", "short": "ДНР", "slug": "donetskaya-narodnaya-respublika", "district": "Южный ФО"},
+    {"name": "Луганская Народная Республика", "short": "ЛНР", "slug": "luganskaya-narodnaya-respublika", "district": "Южный ФО"},
+    {"name": "Запорожская область", "short": "Запорожская обл.", "slug": "zaporozhskaya-oblast", "district": "Южный ФО"},
+    {"name": "Херсонская область", "short": "Херсонская обл.", "slug": "khersonskaya-oblast", "district": "Южный ФО"},
+]
+
+
 def main():
     if len(sys.argv) < 2:
         print("usage: build-map.py <ru.json>")
@@ -264,6 +273,19 @@ def main():
             "d": "".join(d_parts),
         })
 
+    # Регионы, которых нет в геоданных 2021 года. Контуров у них пока нет,
+    # но страницы, авторы и редакции работать должны.
+    for extra in EXTRA_REGIONS:
+        if extra["name"] not in {r["name"] for r in regions}:
+            regions.append({
+                "name": extra["name"],
+                "short": extra["short"],
+                "slug": extra["slug"],
+                "district": extra["district"],
+                "d": "",
+                "noShape": True,
+            })
+
     regions.sort(key=lambda r: r["name"])
     missing = [n for n in district_of if n not in {r["name"] for r in regions}]
 
@@ -276,12 +298,14 @@ def main():
         f.write('  viewBox: "0 0 %.1f %.1f",\n' % (W, H))
         f.write('  regions: [\n')
         for r in regions:
-            f.write("    {name:%s,short:%s,slug:%s,district:%s,d:%s},\n" % (
+            extra = ",noShape:true" if r.get("noShape") else ""
+            f.write("    {name:%s,short:%s,slug:%s,district:%s,d:%s%s},\n" % (
                 json.dumps(r["name"], ensure_ascii=False),
                 json.dumps(r["short"], ensure_ascii=False),
                 json.dumps(r["slug"], ensure_ascii=False),
                 json.dumps(r["district"], ensure_ascii=False),
                 json.dumps(r["d"]),
+                extra,
             ))
         f.write("  ]\n};\n")
 
