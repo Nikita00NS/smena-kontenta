@@ -136,20 +136,29 @@ window.Store = (function () {
     return Math.max(2, Math.round(words / 160));
   }
 
-  /* права доступа: что человек может делать в редакции */
-  var ACCESS = ["Владелец", "Главный редактор", "Редактор", "Автор"];
+  /* Статусы проекта. Это не «профессия» автора, а права в системе:
+     директор → администрация (высшая лига) → редакционный администратор
+     региона → редакционный основатель → пользователь. */
+  var ACCESS = [
+    "Директор",
+    "Администрация",
+    "Редакционный администратор региона",
+    "Редакционный основатель",
+    "Пользователь",
+  ];
 
   /* кому что можно. Проверяется и в интерфейсе, и в самих операциях store */
   var RIGHTS = {
-    "Владелец": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards"],
-    "Главный редактор": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards"],
-    "Редактор": ["publish", "review", "deleteAny", "manage"],
-    "Автор": [],
+    "Директор": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards", "manageUsers"],
+    "Администрация": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards"],
+    "Редакционный администратор региона": ["publish", "review", "manage", "issueCards"],
+    "Редакционный основатель": ["publish", "review", "manage"],
+    "Пользователь": [],
   };
 
   function can(user, action) {
     if (!user) return false;
-    var list = RIGHTS[user.access || "Автор"] || [];
+    var list = RIGHTS[user.access || "Пользователь"] || [];
     return list.indexOf(action) !== -1;
   }
 
@@ -164,13 +173,142 @@ window.Store = (function () {
 
   /* ------------------------------------------------------------------ вход */
 
+  /* Аккаунт живёт на сервере: телефон, компьютер и любой браузер видят
+     одного и того же человека. В браузере хранится только токен сессии
+     и копия профиля для мгновенной отрисовки страниц. */
+  var TOKEN_KEY = "smena_token_v1";
+  var USER_KEY = "smena_user_v1";
+
+  function readToken() {
+    try {
+      return window.localStorage.getItem(TOKEN_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function saveToken(token) {
+    try {
+      if (token) window.localStorage.setItem(TOKEN_KEY, token);
+      else window.localStorage.removeItem(TOKEN_KEY);
+    } catch (e) {}
+  }
+
+  function readCachedUser() {
+    try {
+      var raw = window.localStorage.getItem(USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function cacheUser(user) {
+    try {
+      if (user) window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+      else window.localStorage.removeItem(USER_KEY);
+    } catch (e) {}
+  }
+
   function currentUser() {
+    var cached = readCachedUser();
+    if (cached && cached.id) return cached;
     var data = read();
     if (!data.session) return null;
     var user = data.users.filter(function (u) {
       return u.id === data.session;
     })[0];
     return user || null;
+  }
+
+  /* вход и регистрация: сначала сервер, при недоступности — локальный режим */
+  function signUp(input) {
+    var payload = {
+      name: String(input.name || "").trim(),
+      email: String(input.email || "").trim(),
+      pass: String(input.pass || ""),
+      region: input.region || "",
+      role: input.role || ROLES[0],
+    };
+    return api("reg", payload)
+      .then(function (res) {
+        if (res && res.ok && res.token) {
+          saveToken(res.token);
+          cacheUser(res.user);
+          mirrorUser(res.user);
+          emit();
+          return { ok: true, user: res.user, remote: true };
+        }
+        if (res && res.offline) {
+          var local = register(payload);
+          if (local.ok) local.offline = true;
+          return local;
+        }
+        return { ok: false, error: (res && res.error) || "Сервер не принял регистрацию." };
+      })
+      .catch(function () {
+        var offlineReg = register(payload);
+        if (offlineReg.ok) offlineReg.offline = true;
+        return offlineReg;
+      });
+  }
+
+  function signIn(email, pass) {
+    return api("login", { email: email, pass: pass })
+      .then(function (res) {
+        if (res && res.ok && res.token) {
+          saveToken(res.token);
+          cacheUser(res.user);
+          mirrorUser(res.user);
+          emit();
+          return { ok: true, user: res.user, remote: true };
+        }
+        if (res && res.offline) return login(email, pass);
+        return { ok: false, error: (res && res.error) || "Не удалось войти." };
+      })
+      .catch(function () {
+        return login(email, pass);
+      });
+  }
+
+  /* копия серверного профиля в локальном списке: чтобы лента, карта
+     и карточки авторов видели того же человека */
+  function mirrorUser(remote) {
+    var data = read();
+    var exists = false;
+    data.users = data.users.map(function (u) {
+      if (u.id !== remote.id && u.email !== remote.email) return u;
+      exists = true;
+      return Object.assign({}, u, remote, { pass: u.pass || "" });
+    });
+    if (!exists) {
+      data.users.push(Object.assign({ pass: "" }, remote));
+    }
+    data.session = remote.id;
+    write(data);
+  }
+
+  /* проверка сессии при загрузке страницы: токен жив — профиль свежий */
+  function refreshMe() {
+    var token = readToken();
+    if (!token) return Promise.resolve(false);
+    return api("me", { token: token })
+      .then(function (res) {
+        if (res && res.ok && res.user) {
+          cacheUser(res.user);
+          mirrorUser(res.user);
+          emit();
+          return true;
+        }
+        if (res && res.error) {
+          saveToken("");
+          cacheUser(null);
+        }
+        return false;
+      })
+      .catch(function () {
+        return false;
+      });
   }
 
   function register(input) {
@@ -198,7 +336,7 @@ window.Store = (function () {
       pass: hash(pass),
       region: input.region || "",
       role: input.role || ROLES[0],
-      access: data.users.length === 0 ? "Владелец" : "Автор",
+      access: data.users.length === 0 ? "Директор" : "Пользователь",
       teamId: null,
       bio: "",
       createdAt: new Date().toISOString(),
@@ -224,9 +362,109 @@ window.Store = (function () {
   }
 
   function logout() {
+    var token = readToken();
+    if (token) api("logout", { token: token }).catch(function () {});
+    saveToken("");
+    cacheUser(null);
     var data = read();
     data.session = null;
     write(data);
+  }
+
+  /* сохранение профиля: имя, о себе, регион, направление, аватар */
+  function saveProfile(patch) {
+    var token = readToken();
+    var body = {
+      token: token,
+      name: patch.name,
+      bio: patch.bio,
+      region: patch.region,
+      role: patch.role,
+    };
+    if (patch.avatar) body.avatar = patch.avatar;
+    if (patch.avatarClear) body.avatarClear = true;
+
+    var local = updateUser(patch);
+    if (!token) return Promise.resolve(local);
+
+    return api("profile-save", body)
+      .then(function (res) {
+        if (res && res.ok && res.user) {
+          cacheUser(res.user);
+          mirrorUser(res.user);
+          emit();
+          return { ok: true, user: res.user };
+        }
+        return { ok: false, error: (res && res.error) || "Профиль не сохранился." };
+      })
+      .catch(function () {
+        return local;
+      });
+  }
+
+  /* загрузка файла на платформу: фото сжимаем в браузере,
+     видео и аудио уходят как есть в пределах лимита */
+  function uploadMedia(file) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы загружать файлы."));
+    var isImage = file.type.indexOf("image/") === 0;
+    var limit = isImage ? 8 * 1024 * 1024 : 6 * 1024 * 1024;
+    if (file.size > limit) {
+      return Promise.reject(new Error(
+        isImage
+          ? "Фото больше 8 МБ — выберите файл поменьше."
+          : "Видео или аудио больше 6 МБ — сократите файл или сожмите его."
+      ));
+    }
+    var ready = file.type.indexOf("image/") === 0 ? shrinkImage(file) : readAsDataUrl(file);
+    return ready
+      .then(function (dataUrl) {
+        return api("media-upload", { token: token, data: dataUrl });
+      })
+      .then(function (res) {
+        if (res && res.ok && res.url) return res.url;
+        throw new Error((res && res.error) || "Файл не загрузился.");
+      });
+  }
+
+  function readAsDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || "")); };
+      reader.onerror = function () { reject(new Error("Не удалось прочитать файл.")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* сжатие фото: длинная сторона до 1600 px, jpeg 0.82 — хватает для сайта */
+  function shrinkImage(file) {
+    return readAsDataUrl(file).then(function (dataUrl) {
+      return new Promise(function (resolve) {
+        var img = new Image();
+        img.onload = function () {
+          var max = 1600;
+          var scale = Math.min(1, max / Math.max(img.width, img.height));
+          if (scale === 1 && file.size < 900 * 1024) {
+            resolveOptimized();
+            return;
+          }
+          var canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          try {
+            resolve(canvas.toDataURL("image/jpeg", 0.82));
+          } catch (e) {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = function () { resolve(dataUrl); };
+        img.src = dataUrl;
+
+        function resolveOptimized() { resolve(dataUrl); }
+      });
+    });
   }
 
   function updateUser(patch) {
@@ -243,7 +481,8 @@ window.Store = (function () {
         region: patch.region != null ? patch.region : u.region,
         role: patch.role != null ? patch.role : u.role,
         bio: patch.bio != null ? String(patch.bio) : u.bio,
-        access: u.access || "Автор",
+        avatar: patch.avatarClear ? "" : patch.avatar || u.avatar || "",
+        access: u.access || "Пользователь",
         teamId: u.teamId || null,
         createdAt: u.createdAt,
         number: u.number,
@@ -325,6 +564,9 @@ window.Store = (function () {
           region: patch.region,
           image: patch.image || "",
           imageAlt: patch.imageAlt || "",
+          gallery: patch.gallery || p.gallery || [],
+          video: patch.video != null ? patch.video : p.video || "",
+          audio: patch.audio != null ? patch.audio : p.audio || "",
           status:
             patch.status ||
             (p.status === "published" && !can(user, "review") ? "pending" : p.status),
@@ -349,6 +591,9 @@ window.Store = (function () {
       region: patch.region,
       image: patch.image || "",
       imageAlt: patch.imageAlt || "",
+      gallery: patch.gallery || [],
+      video: patch.video || "",
+      audio: patch.audio || "",
       status: patch.status || "draft",
       read: readTime(body),
       date: now,
@@ -856,6 +1101,10 @@ window.Store = (function () {
         return res.json().catch(function () {
           return { ok: false, error: "Сервер ответил не JSON — возможно, PHP на хостинге выключен." };
         });
+      })
+      .catch(function () {
+        /* нет связи — это не ошибка кода: вызывающий решает, что делать */
+        return { ok: false, offline: true, error: "Нет связи с сервером." };
       });
   }
 
@@ -886,6 +1135,7 @@ window.Store = (function () {
         }
       }, 2500);
       request.then(function (value) {
+        refreshMe();
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -948,6 +1198,10 @@ window.Store = (function () {
       format: post.format,
       region: post.region,
       image: post.image || "",
+      imageAlt: post.imageAlt || "",
+      gallery: post.gallery || [],
+      video: post.video || "",
+      audio: post.audio || "",
       read: post.read || 4,
       direct: !!direct,
     };
@@ -1081,6 +1335,12 @@ window.Store = (function () {
     currentUser: currentUser,
     register: register,
     login: login,
+    signUp: signUp,
+    signIn: signIn,
+    refreshMe: refreshMe,
+    saveProfile: saveProfile,
+    uploadMedia: uploadMedia,
+    hasToken: function () { return !!readToken(); },
     logout: logout,
     updateUser: updateUser,
     listPosts: listPosts,

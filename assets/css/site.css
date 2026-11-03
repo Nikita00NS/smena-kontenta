@@ -5755,3 +5755,271 @@ html[data-theme="light"] .founder__photo--mono {
   text-transform: uppercase;
   color: var(--accent);
 }
+
+/* регионы без контуров на карте -------------------------------------------- */
+.region-noshape {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  background: var(--paper-2);
+}
+.region-noshape__title {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 400;
+}
+.region-noshape__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.region-noshape__chips .chip-sm span {
+  margin-left: 6px;
+  color: var(--muted);
+}
+
+/* ============================================================================
+   35. ЛИЧНЫЙ КАБИНЕТ: АВАТАР, СТАТУС И ПЛОТНАЯ СЕТКА
+   ========================================================================== */
+.profile-ava {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--accent);
+  cursor: pointer;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.profile-ava img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.profile-ava .profile-id__ava {
+  width: 100%;
+  height: 100%;
+  font-size: 24px;
+}
+.profile-ava__hint {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 4px 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.18s var(--ease);
+}
+.profile-ava:hover .profile-ava__hint,
+.profile-ava:focus-visible .profile-ava__hint {
+  opacity: 1;
+}
+.profile-ava.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.profile-ava.is-busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 3px solid rgba(255, 255, 255, 0.7);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ava-spin 0.8s linear infinite;
+}
+@keyframes ava-spin {
+  to { transform: rotate(360deg); }
+}
+.status-badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+.user-chip__ava--img {
+  object-fit: cover;
+}
+
+/* кабинет плотнее: сетка тянется, пустых полос нет ------------------------ */
+.profile-grid {
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  gap: clamp(14px, 1.8vw, 22px);
+}
+.profile-side {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.profile-side .panel,
+.profile-side .kpi {
+  margin: 0;
+}
+.profile-sect {
+  margin-top: 22px;
+}
+.profile-settings {
+  max-width: none !important;
+}
+.profile-settings .form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+.profile-settings .form__full {
+  grid-column: 1 / -1;
+}
+.profile-account {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.profile-account .fill-note {
+  margin: 0;
+}
+.points .points__table + .points__table {
+  margin-top: 16px;
+}
+@media (max-width: 900px) {
+  .profile-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile-settings .form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile-account {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ============================================================================
+   36. МЕДИА В МАТЕРИАЛЕ: АЛЬБОМ, ВИДЕО, АУДИО
+   ========================================================================== */
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.media-thumb {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper-3);
+}
+.media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.media-thumb button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.media-empty {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.media-slot {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin-bottom: 8px;
+}
+.media-slot video,
+.media-slot audio {
+  width: 100%;
+  border-radius: 12px;
+  background: var(--dark);
+}
+.media-slot video {
+  max-height: 340px;
+}
+.write-media {
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  background: var(--paper-2);
+  margin-bottom: 18px;
+}
+
+/* чтение материала --------------------------------------------------------- */
+.article-video,
+.article-audio,
+.article-gallery {
+  display: grid;
+  gap: 10px;
+  margin: 30px 0 6px;
+}
+.article-video video {
+  width: 100%;
+  border-radius: 16px;
+  background: #000;
+}
+.article-audio audio {
+  width: 100%;
+}
+.article-gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.article-gallery__item {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper-3);
+}
+.article-gallery__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s var(--ease);
+}
+.article-gallery__item:hover img {
+  transform: scale(1.04);
+}
