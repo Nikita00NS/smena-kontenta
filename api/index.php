@@ -177,6 +177,8 @@ function public_post($post) {
         'authorRole' => isset($post['authorRole']) ? $post['authorRole'] : '',
         'authorRegion' => isset($post['authorRegion']) ? $post['authorRegion'] : '',
         'status' => $post['status'],
+        'number' => isset($post['number']) ? (int) $post['number'] : 0,
+        'authorKeyHash' => substr(hash('sha256', (string) (isset($post['authorKey']) ? $post['authorKey'] : '')), 0, 16),
     );
     if (isset($post['reviewNote'])) $out['reviewNote'] = $post['reviewNote'];
     if (isset($post['reviewedAt'])) $out['reviewedAt'] = $post['reviewedAt'];
@@ -332,6 +334,15 @@ if ($act === 'submit') {
     $direct = !empty($in['direct']);
     $now = date('c');
     $id = new_id('s_');
+
+    // порядковый номер материала проекта: по нему автор прикладывает
+    // публикации к заявке на пресс-карту
+    $maxNumber = 0;
+    foreach ($posts as $existing) {
+        if (isset($existing['number']) && (int) $existing['number'] > $maxNumber) {
+            $maxNumber = (int) $existing['number'];
+        }
+    }
     $post = array(
         'id' => $id,
         'authorKey' => $authorKey,
@@ -346,6 +357,7 @@ if ($act === 'submit') {
         'region' => text(isset($in['region']) ? $in['region'] : '', 80),
         'image' => text(isset($in['image']) ? $in['image'] : '', 300),
         'read' => isset($in['read']) ? max(1, min(60, (int) $in['read'])) : 4,
+        'number' => $maxNumber + 1,
         'status' => $direct ? 'published' : 'pending',
         'date' => $now,
         'submittedAt' => $now,
@@ -358,6 +370,144 @@ if ($act === 'submit') {
         fail('Не удалось сохранить материал на сервере. Напишите редакции.', 500);
     }
     respond(array('ok' => true, 'post' => public_post($post), 'direct' => $direct));
+}
+
+/* ------------------------------------------------------- пресс-карта автора */
+function card_min_posts() {
+    return 5;
+}
+
+function read_cards($dir) {
+    return read_json($dir . '/cards.json', array());
+}
+
+if ($act === 'card-request') {
+    $in = body();
+    $key = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : ''));
+    if (strlen($key) < 8) fail('Не передан ключ автора.');
+
+    $ids = isset($in['posts']) && is_array($in['posts']) ? $in['posts'] : array();
+    if (count($ids) < card_min_posts()) {
+        fail('Для заявки нужно приложить не меньше ' . card_min_posts() . ' опубликованных материалов.');
+    }
+
+    $posts = read_json($DATA_DIR . '/posts.json', array());
+    $attached = array();
+    $numbers = array();
+    foreach ($ids as $rawId) {
+        $id = (string) $rawId;
+        if (!isset($posts[$id])) fail('Материал не найден: ' . text($id, 40));
+        $post = $posts[$id];
+        if ($post['authorKey'] !== $key) fail('В заявке есть чужой материал.');
+        if ($post['status'] !== 'published') fail('В заявке есть неопубликованный материал.');
+        $attached[] = array(
+            'id' => $post['id'],
+            'number' => isset($post['number']) ? (int) $post['number'] : 0,
+            'title' => $post['title'],
+            'date' => isset($post['date']) ? $post['date'] : '',
+            'region' => isset($post['region']) ? $post['region'] : '',
+        );
+        $numbers[] = (int) (isset($post['number']) ? $post['number'] : 0);
+    }
+
+    $cards = read_cards($DATA_DIR);
+    foreach ($cards as $card) {
+        if ($card['authorKey'] === $key && $card['status'] === 'pending') {
+            fail('Заявка уже отправлена и рассматривается редакцией.');
+        }
+    }
+
+    $now = date('c');
+    $cardId = new_id('c_');
+    $cards[$cardId] = array(
+        'id' => $cardId,
+        'authorKey' => $key,
+        'authorName' => text(isset($in['authorName']) ? $in['authorName'] : '', 120),
+        'authorRegion' => text(isset($in['authorRegion']) ? $in['authorRegion'] : '', 80),
+        'authorRole' => text(isset($in['authorRole']) ? $in['authorRole'] : '', 80),
+        'posts' => $attached,
+        'status' => 'pending',
+        'number' => '',
+        'note' => '',
+        'createdAt' => $now,
+        'decidedAt' => null,
+    );
+    if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить заявку.', 500);
+    check_rate($DATA_DIR);
+    respond(array('ok' => true, 'request' => $cards[$cardId]));
+}
+
+if ($act === 'card-status') {
+    $in = body();
+    $key = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : ''));
+    if (strlen($key) < 8) fail('Не передан ключ автора.');
+    $cards = read_cards($DATA_DIR);
+    $mine = array();
+    foreach ($cards as $card) {
+        if ($card['authorKey'] === $key) {
+            $mine[] = array(
+                'id' => $card['id'],
+                'status' => $card['status'],
+                'number' => $card['number'],
+                'note' => $card['note'],
+                'createdAt' => $card['createdAt'],
+                'decidedAt' => $card['decidedAt'],
+                'posts' => $card['posts'],
+            );
+        }
+    }
+    respond(array('ok' => true, 'requests' => $mine, 'minPosts' => card_min_posts()));
+}
+
+if ($act === 'card-queue') {
+    $in = body();
+    if (!is_editor($DATA_DIR, isset($in['password']) ? $in['password'] : '')) fail('Неверный пароль редакции.', 403);
+    $cards = read_cards($DATA_DIR);
+    $out = array();
+    foreach ($cards as $card) {
+        $out[] = $card;
+    }
+    usort($out, function ($a, $b) {
+        return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
+    });
+    respond(array('ok' => true, 'requests' => $out));
+}
+
+if ($act === 'card-review') {
+    $in = body();
+    if (!is_editor($DATA_DIR, isset($in['password']) ? $in['password'] : '')) fail('Неверный пароль редакции.', 403);
+    $id = isset($in['id']) ? (string) $in['id'] : '';
+    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
+    $note = text(isset($in['note']) ? $in['note'] : '', 600);
+    if ($decision !== 'approve' && $decision !== 'reject') fail('Неизвестное решение.');
+
+    $cards = read_cards($DATA_DIR);
+    if (!isset($cards[$id])) fail('Заявка не найдена.', 404);
+
+    $now = date('c');
+    if ($decision === 'approve') {
+        $year = date('Y');
+        $seq = 0;
+        foreach ($cards as $card) {
+            if (!empty($card['number']) && strpos((string) $card['number'], 'СК-' . $year) === 0) $seq++;
+        }
+        $cards[$id]['number'] = 'СК-' . $year . '-' . str_pad((string) ($seq + 1), 3, '0', STR_PAD_LEFT);
+        $cards[$id]['status'] = 'issued';
+    } else {
+        $cards[$id]['status'] = 'rejected';
+    }
+    $cards[$id]['note'] = $note;
+    $cards[$id]['decidedAt'] = $now;
+    if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить решение.', 500);
+    respond(array(
+        'ok' => true,
+        'request' => array(
+            'id' => $cards[$id]['id'],
+            'status' => $cards[$id]['status'],
+            'number' => $cards[$id]['number'],
+            'note' => $cards[$id]['note'],
+        ),
+    ));
 }
 
 if ($act === 'mine') {

@@ -788,7 +788,7 @@ window.Store = (function () {
      Если PHP недоступен (открыли файл локально), всё работает как раньше.
      ====================================================================== */
 
-  var API_URL = "api/index.php";
+  var API_URL = "/api/index.php";
   var REMOTE_KEY = "smena_remote_v1";
   var AUTHOR_KEY = "smena_author_key";
 
@@ -924,6 +924,7 @@ window.Store = (function () {
           },
           date: p.date,
           read: p.read || 4,
+          number: p.number || 0,
           image: p.image || "",
           imageAlt: p.title,
           isUserPost: true,
@@ -1022,6 +1023,44 @@ window.Store = (function () {
     });
   }
 
+  /* мои материалы на сервере (с номерами) */
+  function apiMyPosts() {
+    return api("mine", { authorKey: authorKey() }).then(function (res) {
+      return res && res.ok ? res.posts || [] : [];
+    });
+  }
+
+  /* заявка на пресс-карту: прикладываются все свои опубликованные материалы */
+  function apiCardRequest(payload) {
+    return api("card-request", {
+      authorKey: authorKey(),
+      authorName: payload.authorName || "",
+      authorRegion: payload.authorRegion || "",
+      authorRole: payload.authorRole || "",
+      posts: payload.posts || [],
+    });
+  }
+
+  function apiCardStatus() {
+    return api("card-status", { authorKey: authorKey() }).then(function (res) {
+      if (res && res.ok) return res;
+      return { ok: false, requests: [], minPosts: 5, error: (res && res.error) || "" };
+    });
+  }
+
+  function apiCardQueue(password) {
+    return api("card-queue", { password: String(password || "") });
+  }
+
+  function apiCardReview(password, id, decision, note) {
+    return api("card-review", {
+      password: String(password || ""),
+      id: id,
+      decision: decision,
+      note: note || "",
+    });
+  }
+
   function apiSetPass(oldPass, newPass) {
     return api("setpass", { old: String(oldPass || ""), new: String(newPass || "") });
   }
@@ -1069,6 +1108,11 @@ window.Store = (function () {
     apiReview: apiReview,
     apiRemove: apiRemove,
     apiSetPass: apiSetPass,
+    apiMyPosts: apiMyPosts,
+    apiCardRequest: apiCardRequest,
+    apiCardStatus: apiCardStatus,
+    apiCardQueue: apiCardQueue,
+    apiCardReview: apiCardReview,
     pressCard: pressCard,
     getSettings: getSettings,
     saveSettings: saveSettings,

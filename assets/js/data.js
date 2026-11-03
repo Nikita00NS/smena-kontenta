@@ -40,7 +40,7 @@ window.SC = {
   docs: [
     {
       title: "Пресс-кит проекта",
-      file: "assets/docs/press-kit.pdf",
+      file: "/assets/docs/press-kit.pdf",
       pages: 3,
       desc: "Коротко о проекте: миссия, направления, аудитория, что уже сделано и контакты для связи.",
       tag: "Для партнёров",
@@ -48,7 +48,7 @@ window.SC = {
     },
     {
       title: "Редакционная политика",
-      file: "assets/docs/polozhenie-o-redakcii.pdf",
+      file: "/assets/docs/polozhenie-o-redakcii.pdf",
       pages: 2,
       desc: "Кто принимает решения в редакции, как материал проходит до публикации, как проверяются факты и исправляются ошибки.",
       tag: "Основной документ",
@@ -56,7 +56,7 @@ window.SC = {
     },
     {
       title: "Памятка автору",
-      file: "assets/docs/pamyatka-avtoru.pdf",
+      file: "/assets/docs/pamyatka-avtoru.pdf",
       pages: 2,
       desc: "Как выбрать тему, выстроить текст, оформить цитаты и подписи к фотографиям. Чек-лист перед публикацией.",
       tag: "Для авторов",
@@ -64,7 +64,7 @@ window.SC = {
     },
     {
       title: "Программа медиашколы",
-      file: "assets/docs/programma-mediashkoly.pdf",
+      file: "/assets/docs/programma-mediashkoly.pdf",
       pages: 2,
       desc: "Модули, формат занятий, сколько времени нужно и что участник получает на выходе.",
       tag: "Для участников",
@@ -72,7 +72,7 @@ window.SC = {
     },
     {
       title: "Политика конфиденциальности",
-      file: "assets/docs/politika-konfidencialnosti.pdf",
+      file: "/assets/docs/politika-konfidencialnosti.pdf",
       pages: 2,
       desc: "Какие данные сайт собирает, зачем они нужны, где хранятся, сколько и как их удалить.",
       tag: "Обязательный документ",
@@ -80,7 +80,7 @@ window.SC = {
     },
     {
       title: "Пользовательское соглашение",
-      file: "assets/docs/polzovatelskoe-soglashenie.pdf",
+      file: "/assets/docs/polzovatelskoe-soglashenie.pdf",
       pages: 2,
       desc: "Правила пользования сайтом и публикации материалов, права авторов на свои тексты и фотографии, ответственность сторон.",
       tag: "Обязательный документ",
