@@ -403,11 +403,11 @@
           '<li><a href="docs.html">Памятка автору</a></li>') +
       (contactEmail()
         ? '<li><a href="mailto:' + esc(contactEmail()) + '">' + esc(contactEmail()) + "</a></li>"
-        : '<li><span class="footer-pending">Рабочая почта проекта пока не заведена</span></li>') +
+        : '<li><span class="footer-pending">Почта проекта: пока не заведена</span></li>') +
       "</ul></div></div>" +
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
-      '<span class="footer-note">Медиа о молодёжи и регионах. Сайт работает на статических файлах — без серверов и подписок.</span>' +
+      '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span><a href="assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Конфиденциальность</a>' +
       ' · <a href="assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="docs.html">Документы</a></span>' +

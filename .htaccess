@@ -53,14 +53,12 @@ ErrorDocument 404 /404.html
   # Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains"
 </IfModule>
 
-# Переадресация на HTTPS и с www на основной домен.
-# Включается в панели хостинга (раздел «SSL»), поэтому здесь закомментировано.
-# Если понадобится включить здесь — раскомментируйте блок ниже,
-# но только после того, как сертификат Let's Encrypt выпущен и работает.
-# <IfModule mod_rewrite.c>
-#   RewriteEngine On
-#   RewriteCond %{HTTPS} !=on
-#   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-#   RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
-#   RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
-# </IfModule>
+# Один адрес сайта: https://smenakontenta.ru
+# www и http переадресуются на него, чтобы не было двух версий одних и тех же страниц.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+  RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
