@@ -165,11 +165,11 @@
   }
 
   function articleUrl(id) {
-    return "article.html?id=" + encodeURIComponent(id);
+    return "/article?id=" + encodeURIComponent(id);
   }
 
   function regionUrl(slug) {
-    return "region.html?r=" + encodeURIComponent(slug);
+    return "/region?r=" + encodeURIComponent(slug);
   }
 
   function param(name) {
@@ -264,19 +264,19 @@
   }
 
   var LOGO =
-    '<img class="logo__img" src="assets/img/logo.png" alt="Смена контента" ' +
+    '<img class="logo__img" src="/assets/img/logo.png" alt="Смена контента" ' +
     'width="199" height="36" decoding="async">';
 
   /* 2. Шапка и подвал ====================================================== */
 
   var NAV = [
-    { href: "news.html", label: "Материалы", key: "news" },
-    { href: "index.html#map", label: "Регионы", key: "region" },
-    { href: "media-school.html", label: "Медиашкола", key: "school" },
-    { href: "docs.html", label: "Документы", key: "docs" },
-    { href: "about.html", label: "О проекте", key: "about" },
-    { href: "founders.html", label: "Основатели", key: "founders" },
-    { href: "partners.html", label: "Партнёрам", key: "partners" },
+    { href: "/news", label: "Материалы", key: "news" },
+    { href: "/#map", label: "Регионы", key: "region" },
+    { href: "/media-school", label: "Медиашкола", key: "school" },
+    { href: "/docs", label: "Документы", key: "docs" },
+    { href: "/about", label: "О проекте", key: "about" },
+    { href: "/founders", label: "Основатели", key: "founders" },
+    { href: "/partners", label: "Партнёрам", key: "partners" },
   ];
 
   function mountHeader() {
@@ -296,25 +296,25 @@
     }).join("");
 
     var accountHtml = user
-      ? '<a class="user-chip" href="profile.html" aria-label="Личный кабинет">' +
+      ? '<a class="user-chip" href="/profile" aria-label="Личный кабинет">' +
         '<span class="user-chip__ava">' + esc(Store.initials(user.name)) + "</span>" +
         '<span class="user-chip__name">' + esc(user.name.split(" ")[0]) + "</span></a>"
-      : '<a class="btn btn--sm btn--ghost login-link" href="join.html#login">Войти</a>' +
-        '<a class="btn btn--sm" href="join.html">Регистрация</a>';
+      : '<a class="btn btn--sm btn--ghost login-link" href="/join#login">Войти</a>' +
+        '<a class="btn btn--sm" href="/join">Регистрация</a>';
 
     host.className = "site-header";
     host.innerHTML =
       '<div class="topbar"><div class="wrap topbar__in">' +
       '<div class="topbar__left">' +
-      '<a class="badge-live" href="join.html">Набор авторов открыт</a>' +
+      '<a class="badge-live" href="/join">Набор авторов открыт</a>' +
       "<span>" + dateLine + "</span>" +
       "</div>" +
       '<div class="topbar__right">' +
-      '<a href="write.html">Опубликовать материал</a>' +
-      '<a href="docs.html">Документы</a>' +
+      '<a href="/write">Опубликовать материал</a>' +
+      '<a href="/docs">Документы</a>' +
       "</div></div></div>" +
       '<div class="wrap"><div class="masthead">' +
-      '<a class="logo" href="index.html" aria-label="Смена контента — на главную">' +
+      '<a class="logo" href="/" aria-label="Смена контента — на главную">' +
       LOGO + "</a>" +
       '<nav class="nav" aria-label="Основная навигация">' + navHtml + "</nav>" +
       '<div class="header-actions">' +
@@ -332,7 +332,7 @@
     menu.setAttribute("data-menu", "");
     menu.innerHTML =
       '<div class="mobile-menu__head">' +
-      '<a class="logo" href="index.html">' + LOGO + "</a>" +
+      '<a class="logo" href="/">' + LOGO + "</a>" +
       '<button class="icon-btn" type="button" data-menu-close aria-label="Закрыть меню">' +
       ICONS.close + "</button></div>" +
       NAV.map(function (n, i) {
@@ -342,13 +342,13 @@
         );
       }).join("") +
       (user
-        ? '<a class="mobile-menu__link" href="profile.html">Личный кабинет<span>' +
+        ? '<a class="mobile-menu__link" href="/profile">Личный кабинет<span>' +
           esc(Store.initials(user.name)) + "</span></a>"
-        : '<a class="mobile-menu__link" href="join.html">Регистрация<span>+</span></a>') +
+        : '<a class="mobile-menu__link" href="/join">Регистрация<span>+</span></a>') +
       '<button class="mobile-menu__theme" type="button" data-theme-toggle>' +
       '<b data-theme-label>Светлая тема</b><span>оформление</span></button>' +
       '<div class="mobile-menu__foot">' +
-      '<a class="btn btn--block" href="write.html">Опубликовать материал</a>' +
+      '<a class="btn btn--block" href="/write">Опубликовать материал</a>' +
       '<button class="btn btn--block btn--ghost" type="button" data-search-open>Поиск по сайту</button>' +
       '<p class="mono" style="color:var(--muted);margin:0">' + esc(SC.brand.email) + "</p></div>";
     document.body.appendChild(menu);
@@ -378,30 +378,30 @@
       '<div class="wrap">' +
       '<div class="footer-top">' +
       '<div class="footer-brand">' +
-      '<img class="logo__img" src="assets/img/logo.png" alt="Смена контента" width="199" height="36" loading="lazy">' +
+      '<img class="logo__img" src="/assets/img/logo.png" alt="Смена контента" width="199" height="36" loading="lazy">' +
       "<p>" + esc(SC.brand.tagline) + ". Рассказываем истории из регионов и учим их делать.</p>" +
       '<p class="footer-status"><span class="dot"></span>Набор авторов открыт: собираем первые материалы из регионов.</p>' +
       "</div>" +
       '<div class="footer-col"><h3>Редакция</h3><ul>' +
-      '<li><a href="news.html">Все материалы</a></li>' +
-      '<li><a href="index.html#map">Регионы</a></li>' +
-      '<li><a href="write.html">Опубликовать материал</a></li>' +
-      '<li><a href="media-school.html">Медиашкола</a></li>' +
+      '<li><a href="/news">Все материалы</a></li>' +
+      '<li><a href="/#map">Регионы</a></li>' +
+      '<li><a href="/write">Опубликовать материал</a></li>' +
+      '<li><a href="/media-school">Медиашкола</a></li>' +
       "</ul></div>" +
       '<div class="footer-col"><h3>Проект</h3><ul>' +
-      '<li><a href="about.html">О проекте</a></li>' +
-      '<li><a href="docs.html">Документы и пресс-кит</a></li>' +
-      '<li><a href="partners.html">Партнёрам</a></li>' +
-      '<li><a href="about.html#roadmap">План развития</a></li>' +
+      '<li><a href="/about">О проекте</a></li>' +
+      '<li><a href="/docs">Документы и пресс-кит</a></li>' +
+      '<li><a href="/partners">Партнёрам</a></li>' +
+      '<li><a href="/about#roadmap">План развития</a></li>' +
       "</ul></div>" +
       '<div class="footer-col"><h3>' + (user ? "Аккаунт" : "Участие") + "</h3><ul>" +
       (user
-        ? '<li><a href="profile.html">Личный кабинет</a></li>' +
-          '<li><a href="write.html">Новый материал</a></li>' +
-          '<li><a href="admin.html">Панель проекта</a></li>'
-        : '<li><a href="join.html">Регистрация</a></li>' +
-          '<li><a href="join.html#login">Вход</a></li>' +
-          '<li><a href="docs.html">Памятка автору</a></li>') +
+        ? '<li><a href="/profile">Личный кабинет</a></li>' +
+          '<li><a href="/write">Новый материал</a></li>' +
+          '<li><a href="/admin">Панель проекта</a></li>'
+        : '<li><a href="/join">Регистрация</a></li>' +
+          '<li><a href="/join#login">Вход</a></li>' +
+          '<li><a href="/docs">Памятка автору</a></li>') +
       (contactEmail()
         ? '<li><a href="mailto:' + esc(contactEmail()) + '">' + esc(contactEmail()) + "</a></li>"
         : '<li><span class="footer-pending">Почта проекта: пока не заведена</span></li>') +
@@ -409,9 +409,9 @@
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
-      '<span><a href="assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Соглашение</a>' +
-      ' · <a href="docs.html">Документы</a></span>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Соглашение</a>' +
+      ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
 
@@ -457,16 +457,16 @@
     // постоянные страницы сайта: без них поиск по «медиашкола» или «документы»
     // отвечал «ничего не нашлось», хотя страницы есть
     var PAGES = [
-      { title: "Все материалы", url: "news.html", note: "Лента редакции", keys: "материалы лента новости публикации статьи" },
-      { title: "Карта регионов", url: "index.html#map", note: "Главная страница", keys: "карта регионы регион география" },
-      { title: "Медиашкола", url: "media-school.html", note: "Программа обучения", keys: "медиашкола школа обучение практика программа курсы" },
-      { title: "Документы и пресс-кит", url: "docs.html", note: "Файлы проекта", keys: "документы пресс-кит pdf политика соглашение памятка редакция" },
-      { title: "О проекте", url: "about.html", note: "Миссия и принципы", keys: "о проекте миссия принципы план развитие идея" },
-      { title: "Основатели", url: "founders.html", note: "Кто делает проект", keys: "основатели основатель команда авторы проекта кто делает" },
-      { title: "Партнёрам", url: "partners.html", note: "Сотрудничество", keys: "партнёры партнерам сотрудничество вузы колледжи центры сми" },
-      { title: "Регистрация автора", url: "join.html", note: "Создать аккаунт", keys: "регистрация аккаунт войти вход автор участвовать" },
-      { title: "Написать материал", url: "write.html", note: "Редактор", keys: "написать материал редактор черновик публикация" },
-      { title: "Пресс-карта автора", url: "profile.html", note: "Личный кабинет", keys: "пресс-карта карта кабинет профиль портфолио" },
+      { title: "Все материалы", url: "/news", note: "Лента редакции", keys: "материалы лента новости публикации статьи" },
+      { title: "Карта регионов", url: "/#map", note: "Главная страница", keys: "карта регионы регион география" },
+      { title: "Медиашкола", url: "/media-school", note: "Программа обучения", keys: "медиашкола школа обучение практика программа курсы" },
+      { title: "Документы и пресс-кит", url: "/docs", note: "Файлы проекта", keys: "документы пресс-кит pdf политика соглашение памятка редакция" },
+      { title: "О проекте", url: "/about", note: "Миссия и принципы", keys: "о проекте миссия принципы план развитие идея" },
+      { title: "Основатели", url: "/founders", note: "Кто делает проект", keys: "основатели основатель команда авторы проекта кто делает" },
+      { title: "Партнёрам", url: "/partners", note: "Сотрудничество", keys: "партнёры партнерам сотрудничество вузы колледжи центры сми" },
+      { title: "Регистрация автора", url: "/join", note: "Создать аккаунт", keys: "регистрация аккаунт войти вход автор участвовать" },
+      { title: "Написать материал", url: "/write", note: "Редактор", keys: "написать материал редактор черновик публикация" },
+      { title: "Пресс-карта автора", url: "/profile", note: "Личный кабинет", keys: "пресс-карта карта кабинет профиль портфолио" },
     ];
 
     function search(q) {
@@ -555,7 +555,7 @@
         if (activeIndex >= 0 && hits[activeIndex]) {
           window.location.href = hits[activeIndex].url;
         } else if (input.value.trim().length > 1) {
-          window.location.href = "news.html?q=" + encodeURIComponent(input.value.trim());
+          window.location.href = "/news?q=" + encodeURIComponent(input.value.trim());
         }
       }
     });
@@ -1119,7 +1119,7 @@
     if (!host) return;
     var user = Store ? Store.currentUser() : null;
     if (!user) {
-      window.location.replace("join.html?next=admin");
+      window.location.replace("/join?next=admin");
       return;
     }
 
@@ -1132,8 +1132,8 @@
         "<h3>Панель доступна редакции</h3>" +
         "<p>Настройки проекта меняет первый зарегистрированный аккаунт или аккаунт с ролью " +
         "«Редактор». Вы вошли как «" + esc(user.name) + "» — " + esc(user.role) + ".</p>" +
-        '<div class="row"><a class="btn btn--sm" href="profile.html">В кабинет</a>' +
-        '<a class="btn btn--sm btn--ghost" href="docs.html">Документы</a></div></div></section>';
+        '<div class="row"><a class="btn btn--sm" href="/profile">В кабинет</a>' +
+        '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a></div></div></section>';
       return;
     }
 
@@ -1170,7 +1170,7 @@
         " · " + esc(regionName(p.region) || "регион не выбран") + " · " + esc(String(p.read || 0)) + " мин</div>" +
         '<p class="admin-review__excerpt">' + esc(p.excerpt || "") + "</p>" +
         '<div class="admin-review__actions">' +
-        '<a class="btn btn--sm btn--ghost" href="write.html?id=' + p.id + '">Открыть текст</a>' +
+        '<a class="btn btn--sm btn--ghost" href="/write?id=' + p.id + '">Открыть текст</a>' +
         '<input class="admin-review__note" type="text" placeholder="Замечание автору (если правки)" data-note="' + p.id + '">' +
         '<button class="btn btn--sm" type="button" data-approve="' + p.id + '">Опубликовать</button>' +
         '<button class="btn btn--sm btn--ghost" type="button" data-reject="' + p.id + '">Вернуть на правки</button>' +
@@ -1264,6 +1264,109 @@
 
       bind();
       mountServerQueue(host);
+      mountCardQueue(host);
+    }
+
+    /* --- заявки на пресс-карту ---------------------------------------------- */
+    function mountCardQueue(host) {
+      var old = $("[data-card-queue]");
+      if (old) old.remove();
+      if (!Store.apiCardQueue) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-card-queue", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Пресс-карты</span>' +
+        "<h2>Заявки на карту автора</h2>" +
+        '<p class="sec-head__text">Автор прикладывает свои опубликованные материалы по номерам. ' +
+        "Одобрение выдаёт карту с номером, автор увидит её в кабинете.</p></div></div>" +
+        '<div class="panel"><div class="row" style="align-items:flex-end">' +
+        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
+        '<label for="card-pass">Пароль редакции</label>' +
+        '<input id="card-pass" type="password" placeholder="Тот же пароль, что и для материалов" value="' +
+        esc(savedPass()) + '"></div>' +
+        '<button class="btn btn--sm" type="button" data-card-load>Показать заявки</button></div>' +
+        '<p class="form__note" data-card-status></p></div><div data-card-list></div>';
+      host.appendChild(section);
+
+      var passEl = $("#card-pass", section);
+      var statusEl = $("[data-card-status]", section);
+      var listEl = $("[data-card-list]", section);
+
+      function row(card) {
+        var posts = (card.posts || [])
+          .map(function (p) {
+            return "№ " + String(p.number || 0).padStart(4, "0") + " " + p.title;
+          })
+          .join(" · ");
+        var badge =
+          card.status === "pending"
+            ? '<span class="status status--pending">ждёт решения</span>'
+            : card.status === "issued"
+              ? '<span class="status status--pub">выдана ' + esc(card.number || "") + "</span>"
+              : '<span class="status status--rejected">возвращена</span>';
+        return (
+          '<div class="admin-review"><div class="admin-review__top"><b>' + esc(card.authorName || "Автор") +
+          "</b>" + badge + "</div>" +
+          '<div class="admin-review__meta">Материалов в заявке: ' + (card.posts || []).length +
+          " · " + esc(fmtDate(card.createdAt)) + "</div>" +
+          '<p class="admin-review__excerpt">' + esc(posts) + "</p>" +
+          (card.status === "pending"
+            ? '<div class="admin-review__actions">' +
+              '<input class="admin-review__note" type="text" placeholder="Комментарий автору" data-card-note="' + esc(card.id) + '">' +
+              '<button class="btn btn--sm" type="button" data-card-approve="' + esc(card.id) + '">Выдать карту</button>' +
+              '<button class="btn btn--sm btn--ghost" type="button" data-card-reject="' + esc(card.id) + '">Вернуть</button>' +
+              "</div>"
+            : "") +
+          "</div>"
+        );
+      }
+
+      function load() {
+        var pass = passEl.value.trim();
+        if (!pass) {
+          statusEl.textContent = "Введите пароль редакции.";
+          return;
+        }
+        statusEl.textContent = "Загружаем…";
+        Store.apiCardQueue(pass).then(function (res) {
+          if (!res || !res.ok) {
+            statusEl.textContent = (res && res.error) || "Сервер не ответил.";
+            return;
+          }
+          var list = res.requests || [];
+          var waiting = list.filter(function (c) {
+            return c.status === "pending";
+          }).length;
+          statusEl.textContent = "Заявок всего: " + list.length + ", ждут решения: " + waiting + ".";
+          listEl.innerHTML = list.length
+            ? list.map(row).join("")
+            : '<div class="empty"><h3>Заявок пока нет</h3><p>Автор подаёт заявку в личном кабинете, ' +
+              "когда у него появятся опубликованные материалы.</p></div>";
+          $$("[data-card-approve], [data-card-reject]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var id = btn.getAttribute("data-card-approve") || btn.getAttribute("data-card-reject");
+              var approve = btn.hasAttribute("data-card-approve");
+              var noteEl = $('[data-card-note="' + id + '"]', listEl);
+              btn.disabled = true;
+              Store.apiCardReview(pass, id, approve ? "approve" : "reject", noteEl ? noteEl.value.trim() : "")
+                .then(function (r) {
+                  btn.disabled = false;
+                  if (!r || !r.ok) {
+                    statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
+                    return;
+                  }
+                  load();
+                });
+            });
+          });
+        });
+      }
+
+      $("[data-card-load]", section).addEventListener("click", load);
+      if (savedPass()) load();
     }
 
     /* --- очередь материалов, присланных авторами с их устройств ------------- */
@@ -1571,7 +1674,7 @@
       '<span class="presscard__code">' + esc(settings.card.prefix) + "-" +
       esc(String(settings.card.year)) + "-000</span>" +
       "</div>" +
-      '<img class="presscard__logo" src="assets/img/logo.png" alt="Смена контента" ' +
+      '<img class="presscard__logo" src="/assets/img/logo.png" alt="Смена контента" ' +
       'width="166" height="30" loading="lazy">' +
       '<div class="presscard__desc">Молодёжное медиа · Медиашкола · Сообщество авторов. ' +
       "Рассказываем истории из регионов России и учим их делать.</div>" +
@@ -1590,8 +1693,8 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="assets/docs/press-kit.pdf" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
-      '<a class="btn btn--sm btn--ghost" href="docs.html">Документы</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
       esc(String(SC.brand.year || 2026)) + "</span></div>" +
@@ -1643,7 +1746,7 @@
           : "") +
         '<div class="side-note"><b>Хотите публиковаться?</b> Регистрация занимает минуту — ' +
         'после неё вы получаете пресс-карту и можете писать материалы. ' +
-        '<a href="join.html">Зарегистрироваться</a></div>' +
+        '<a href="/join">Зарегистрироваться</a></div>' +
         "</aside></div></div>";
     } else if (heroHost) {
       heroHost.innerHTML =
@@ -1653,7 +1756,7 @@
         '<h1>Здесь появятся материалы авторов из регионов</h1>' +
         '<p class="lead">Проект только открывается. Первые тексты, репортажи и фотоистории ' +
         "появятся здесь, как только авторы их опубликуют — без выдуманных новостей и заглушек.</p>" +
-        '<div class="row"><a class="btn btn--accent" href="join.html">Стать автором</a>' +
+        '<div class="row"><a class="btn btn--accent" href="/join">Стать автором</a>' +
         '<a class="btn btn--ghost" href="#map">Посмотреть карту регионов</a></div>' +
         "</div>" +
         '<div class="hero-empty__side">' +
@@ -1728,7 +1831,7 @@
     var formatsHost = $("[data-formats]");
     if (formatsHost) {
       formatsHost.innerHTML = (SC.formats || []).map(function (f, i) {
-        return '<a class="format" href="news.html?format=' + encodeURIComponent(f.name) + '">' +
+        return '<a class="format" href="/news?format=' + encodeURIComponent(f.name) + '">' +
           '<span class="format__n">0' + (i + 1) + "</span>" +
           '<span class="format__name">' + esc(f.name) + "</span>" +
           '<span class="format__desc">' + esc(f.desc) + "</span></a>";
@@ -1855,14 +1958,14 @@
             ? '<div class="empty"><h3>Ничего не нашлось</h3>' +
               "<p>Попробуйте убрать фильтры или поискать по другому слову. " +
               "А если вы знаете историю, которой ещё нет на сайте, — опубликуйте её сами.</p>" +
-              '<div class="empty__actions"><a class="btn btn--sm" href="news.html">Сбросить фильтры</a>' +
-              '<a class="btn btn--sm btn--ghost" href="write.html">Написать материал</a></div></div>'
+              '<div class="empty__actions"><a class="btn btn--sm" href="/news">Сбросить фильтры</a>' +
+              '<a class="btn btn--sm btn--ghost" href="/write">Написать материал</a></div></div>'
             : '<div class="empty"><h3>Публикаций пока нет</h3>' +
               "<p>Лента только открылась. Первый материал может быть ваш — из вашего города, " +
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
-              '<div class="empty__actions"><a class="btn btn--sm" href="join.html">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -1929,7 +2032,7 @@
       host.innerHTML =
         '<div class="wrap section"><div class="empty"><h3>Материал не найден</h3>' +
         "<p>Скорее всего, ссылка устарела. Посмотрите все материалы в ленте.</p>" +
-        '<div class="empty__actions"><a class="btn" href="news.html">К ленте материалов</a></div>' +
+        '<div class="empty__actions"><a class="btn" href="/news">К ленте материалов</a></div>' +
         "</div></div>";
       return;
     }
@@ -1979,11 +2082,12 @@
       '<div class="progress"><i data-progress></i></div>' +
       '<article><div class="wrap article-head">' +
       '<div class="breadcrumbs">' +
-      '<a href="news.html">Материалы</a><span>/</span>' +
+      '<a href="/news">Материалы</a><span>/</span>' +
       '<a href="' + regionUrl(a.region) + '">' + esc(regionName(a.region)) + "</a>" +
       "<span>/</span><span>" + esc(a.format) + "</span></div>" +
       '<span class="kicker">' + esc(a.topic) + " · " + esc(a.format) +
-      (a.isUserPost ? ' · <span class="kicker-flag">автор проекта</span>' : "") + "</span>" +
+      (a.isUserPost ? ' · <span class="kicker-flag">автор проекта</span>' : "") +
+      (a.number ? " · № " + String(a.number).padStart(4, "0") : "") + "</span>" +
       '<h1 class="article-title">' + esc(a.title) + "</h1>" +
       '<p class="article-lead">' + esc(a.excerpt) + "</p>" +
       '<div class="article-meta">' +
@@ -1995,7 +2099,7 @@
       '<span class="meta__dot"></span><a href="' + regionUrl(a.region) + '" style="color:inherit">' +
       esc(regionName(a.region)) + "</a></div>" +
       (isMine
-        ? '<a class="btn btn--sm btn--ghost" href="write.html?id=' + encodeURIComponent(id.slice(2)) +
+        ? '<a class="btn btn--sm btn--ghost" href="/write?id=' + encodeURIComponent(id.slice(2)) +
           '">Редактировать</a>'
         : "") +
       "</div>" +
@@ -2008,9 +2112,9 @@
       '<div class="wrap"><div class="article-layout">' +
       '<div><div class="prose">' + bodyHtml + "</div>" +
       '<div class="article-tags">' +
-      '<a class="tag" href="news.html?topic=' + encodeURIComponent(a.topic) + '">' + esc(a.topic) + "</a>" +
-      '<a class="tag" href="news.html?format=' + encodeURIComponent(a.format) + '">' + esc(a.format) + "</a>" +
-      '<a class="tag" href="news.html?region=' + encodeURIComponent(a.region) + '">' +
+      '<a class="tag" href="/news?topic=' + encodeURIComponent(a.topic) + '">' + esc(a.topic) + "</a>" +
+      '<a class="tag" href="/news?format=' + encodeURIComponent(a.format) + '">' + esc(a.format) + "</a>" +
+      '<a class="tag" href="/news?region=' + encodeURIComponent(a.region) + '">' +
       esc(regionName(a.region)) + "</a></div>" +
       (a.isUserPost
         ? '<div class="author-box"><span class="author-box__ava">' + esc(au.initials) + "</span>" +
@@ -2035,7 +2139,7 @@
       '<div class="aside-box"><h3>Написать своё</h3>' +
       '<p style="font-size:.88rem;color:var(--ink-soft);margin-bottom:12px">Любой ' +
       "зарегистрированный автор может опубликовать материал на сайте.</p>" +
-      '<a class="btn btn--sm btn--accent btn--block" href="write.html">Опубликовать материал</a>' +
+      '<a class="btn btn--sm btn--accent btn--block" href="/write">Опубликовать материал</a>' +
       "</div></aside></div></div></article>" +
       (related.length
         ? '<div class="wrap section"><div class="sec-head"><div class="sec-head__left">' +
@@ -2077,7 +2181,7 @@
       host.innerHTML =
         '<div class="wrap section"><div class="empty"><h3>Регион не найден</h3>' +
         "<p>Проверьте ссылку или выберите регион на карте.</p>" +
-        '<div class="empty__actions"><a class="btn" href="index.html#map">К карте регионов</a></div>' +
+        '<div class="empty__actions"><a class="btn" href="/#map">К карте регионов</a></div>' +
         "</div></div>";
       return;
     }
@@ -2104,8 +2208,8 @@
       '<div class="region-hero"><div class="wrap region-hero__grid">' +
       "<div>" +
       '<div class="breadcrumbs" style="color:rgba(247,245,239,.55)">' +
-      '<a href="index.html">Главная</a><span>/</span>' +
-      '<a href="index.html#map">Регионы</a><span>/</span><span>' + esc(r.district || "") + "</span></div>" +
+      '<a href="/">Главная</a><span>/</span>' +
+      '<a href="/#map">Регионы</a><span>/</span><span>' + esc(r.district || "") + "</span></div>" +
       '<span class="kicker">' + esc(r.district || "Регион") + "</span>" +
       "<h1>" + esc(r.name) + "</h1>" +
       '<p class="region-hero__sub">' +
@@ -2121,8 +2225,8 @@
       esc((r.district || "—").replace(" ФО", "")) + "</b><span>федеральный округ</span></div>" +
       "</div>" +
       '<div class="row" style="margin-top:20px">' +
-      '<a class="btn btn--paper btn--sm" href="write.html">Опубликовать материал</a>' +
-      '<a class="btn btn--outline-paper btn--sm" href="index.html#map">Выбрать другой регион</a></div>' +
+      '<a class="btn btn--paper btn--sm" href="/write">Опубликовать материал</a>' +
+      '<a class="btn btn--outline-paper btn--sm" href="/#map">Выбрать другой регион</a></div>' +
       "</div>" +
       '<div class="region-map-mini">' + miniMap + "</div>" +
       "</div></div>" +
@@ -2137,8 +2241,8 @@
           "<p>Вы можете стать первым автором оттуда. Зарегистрируйтесь — и опубликуйте " +
           "историю, которая происходит рядом с вами. Редактор поможет с темой и текстом.</p>" +
           '<div class="empty__actions">' +
-          '<a class="btn btn--accent" href="write.html">Опубликовать материал</a>' +
-          '<a class="btn btn--ghost" href="join.html">Создать аккаунт</a>' +
+          '<a class="btn btn--accent" href="/write">Опубликовать материал</a>' +
+          '<a class="btn btn--ghost" href="/join">Создать аккаунт</a>' +
           "</div></div>") +
       (districtMates.length
         ? '<div class="sec-head" style="margin-top:40px"><div class="sec-head__left">' +
@@ -2154,14 +2258,14 @@
       '<div class="aside-box"><h3>Пишете отсюда?</h3>' +
       '<p style="font-size:.9rem;color:var(--ink-soft);margin-bottom:12px">Мы ищем авторов, ' +
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
-      '<a class="btn btn--sm btn--block" href="join.html">Зарегистрироваться</a></div>' +
+      '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="assets/docs/polozhenie-o-redakcii.pdf" target="_blank" rel="noopener">Положение о редакции (PDF)</a></li>' +
-      '<li><a href="docs.html">Все документы</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf" target="_blank" rel="noopener">Положение о редакции (PDF)</a></li>' +
+      '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
-      '<a class="btn btn--sm btn--ghost btn--block" href="index.html#map">Открыть всю карту</a></div>' +
+      '<a class="btn btn--sm btn--ghost btn--block" href="/#map">Открыть всю карту</a></div>' +
       "</aside></div></div>";
   }
 
@@ -2172,7 +2276,7 @@
     if (!box) return;
     var user = Store ? Store.currentUser() : null;
     var nextParam = param("next");
-    var next = nextParam === "write" ? "write.html" : nextParam === "admin" ? "admin.html" : "profile.html";
+    var next = nextParam === "write" ? "/write" : nextParam === "admin" ? "/admin" : "/profile";
     if (user) {
       window.location.replace(next);
       return;
@@ -2229,7 +2333,7 @@
           out.classList.remove("is-hidden");
           return;
         }
-        window.location.href = next === "profile.html" ? "profile.html?new=1" : next;
+        window.location.href = next === "/profile" ? "/profile?new=1" : next;
       });
     }
 
@@ -2317,7 +2421,7 @@
     if (!host) return;
     var user = Store ? Store.currentUser() : null;
     if (!user) {
-      window.location.replace("join.html?next=write#login");
+      window.location.replace("/join?next=write#login");
       return;
     }
 
@@ -2351,7 +2455,7 @@
         } else if (p.status === "pending") {
           action = '<span class="post-row__wait">Ждёт редактора</span>';
         } else {
-          action = '<a class="btn btn--sm btn--ghost" href="article.html?id=' +
+          action = '<a class="btn btn--sm btn--ghost" href="/article?id=' +
             encodeURIComponent("u:" + p.id) + '">Открыть</a>';
         }
         return (
@@ -2366,7 +2470,7 @@
             : "") +
           "</div>" +
           '<div class="post-row__actions">' + action +
-          '<a class="btn btn--sm btn--ghost" href="write.html?id=' + p.id + '">Изменить</a>' +
+          '<a class="btn btn--sm btn--ghost" href="/write?id=' + p.id + '">Изменить</a>' +
           '<button class="btn btn--sm btn--ghost" type="button" data-delete="' + p.id + '">Удалить</button>' +
           "</div></div>"
         );
@@ -2416,8 +2520,8 @@
         '<p class="profile-id__since">На проекте с ' + fmtDate(user.createdAt) + "</p></div>" +
         "</div>" +
         '<div class="profile-hero__actions">' +
-        '<a class="btn btn--accent" href="write.html">Написать материал</a>' +
-        '<a class="btn btn--ghost" href="admin.html">Панель проекта</a>' +
+        '<a class="btn btn--accent" href="/write">Написать материал</a>' +
+        '<a class="btn btn--ghost" href="/admin">Панель проекта</a>' +
         '<button class="btn btn--ghost" type="button" data-logout>Выйти</button>' +
         "</div></div></div></section>" +
 
@@ -2451,14 +2555,14 @@
         '<div class="profile-posts" style="margin-top:44px">' +
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Мои материалы</span>' +
         "<h2>Материалы и статусы</h2></div>" +
-        '<a class="sec-link" href="write.html">Новый материал <span aria-hidden="true">→</span></a></div>' +
+        '<a class="sec-link" href="/write">Новый материал <span aria-hidden="true">→</span></a></div>' +
         (mine.length
           ? mine.map(postRow).join("")
           : '<div class="empty"><h3>Пока ничего не опубликовано</h3>' +
             "<p>Начните с простого: история из вашего двора, района или вуза. " +
             "Памятка автору подскажет, с чего начать.</p>" +
-            '<div class="empty__actions"><a class="btn btn--accent" href="write.html">Написать материал</a>' +
-            '<a class="btn btn--ghost" href="assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<div class="empty__actions"><a class="btn btn--accent" href="/write">Написать материал</a>' +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div>" +
 
         // настройки
@@ -2489,6 +2593,7 @@
         "</section>";
 
       initAnimations();
+      mountCardApplication();
 
       var form = $("[data-profile-form]", host);
       if (form) {
@@ -2506,7 +2611,7 @@
       $$("[data-logout]", host).forEach(function (b) {
         b.addEventListener("click", function () {
           Store.logout();
-          window.location.href = "index.html";
+          window.location.href = "/";
         });
       });
 
@@ -2568,6 +2673,127 @@
       });
     }
 
+    /* --- заявка на пресс-карту: карта выдаётся не сама, а по заявке --------- */
+    function mountCardApplication() {
+      var old = $("[data-card-app]");
+      if (old) old.remove();
+      if (!Store.apiCardStatus) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("data-card-app", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Пресс-карта</span>' +
+        "<h2>Заявка на карту автора</h2>" +
+        '<p class="sec-head__text">Карта не выдаётся автоматически: нужно подать заявку и приложить ' +
+        "все свои опубликованные материалы — у каждого есть номер. Решение принимает редакция.</p>" +
+        '</div></div><div data-card-body><p class="no-data">Проверяем заявку…</p></div>';
+      host.appendChild(section);
+
+      var body = $("[data-card-body]", section);
+
+      Promise.all([Store.apiMyPosts(), Store.apiCardStatus()]).then(function (res) {
+        var posts = (res[0] || []).filter(function (p) {
+          return p.status === "published";
+        });
+        var status = res[1] || { requests: [], minPosts: 5 };
+        var last = (status.requests || [])[0];
+        var need = status.minPosts || 5;
+
+        if (last && last.status === "pending") {
+          body.innerHTML =
+            '<div class="panel"><h3>Заявка отправлена</h3>' +
+            "<p>Материалов в заявке: " + (last.posts || []).length +
+            ". Редакция рассмотрит её и выдаст карту с номером — статус появится здесь.</p>" +
+            '<p class="form__note">Отправлено: ' + esc(fmtDate(last.createdAt)) + "</p></div>";
+          return;
+        }
+        if (last && last.status === "issued") {
+          body.innerHTML =
+            '<div class="panel"><h3>Пресс-карта выдана</h3>' +
+            '<p class="presscard__code" style="font-size:1.1rem">' + esc(last.number || "") + "</p>" +
+            "<p>Номер действует один год. Карту можно показать на месте съёмки или встречи — " +
+            "она подтверждает, что вы пишете для «Смены контента».</p>" +
+            '<p class="form__note">Материалов в заявке: ' + (last.posts || []).length + "</p></div>";
+          return;
+        }
+
+        var head =
+          (last && last.status === "rejected"
+            ? '<div class="panel" style="margin-bottom:18px"><h3>Заявку вернули на доработку</h3><p>' +
+              esc(last.note || "Редакция не указала причину.") + "</p></div>"
+            : "") +
+          "<p>Опубликовано материалов: <b>" + posts.length + "</b>. Для заявки нужно не меньше " +
+          need + ".</p>";
+
+        if (!posts.length) {
+          body.innerHTML =
+            head +
+            '<div class="empty"><h3>Пока нечего приложить</h3>' +
+            "<p>Сначала опубликуйте материал: после проверки редакцией у него появится номер, " +
+            "и он войдёт в заявку.</p>" +
+            '<div class="empty__actions"><a class="btn btn--sm" href="/write">Написать материал</a></div></div>';
+          return;
+        }
+
+        var rows = posts
+          .map(function (p) {
+            return (
+              '<label class="check-line" style="align-items:flex-start">' +
+              '<input type="checkbox" checked value="' + esc(p.id) + '" data-card-post>' +
+              "<span><b>№ " + String(p.number || 0).padStart(4, "0") + "</b> · " + esc(p.title) +
+              '<small style="display:block;color:var(--muted)">' + esc(regionName(p.region) || "регион не выбран") +
+              " · " + esc(fmtDate(p.date)) + "</small></span></label>"
+            );
+          })
+          .join("");
+
+        body.innerHTML =
+          head +
+          '<div class="panel"><div class="stack">' + rows + "</div>" +
+          '<div class="row" style="margin-top:16px">' +
+          '<button class="btn" type="button" data-card-send>Подать заявку</button>' +
+          '<span class="form__note" data-card-note>Приложите все материалы — редакция проверяет их по номерам.</span>' +
+          "</div></div>";
+
+        var send = $("[data-card-send]", section);
+        var note = $("[data-card-note]", section);
+        send.addEventListener("click", function () {
+          var chosen = $$("[data-card-post]", section)
+            .filter(function (el) {
+              return el.checked;
+            })
+            .map(function (el) {
+              return el.value;
+            });
+          if (chosen.length !== posts.length) {
+            note.textContent = "Отметьте все свои материалы: заявка подаётся со всеми публикациями.";
+            return;
+          }
+          if (chosen.length < need) {
+            note.textContent = "Нужно не меньше " + need + " опубликованных материалов.";
+            return;
+          }
+          var me = Store.currentUser();
+          send.disabled = true;
+          note.textContent = "Отправляем…";
+          Store.apiCardRequest({
+            authorName: me ? me.name : "",
+            authorRegion: me ? me.region : "",
+            authorRole: me ? me.role : "",
+            posts: chosen,
+          }).then(function (res) {
+            send.disabled = false;
+            if (!res || !res.ok) {
+              note.textContent = (res && res.error) || "Не удалось отправить заявку.";
+              return;
+            }
+            render();
+          });
+        });
+      });
+    }
+
     render();
 
     // статусы материалов, которые ушли в общую приёмную на хостинге
@@ -2589,7 +2815,7 @@
     if (!host) return;
     var user = Store ? Store.currentUser() : null;
     if (!user) {
-      window.location.replace("join.html?next=write#login");
+      window.location.replace("/join?next=write#login");
       return;
     }
 
@@ -2608,7 +2834,7 @@
       '<p class="lead">Пишите так, как рассказали бы другу. Черновик можно сохранить ' +
       "и вернуться к нему позже.</p></div>" +
       '<div class="write-head__side">' +
-      '<a class="btn btn--sm btn--ghost" href="profile.html">← В кабинет</a>' +
+      '<a class="btn btn--sm btn--ghost" href="/profile">← В кабинет</a>' +
       "</div></div>" +
       '<form class="write-form" data-write-form>' +
       '<div class="write-main">' +
@@ -2678,7 +2904,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 
@@ -2828,14 +3054,14 @@
         setStatus(sent.message || "Готово");
         setTimeout(function () {
           window.location.href = sent.direct
-            ? "article.html?id=" + encodeURIComponent("u:" + res.post.id)
-            : "profile.html";
+            ? "/article?id=" + encodeURIComponent("u:" + res.post.id)
+            : "/profile";
         }, 600);
       } else {
         setStatus("Черновик сохранён");
         if (!existing) {
           existing = res.post;
-          window.history.replaceState({}, "", "write.html?id=" + res.post.id);
+          window.history.replaceState({}, "", "/write?id=" + res.post.id);
         }
       }
     });
@@ -2970,7 +3196,7 @@
           '<p class="founder__role">' + esc(f.role || "Основатель") +
           (f.city ? " · " + esc(f.city) : "") + "</p></div>" +
           '<div class="founder__more"><p>' + (esc(f.bio) || "Основатель проекта «Смена контента».") +
-          '</p><a class="founder__link" href="founders.html#' + esc(f.id || "") + '">Подробнее →</a></div>' +
+          '</p><a class="founder__link" href="/founders#' + esc(f.id || "") + '">Подробнее →</a></div>' +
           "</article>"
         );
       })
@@ -3014,9 +3240,9 @@
 
     // ссылки на редактор для незарегистрированных ведут на регистрацию
     if (Store && !Store.currentUser()) {
-      $$('a[href="write.html"]').forEach(function (a) {
+      $$('a[href="/write"]').forEach(function (a) {
         if (!a.hasAttribute("data-keep")) {
-          a.setAttribute("href", "join.html?next=write");
+          a.setAttribute("href", "/join?next=write");
         }
       });
     }

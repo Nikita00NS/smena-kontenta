@@ -1,7 +1,7 @@
 # Настройки сайта «Смена контента» для хостинга Sprinthost (Apache)
 # Файл читается автоматически. Трогать его не нужно.
 
-# Главная страница сайта — index.html, а не стандартная заглушка хостинга
+# Главная страница сайта — /, а не стандартная заглушка хостинга
 DirectoryIndex index.html index.php index.htm
 
 # Запрет показывать список файлов в папках
@@ -9,6 +9,37 @@ Options -Indexes
 
 # Кодировка по умолчанию
 AddDefaultCharset UTF-8
+
+# Разделы открываются по короткому адресу: /about, /news, /docs.
+# Файлы лежат в папках, но адресная строка остаётся чистой.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # старые адреса вида /about.html навсегда переезжают на /about
+  RewriteCond %{REQUEST_URI} !/index\.html$
+  RewriteRule ^(.+)\.html$ /$1 [R=301,L]
+
+  # /index.html → главная
+  RewriteRule ^index\.html$ / [R=301,L]
+
+  # короткие адреса разделов
+  RewriteRule ^news/?$ /news/index.html [L]
+  RewriteRule ^about/?$ /about/index.html [L]
+  RewriteRule ^partners/?$ /partners/index.html [L]
+  RewriteRule ^region/?$ /region/index.html [L]
+  RewriteRule ^media-school/?$ /media-school/index.html [L]
+  RewriteRule ^docs/?$ /docs/index.html [L]
+  RewriteRule ^join/?$ /join/index.html [L]
+  RewriteRule ^profile/?$ /profile/index.html [L]
+  RewriteRule ^write/?$ /write/index.html [L]
+  RewriteRule ^admin/?$ /admin/index.html [L]
+  RewriteRule ^article/?$ /article/index.html [L]
+  RewriteRule ^founders/?$ /founders/index.html [L]
+
+  # /about/ и /about — один адрес, оставляем без косой черты
+  RewriteCond %{REQUEST_URI} ^/(news|about|partners|region|media-school|docs|join|profile|write|admin|article|founders)/$
+  RewriteRule ^(.+)/$ /$1 [R=301,L]
+</IfModule>
 
 # Красивая страница для несуществующих адресов
 ErrorDocument 404 /404.html

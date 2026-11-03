@@ -57,7 +57,14 @@ def mail_phrase():
     return PROJECT["email"] or "почту проекта (она указана на сайте)"
 
 
-def founder_rows():
+def founder_rows(with_inn=False):
+    """ИНН печатается только там, где он обязателен: в политике конфиденциальности
+    оператор указан с ИНН. В презентации и остальных документах — только ФИО."""
+    if not with_inn:
+        rows = [["Учредитель", "ФИО"]]
+        for f in PROJECT["founders"]:
+            rows.append([f["role"] or "Директор", f["name"] or "—"])
+        return rows
     rows = [["Учредитель", "ФИО", "ИНН"]]
     for f in PROJECT["founders"]:
         rows.append([f["role"] or "Директор", f["name"] or "—", f["inn"] or "—"])
@@ -310,7 +317,7 @@ def press_kit():
     ])
 
     d.h2("Учредители")
-    d.table(founder_rows(), [40 * mm, 90 * mm, 35 * mm])
+    d.table(founder_rows(), [40 * mm, 80 * mm])
     if not any(f["name"] for f in PROJECT["founders"]):
         d.p("Прочерк означает, что данные заполняются до начала работы проекта.", "small")
 
@@ -318,8 +325,8 @@ def press_kit():
     d.table([
         ["Почта", mail()],
         ["Город", PROJECT["city"]],
-        ["Сайт", "index.html (публикация — на любом статическом хостинге)"],
-        ["Документы", "docs.html — пресс-кит, редакционная политика, памятка автору"],
+        ["Сайт", "smenakontenta.ru"],
+        ["Документы", "smenakontenta.ru/docs — пресс-кит, редакционная политика, памятка автору"],
     ])
     d.p("Презентация подготовлена для партнёров. Цифры и статусы "
         "обновляются по мере развития проекта.", "small")
@@ -558,7 +565,7 @@ def privacy():
         ["Оператор", "проект «Смена контента», " + PROJECT["city"]],
         ["Контакт для обращений", mail()],
     ], [55 * mm, 110 * mm])
-    d.table(founder_rows(), [40 * mm, 90 * mm, 35 * mm])
+    d.table(founder_rows(with_inn=True), [40 * mm, 90 * mm, 35 * mm])
     if not any(f["name"] for f in PROJECT["founders"]):
         d.p("Прочерк означает, что данные заполняются до начала работы с пользователями. "
             "Актуальные сведения можно получить по контакту, указанному выше.", "small")
