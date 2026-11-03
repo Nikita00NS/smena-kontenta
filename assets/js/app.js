@@ -960,21 +960,31 @@
       el.textContent = "0";
       return;
     }
-    var start = performance.now();
+    // считаем время по Date.now(), а не по метке кадра: в части браузеров
+    // и встроенных просмотрщиков метка кадра идёт из другого нуля отсчёта,
+    // из-за чего прогресс уходил в минус и на экране были отрицательные числа
+    var start = Date.now();
     var dur = 900;
+    var done = false;
     el.textContent = "0";
     function finish() {
+      if (done) return;
+      done = true;
       el.textContent = String(target);
     }
-    function step(now) {
-      var p = Math.min(1, Math.max(0, (now - start) / dur));
-      var eased = 1 - Math.pow(1 - p, 3);
-      el.textContent = String(Math.round(target * eased));
-      if (p < 1) requestAnimationFrame(step);
-      else finish();
+    function step() {
+      if (done) return;
+      var p = (Date.now() - start) / dur;
+      if (!(p >= 1)) {
+        p = Math.max(0, p);
+        el.textContent = String(Math.round(target * (1 - Math.pow(1 - p, 3))));
+        requestAnimationFrame(step);
+      } else {
+        finish();
+      }
     }
     requestAnimationFrame(step);
-    // страховка: если браузер «заморозил» кадры, число всё равно появится
+    // страховка: если кадры не приходят совсем, число всё равно появится
     setTimeout(finish, dur + 300);
   }
 
