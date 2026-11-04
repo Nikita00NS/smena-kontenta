@@ -400,6 +400,36 @@ function check_login_rate($dir) {
     write_json($file, $data);
 }
 
+/* ------------------------------------------------ согласия на обработку ПД */
+function consents_file($dir) { return $dir . '/consents.json'; }
+
+function read_consents($dir) {
+    $list = read_json(consents_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+function consent_of_user($dir, $userId) {
+    foreach (read_consents($dir) as $c) {
+        if (isset($c['userId']) && $c['userId'] === $userId) return $c;
+    }
+    return null;
+}
+
+function public_consent($c) {
+    if (!$c) return array('status' => 'none', 'note' => '', 'decidedAt' => '', 'createdAt' => '', 'scan' => '');
+    return array(
+        'id' => isset($c['id']) ? $c['id'] : '',
+        'status' => isset($c['status']) ? $c['status'] : 'pending',
+        'note' => isset($c['note']) ? $c['note'] : '',
+        'createdAt' => isset($c['createdAt']) ? $c['createdAt'] : '',
+        'decidedAt' => isset($c['decidedAt']) ? $c['decidedAt'] : '',
+        'name' => isset($c['name']) ? $c['name'] : '',
+        'email' => isset($c['email']) ? $c['email'] : '',
+        'userRegion' => isset($c['userRegion']) ? $c['userRegion'] : '',
+        'scan' => isset($c['scan']) ? $c['scan'] : '',
+    );
+}
+
 /* ------------------------------------------------- самопроверка аккаунтов */
 function selftest_auth($dir) {
     $steps = array();
@@ -775,6 +805,103 @@ if ($act === 'remove') {
     if (!isset($posts[$id])) fail('Материал не найден.', 404);
     unset($posts[$id]);
     write_json($DATA_DIR . '/posts.json', $posts);
+    respond(array('ok' => true));
+}
+
+/* ------------------------------------------------------- согласие на обработку */
+
+if ($act === 'consent-send') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $err = '';
+    $file = data_url_file(
+        isset($in['scan']) ? $in['scan'] : '',
+        array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'),
+        4000000,
+        $err
+    );
+    if (!$file) fail($err, 413);
+
+    $dir = media_dir($DATA_DIR);
+    $fname = 'pd_' . $user['id'] . '_' . time() . '.' . $file['ext'];
+    if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) {
+        fail('Не удалось сохранить скан. Попробуйте файл поменьше.', 500);
+    }
+    @chmod($dir . '/' . $fname, 0644);
+
+    $list = read_consents($DATA_DIR);
+    $record = array(
+        'id' => 'c_' . bin2hex(random_bytes(5)),
+        'userId' => $user['id'],
+        'name' => $user['name'],
+        'email' => $user['email'],
+        'userRegion' => isset($user['region']) ? $user['region'] : '',
+        'scan' => media_public_url($fname),
+        'status' => 'pending',
+        'note' => '',
+        'createdAt' => date('c'),
+        'decidedAt' => '',
+    );
+    $replaced = false;
+    foreach ($list as $i => $c) {
+        if (isset($c['userId']) && $c['userId'] === $user['id']) {
+            $record['id'] = $c['id'];
+            $list[$i] = $record;
+            $replaced = true;
+            break;
+        }
+    }
+    if (!$replaced) $list[] = $record;
+    if (!write_json(consents_file($DATA_DIR), $list)) fail('Не удалось сохранить заявку.', 500);
+
+    respond(array('ok' => true, 'consent' => public_consent($record)));
+}
+
+if ($act === 'consent-status') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    respond(array('ok' => true, 'consent' => public_consent(consent_of_user($DATA_DIR, $user['id']))));
+}
+
+if ($act === 'consent-queue') {
+    $in = body();
+    $password = isset($in['password']) ? (string) $in['password'] : '';
+    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    $list = read_consents($DATA_DIR);
+    usort($list, function ($a, $b) {
+        return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
+    });
+    $out = array();
+    foreach ($list as $c) $out[] = public_consent($c);
+    respond(array('ok' => true, 'consents' => $out));
+}
+
+if ($act === 'consent-review') {
+    $in = body();
+    $password = isset($in['password']) ? (string) $in['password'] : '';
+    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+
+    $id = isset($in['id']) ? (string) $in['id'] : '';
+    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
+    $note = text(isset($in['note']) ? $in['note'] : '', 400);
+    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение должно быть «одобрено» или «отклонено».');
+    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание — напишите причину.');
+
+    $list = read_consents($DATA_DIR);
+    $found = false;
+    foreach ($list as $i => $c) {
+        if ($c['id'] !== $id) continue;
+        $list[$i]['status'] = $decision;
+        $list[$i]['note'] = $note;
+        $list[$i]['decidedAt'] = date('c');
+        $found = true;
+        break;
+    }
+    if (!$found) fail('Заявка не найдена.', 404);
+    if (!write_json(consents_file($DATA_DIR), $list)) fail('Не удалось сохранить решение.', 500);
     respond(array('ok' => true));
 }
 
