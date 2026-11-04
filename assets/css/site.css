@@ -6023,3 +6023,86 @@ html[data-theme="light"] .founder__photo--mono {
 .article-gallery__item:hover img {
   transform: scale(1.04);
 }
+
+/* ============================================================================
+   37. СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ
+   ========================================================================== */
+.consent-card {
+  display: grid;
+  gap: 12px;
+  padding: clamp(18px, 2.4vw, 24px);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 18px 18px 0;
+  background: var(--paper-2);
+  align-self: start;
+}
+.consent-card--approved {
+  border-left-color: #22a06b;
+}
+.consent-card--pending {
+  border-left-color: #d19a1e;
+}
+.consent-card--rejected {
+  border-left-color: #d1371e;
+}
+.consent-card__head h3 {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(17px, 1.7vw, 21px);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.consent-card__state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+}
+.consent-card__state b {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.consent-card__state span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.consent-card__state--ok b { color: #2fc98a; }
+.consent-card__state--wait b { color: #e7b13a; }
+.consent-card__state--bad b { color: #ff6a4d; }
+.consent-card p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.consent-card__note {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 106, 77, 0.12);
+  color: var(--ink) !important;
+}
+.consent-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.consent-thumb {
+  display: block;
+  width: min(220px, 100%);
+  margin: 10px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.consent-thumb img {
+  display: block;
+  width: 100%;
+  height: auto;
+}

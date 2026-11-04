@@ -381,7 +381,8 @@
           "<h2>Коротко: что здесь есть</h2>" +
           '<ul class="onboard__tour">' +
             "<li><div><b>Материалы</b><span>Тексты, репортажи, фотоистории, видео и подкасты авторов. Ленту можно фильтровать по темам.</span></div></li>" +
-            "<li><div><b>Карта регионов</b><span>84 региона, у каждого — свои авторы и редакции. Где материалов пока нет, мы честно об этом пишем.</span></div></li>" +
+            "<li><div><b>Карта регионов</b><span>" + MAP.regions.length +
+            " регионов, у каждого — свои авторы и редакции. Где материалов пока нет, мы честно об этом пишем.</span></div></li>" +
             "<li><div><b>Медиашкола</b><span>Практика и разборы: как писать, снимать и монтировать так, чтобы это читали.</span></div></li>" +
             "<li><div><b>Личный кабинет</b><span>Здесь материалы проходят проверку редакции, копятся баллы и открывается пресс-карта.</span></div></li>" +
           "</ul>" +
@@ -1486,9 +1487,117 @@
       bind();
       mountServerQueue(host);
       mountCardQueue(host);
+      mountConsentQueue(host);
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
+    /* --- согласия на обработку ПД: проверка сканов ------------------------- */
+    function mountConsentQueue(host) {
+      var old = $("[data-consent-queue]");
+      if (old) old.remove();
+      if (!Store.consentQueue) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-consent-queue", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Согласия</span>' +
+        "<h2>Сканы согласий на обработку данных</h2>" +
+        '<p class="sec-head__text">Автор подписывает документ от руки и загружает фото. ' +
+        "Пока скан не одобрен, публикация материалов закрыта. Для отказа нужно основание.</p></div></div>" +
+        '<div class="panel"><div class="row" style="align-items:flex-end">' +
+        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
+        '<label for="consent-pass">Пароль редакции</label>' +
+        '<input id="consent-pass" type="password" placeholder="Тот же пароль, что и для материалов" value="' +
+        esc(savedPass()) + '"></div>' +
+        '<button class="btn btn--sm" type="button" data-consent-load>Показать согласия</button></div>' +
+        '<p class="form__note" data-consent-status></p></div><div data-consent-list></div>';
+      host.appendChild(section);
+
+      var passEl = $("#consent-pass", section);
+      var statusEl = $("[data-consent-status]", section);
+      var listEl = $("[data-consent-list]", section);
+
+      var LABEL = {
+        pending: '<span class="status status--pending">на проверке</span>',
+        approved: '<span class="status status--pub">одобрено</span>',
+        rejected: '<span class="status status--rejected">отклонено</span>',
+      };
+
+      function row(c) {
+        var badge = LABEL[c.status] || LABEL.pending;
+        return (
+          '<div class="admin-review"><div class="admin-review__top"><b>' +
+          esc(c.name || "Автор") + "</b>" + badge + "</div>" +
+          '<div class="admin-review__meta">' + esc(c.email || "") +
+          (c.userRegion ? " · " + esc(regionName(c.userRegion)) : "") +
+          " · " + esc(fmtDate(c.createdAt)) + "</div>" +
+          (c.scan
+            ? '<a class="consent-thumb" href="' + esc(c.scan) + '" target="_blank" rel="noopener">' +
+              '<img src="' + esc(c.scan) + '" alt="Скан согласия"></a>'
+            : "") +
+          (c.note ? '<p class="admin-review__excerpt">Основание: ' + esc(c.note) + "</p>" : "") +
+          (c.status === "pending"
+            ? '<div class="admin-review__actions">' +
+              '<input class="admin-review__note" type="text" placeholder="Основание (обязательно для отказа)" ' +
+              'data-consent-note="' + esc(c.id) + '">' +
+              '<button class="btn btn--sm" type="button" data-consent-approve="' + esc(c.id) + '">Одобрить</button>' +
+              '<button class="btn btn--sm btn--ghost" type="button" data-consent-reject="' +
+              esc(c.id) + '">Отклонить</button></div>'
+            : "") +
+          "</div>"
+        );
+      }
+
+      function load() {
+        var pass = passEl.value.trim();
+        if (!pass) {
+          statusEl.textContent = "Введите пароль редакции.";
+          return;
+        }
+        statusEl.textContent = "Загружаем…";
+        Store.consentQueue(pass).then(function (res) {
+          if (!res || !res.ok) {
+            statusEl.textContent = (res && res.error) || "Сервер не ответил.";
+            return;
+          }
+          var list = res.consents || [];
+          var waiting = list.filter(function (c) { return c.status === "pending"; }).length;
+          statusEl.textContent = "Согласий всего: " + list.length + ", ждут проверки: " + waiting + ".";
+          listEl.innerHTML = list.length
+            ? list.map(row).join("")
+            : '<div class="empty"><h3>Согласий пока нет</h3><p>Автор загружает скан в личном ' +
+              "кабинете, в блоке «Согласие на обработку персональных данных».</p></div>";
+
+          $$("[data-consent-approve], [data-consent-reject]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var id = btn.getAttribute("data-consent-approve") || btn.getAttribute("data-consent-reject");
+              var approve = btn.hasAttribute("data-consent-approve");
+              var noteEl = $('[data-consent-note="' + id + '"]', listEl);
+              var note = noteEl ? noteEl.value.trim() : "";
+              if (!approve && note.length < 5) {
+                statusEl.textContent = "Чтобы отклонить, напишите основание — не короче пяти символов.";
+                return;
+              }
+              btn.disabled = true;
+              Store.consentReview(pass, id, approve ? "approved" : "rejected", note).then(function (r) {
+                btn.disabled = false;
+                if (!r || !r.ok) {
+                  statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
+                  return;
+                }
+                load();
+              });
+            });
+          });
+        });
+      }
+
+      $("[data-consent-load]", section).addEventListener("click", load);
+      if (savedPass()) load();
+    }
+
     function mountCardQueue(host) {
       var old = $("[data-card-queue]");
       if (old) old.remove();
@@ -2636,6 +2745,58 @@
 
   /* 12. Личный кабинет ===================================================== */
 
+  /* согласие на обработку персональных данных:
+     скачал форму → подписал от руки → загрузил скан → комиссия проверила */
+  function consentBlockHtml(status, consent) {
+    var info = consent || {};
+    var head =
+      '<div class="consent-card__head"><span class="kicker">Документ для подписи</span>' +
+      '<h3>Согласие на обработку персональных данных</h3></div>';
+
+    var body;
+    if (status === "approved") {
+      body =
+        '<div class="consent-card__state consent-card__state--ok">' +
+        '<b>Проверено комиссией</b><span>' +
+        (info.decidedAt ? fmtDate(info.decidedAt) : "") + "</span></div>" +
+        "<p>Согласие принято. Публиковать материалы можно без ограничений.</p>";
+    } else if (status === "pending") {
+      body =
+        '<div class="consent-card__state consent-card__state--wait">' +
+        "<b>На проверке у комиссии</b><span>" +
+        (info.createdAt ? fmtDate(info.createdAt) : "") + "</span></div>" +
+        "<p>Обычно проверка занимает до двух дней. Пока решение не принято, " +
+        "опубликовать материал нельзя — черновик сохранить можно.</p>";
+    } else if (status === "rejected") {
+      body =
+        '<div class="consent-card__state consent-card__state--bad">' +
+        "<b>Нужно исправить</b><span>" + (info.decidedAt ? fmtDate(info.decidedAt) : "") +
+        "</span></div>" +
+        (info.note ? '<p class="consent-card__note">Основание: ' + esc(info.note) + "</p>" : "") +
+        "<p>Скачайте форму заново, подпишите, сфотографируйте целиком и загрузите ещё раз.</p>";
+    } else {
+      body =
+        '<div class="consent-card__state">' +
+        "<b>Пока не отправлено</b><span>публикация закрыта</span></div>" +
+        "<p>Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
+        "фото. Комиссия проверит документ и откроет публикацию.</p>";
+    }
+
+    var actions =
+      '<div class="consent-card__actions">' +
+      '<a class="btn btn--sm btn--ghost" href="/assets/docs/soglasie-na-obrabotku-pd.pdf" ' +
+      'target="_blank" rel="noopener">Скачать форму (PDF)</a>' +
+      (status === "approved"
+        ? ""
+        : '<label class="btn btn--sm btn--accent" for="consent-file">Загрузить согласие</label>' +
+          '<input id="consent-file" type="file" accept="image/*" class="visually-hidden" data-consent-file>') +
+      "</div>" +
+      '<p class="form__note" data-consent-note></p>';
+
+    return '<div class="consent-card consent-card--' + esc(status) + '" data-consent-card>' +
+      head + body + actions + "</div>";
+  }
+
   /* пресс-карта автора: до нужного числа публикаций — прогресс, после — карта */
   function issueCardBlock(card) {
     var percent = Math.min(100, Math.round((card.posts / card.need) * 100));
@@ -2710,6 +2871,8 @@
     function render() {
       var user = Store.currentUser();
       var card = Store.pressCard();
+      var consent = Store.consent();
+      var consentStatus = (consent && consent.status) || "none";
       var published = Store.listPosts({ authorId: user.id, status: "published" });
       var drafts = Store.listPosts({ authorId: user.id, status: "draft" });
       var pending = Store.listPosts({ authorId: user.id, status: "pending" });
@@ -2894,6 +3057,9 @@
           : "") +
         '<div class="profile-grid">' +
 
+        // согласие на обработку данных: без него публикация закрыта
+        consentBlockHtml(consentStatus, consent) +
+
         // пресс-карта (выдаётся после нужного числа публикаций)
         issueCardBlock(card) +
 
@@ -2961,6 +3127,10 @@
       initAnimations();
       mountCardApplication();
       syncSwatches(readAccent());
+      Store.refreshConsent().then(function (fresh) {
+        var before = (consent && consent.status) || "none";
+        if (fresh && fresh.status && fresh.status !== before && host.isConnected !== false) render();
+      });
 
       var form = $("[data-profile-form]", host);
       if (form) {
@@ -2995,6 +3165,32 @@
             }, function (err) {
               avatarBtn.classList.remove("is-busy");
               window.alert((err && err.message) || "Не удалось загрузить фотографию.");
+            });
+        });
+      }
+
+      var consentFile = $("[data-consent-file]", host);
+      if (consentFile) {
+        consentFile.addEventListener("change", function () {
+          var file = consentFile.files && consentFile.files[0];
+          if (!file) return;
+          var noteEl = $("[data-consent-note]", host);
+          if (noteEl) noteEl.textContent = "Загружаем скан…";
+          Store.uploadMedia(file)
+            .catch(function () { return fileToDataUrl(file); })
+            .then(function (url) {
+              /* копия скана отправляется в комиссию вместе с заявкой */
+              return fileToDataUrl(file).then(function (dataUrl) {
+                return Store.sendConsent(dataUrl).then(function () { return url; });
+              });
+            })
+            .then(function () {
+              render();
+              var fresh = $("[data-consent-note]", host);
+              if (fresh) fresh.textContent = "Согласие отправлено на проверку.";
+            }, function (err) {
+              var fresh = $("[data-consent-note]", host);
+              if (fresh) fresh.textContent = (err && err.message) || "Не удалось отправить согласие.";
             });
         });
       }
@@ -3546,6 +3742,14 @@
       var region = String(d.get("region") || "");
 
       if (action === "submit") {
+        var consentState = Store.consent();
+        if (!consentState || consentState.status !== "approved") {
+          return setStatus(
+            "Публикация закрыта, пока комиссия не проверит согласие на обработку персональных " +
+            "данных. Скачать форму и загрузить скан можно в личном кабинете.",
+            true
+          );
+        }
         if (title.length < 8) return setStatus("Заголовок слишком короткий — минимум 8 символов.", true);
         if (excerpt.length < 20) return setStatus("Добавьте короткое описание: 20+ символов.", true);
         if (body.length < 200) return setStatus("Текст пока короткий: нужно хотя бы 200 символов.", true);

@@ -1358,6 +1358,83 @@ window.Store = (function () {
     listeners.push(fn);
   }
 
+  /* ---------------------------------------------------------- согласие на ПД */
+
+  /* Статус согласия на обработку персональных данных. Без одобрения комиссией
+     публикация закрыта: подписанный от руки документ проверяет человек. */
+  var CONSENT_KEY = "smena_consent_v1";
+
+  function readConsentCache() {
+    try {
+      var raw = window.localStorage.getItem(CONSENT_KEY);
+      if (!raw) return { status: "none" };
+      var parsed = JSON.parse(raw);
+      return parsed && parsed.status ? parsed : { status: "none" };
+    } catch (e) {
+      return { status: "none" };
+    }
+  }
+
+  function cacheConsent(consent) {
+    try {
+      if (consent) window.localStorage.setItem(CONSENT_KEY, JSON.stringify(consent));
+    } catch (e) {}
+  }
+
+  function consent() {
+    var cached = readConsentCache();
+    if (!readToken()) return cached.status ? cached : { status: "none" };
+    return cached;
+  }
+
+  /* запрос свежего статуса с сервера */
+  function refreshConsent() {
+    var token = readToken();
+    if (!token) return Promise.resolve(consent());
+    return api("consent-status", { token: token }).then(function (res) {
+      if (res && res.ok && res.consent) {
+        cacheConsent(res.consent);
+        emit();
+        return res.consent;
+      }
+      return consent();
+    }, function () {
+      return consent();
+    });
+  }
+
+  /* отправка подписанного скана: картинка уходит на сервер, заявка — в комиссию */
+  function sendConsent(dataUrl) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы отправить согласие."));
+    return api("consent-send", { token: token, scan: dataUrl }).then(
+      function (res) {
+        if (res && res.ok && res.consent) {
+          cacheConsent(res.consent);
+          emit();
+          return res.consent;
+        }
+        throw new Error((res && res.error) || "Согласие не отправилось.");
+      },
+      function () {
+        throw new Error("Нет связи с сервером. Попробуйте отправить файл ещё раз.");
+      }
+    );
+  }
+
+  function consentQueue(password) {
+    return api("consent-queue", { password: password });
+  }
+
+  function consentReview(password, id, decision, note) {
+    return api("consent-review", {
+      password: password,
+      id: id,
+      decision: decision,
+      note: note,
+    });
+  }
+
   return {
     ROLES: ROLES,
     currentUser: currentUser,
@@ -1401,6 +1478,11 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    consent: consent,
+    refreshConsent: refreshConsent,
+    sendConsent: sendConsent,
+    consentQueue: consentQueue,
+    consentReview: consentReview,
     pressCard: pressCard,
     getSettings: getSettings,
     saveSettings: saveSettings,
