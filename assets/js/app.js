@@ -650,6 +650,26 @@
       "</div></div>";
   }
 
+  /* Если человек вошёл только в этом браузере (без серверного токена),
+     говорим об этом прямо: иначе кажется, что всё работает, а на сервере
+     аккаунта нет и другие устройства его не видят. */
+  function warnLocalOnly() {
+    if (!Store || (Store.hasToken && Store.hasToken())) return;
+    var user = Store.currentUser ? Store.currentUser() : null;
+    if (!user) return;
+    var mainEl = document.getElementById("main");
+    if (!mainEl || $("[data-local-warn]")) return;
+    var bar = document.createElement("div");
+    bar.className = "wrap";
+    bar.setAttribute("data-local-warn", "");
+    bar.innerHTML = '<div class="auth-notice" style="margin-top:16px">' +
+      "<b>Вы вошли только в этом браузере.</b> Аккаунта на сервере нет — поэтому данные " +
+      "не сохраняются и с другого устройства вход не работает. Откройте " +
+      '<a class="link-accent" href="/join#login">вход</a> и введите ту же почту и пароль: ' +
+      "мы перенесём аккаунт на сервер.</div>";
+    mainEl.insertBefore(bar, mainEl.firstChild);
+  }
+
   /* Объявление в шапке и режим технических работ. */
   function applySiteState() {
     if (!Store || !Store.siteStatus) return;
@@ -1702,6 +1722,7 @@
       mountPortfolioQueue(host);
       mountEditorialQueue(host);
       mountRecoveryQueue(host);
+      warnLocalOnly();
       mountOverview(host);
       mountPeople(host);
       mountContent(host);
@@ -4980,6 +5001,7 @@
       initAnimations();
       mountCardApplication();
       mountMyEditorial(user);
+      warnLocalOnly();
       mountEmailCard(user);
       mountRecoveryCard();
       syncSwatches(readAccent());
