@@ -2501,6 +2501,35 @@
     var id = param("id");
     var a = findArticle(id);
     var user = Store ? Store.currentUser() : null;
+
+    /* свой неопубликованный материал: автор должен видеть, как он выглядит,
+       и понимать, что на сайте его ещё нет */
+    if (!a && id.indexOf("u:") === 0 && Store && user) {
+      var own = Store.getPost(id.slice(2));
+      if (own && own.authorId === user.id) {
+        a = {
+          id: id,
+          title: own.title,
+          excerpt: own.excerpt,
+          body: own.body,
+          topic: own.topic,
+          format: own.format,
+          region: own.region,
+          image: own.image || "",
+          imageAlt: own.imageAlt || "",
+          gallery: own.gallery || [],
+          video: own.video || "",
+          audio: own.audio || "",
+          date: own.date,
+          read: own.read || 4,
+          status: own.status,
+          isUserPost: true,
+          authorName: user.name,
+          authorRole: user.role || "",
+          authorRegion: user.region || "",
+        };
+      }
+    }
     var isMine =
       a && a.isUserPost && user && id.indexOf("u:") === 0 &&
       Store.getPost(id.slice(2)) && Store.getPost(id.slice(2)).authorId === user.id;
@@ -2562,6 +2591,16 @@
       '<a href="/news">Материалы</a><span>/</span>' +
       '<a href="' + regionUrl(a.region) + '">' + esc(regionName(a.region)) + "</a>" +
       "<span>/</span><span>" + esc(a.format) + "</span></div>" +
+      (!a.status || a.status === "published"
+        ? ""
+        : '<div class="article-state article-state--' + esc(a.status) + '">' +
+          "<b>" + (a.status === "pending"
+            ? "Материал ещё не выложен: он на проверке у редакции"
+            : a.status === "rejected"
+              ? "Материал ещё не выложен: нужны правки"
+              : "Это черновик — его видите только вы") + "</b>" +
+          "<span>На сайте материал появится после одобрения редакцией. " +
+          "Черновик и правки доступны только автору.</span></div>") +
       '<span class="kicker">' + esc(a.topic) + " · " + esc(a.format) +
       (a.isUserPost ? ' · <span class="kicker-flag">автор проекта</span>' : "") +
       (a.number ? " · № " + String(a.number).padStart(4, "0") : "") + "</span>" +
@@ -2691,7 +2730,7 @@
 
     var miniMap = '<svg viewBox="' + MAP.viewBox + '" role="img" aria-label="' +
       esc(r.name) + ' на карте России">' +
-      MAP.regions.map(function (x) {
+      MAP.regions.filter(function (x) { return x.d; }).map(function (x) {
         return '<path class="map-region' + (x.slug === slug ? " is-selected" : "") +
           '" d="' + x.d + '"></path>';
       }).join("") + "</svg>";
@@ -3141,10 +3180,26 @@
         "</div>";
 
       var STATUS = {
-        draft: { label: "черновик", cls: "status--draft" },
-        pending: { label: "на проверке", cls: "status--pending" },
-        rejected: { label: "нужны правки", cls: "status--rejected" },
-        published: { label: "опубликовано", cls: "status--pub" },
+        draft: {
+          label: "не выложен · черновик",
+          cls: "status--draft",
+          hint: "Виден только вам. Нажмите «Отправить на проверку», когда будет готово.",
+        },
+        pending: {
+          label: "не выложен · на проверке",
+          cls: "status--pending",
+          hint: "Материал у редакции. После одобрения он появится в ленте и на карте региона.",
+        },
+        rejected: {
+          label: "не выложен · нужны правки",
+          cls: "status--rejected",
+          hint: "Редакция вернула материал с замечанием — исправьте и отправьте снова.",
+        },
+        published: {
+          label: "выложен на сайт",
+          cls: "status--pub",
+          hint: "Материал опубликован: его видят все посетители сайта.",
+        },
       };
 
       var postRow = function (p) {
@@ -3158,8 +3213,8 @@
         } else if (p.status === "pending") {
           action = '<span class="post-row__wait">Ждёт редактора</span>';
         } else {
-          action = '<a class="btn btn--sm btn--ghost" href="/article?id=' +
-            encodeURIComponent("u:" + p.id) + '">Открыть</a>';
+          action = '<a class="btn btn--sm btn--accent" href="/article?id=' +
+            encodeURIComponent("u:" + p.id) + '">Открыть на сайте</a>';
         }
         return (
           '<div class="post-row">' +
@@ -3168,6 +3223,7 @@
           "</span><span>" + fmtDate(p.updatedAt || p.date) + "</span><span>" + esc(p.format) +
           " · " + esc(regionName(p.region)) + "</span></div>" +
           '<div class="post-row__title">' + esc(p.title) + "</div>" +
+          '<div class="post-row__hint">' + esc(st.hint) + "</div>" +
           (p.status === "rejected" && p.reviewNote
             ? '<div class="post-row__note">Замечание редактора: ' + esc(p.reviewNote) + "</div>"
             : "") +
@@ -3272,7 +3328,10 @@
         // материалы
         '<div class="profile-posts" style="margin-top:44px">' +
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Мои материалы</span>' +
-        "<h2>Материалы и статусы</h2></div>" +
+        "<h2>Материалы и статусы</h2>" +
+        '<p class="sec-head__text">Выложено на сайт: <b>' + published.length + "</b>. " +
+        "Не выложено: <b>" + (mine.length - published.length) + "</b> — это черновики, " +
+        "материалы на проверке и те, что вернули на правки.</p></div>" +
         '<a class="sec-link" href="/write">Новый материал <span aria-hidden="true">→</span></a></div>' +
         (mine.length
           ? mine.map(postRow).join("")
@@ -3301,6 +3360,15 @@
         '<div class="field form__full"><label for="p-bio">О себе</label>' +
         '<textarea id="p-bio" name="bio" placeholder="Пара предложений: о чём хотите рассказывать">' +
         esc(user.bio || "") + "</textarea></div>" +
+        '<div class="form__full"><label>Смена пароля</label>' +
+        '<div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">' +
+        '<div class="field" style="margin:0"><input name="oldPass" type="password" ' +
+        'placeholder="Текущий пароль" autocomplete="current-password"></div>' +
+        '<div class="field" style="margin:0"><input name="newPass" type="password" ' +
+        'placeholder="Новый пароль, от 6 символов" autocomplete="new-password"></div>' +
+        '<button class="btn btn--sm btn--ghost" type="button" data-pass-change>Сменить пароль</button>' +
+        "</div>" +
+        '<p class="form__note" data-pass-note></p></div>' +
         '<div class="form__full"><label>Акцентный цвет</label>' + swatchesHtml() +
         '<p class="form__note" style="margin:8px 0 0">Цвет интерфейса. ' +
         "По умолчанию оранжевый, выбор запоминается в этом браузере.</p></div>" +
@@ -3426,6 +3494,34 @@
             }, function (err) {
               noteEl.textContent = (err && err.message) || "Не удалось отправить работу.";
             });
+        });
+      }
+
+      var passBtn = $("[data-pass-change]", host);
+      if (passBtn) {
+        passBtn.addEventListener("click", function () {
+          var form = $("[data-profile-form]", host);
+          var noteEl = $("[data-pass-note]", host);
+          var oldPass = form.querySelector('[name="oldPass"]').value;
+          var newPass = form.querySelector('[name="newPass"]').value;
+          if (newPass.length < 6) {
+            noteEl.textContent = "Новый пароль — не короче шести символов.";
+            return;
+          }
+          passBtn.disabled = true;
+          noteEl.textContent = "Меняем пароль…";
+          Store.changePassword(oldPass, newPass).then(
+            function () {
+              passBtn.disabled = false;
+              noteEl.textContent = "Пароль изменён. Войдите с новым паролем на других устройствах.";
+              form.querySelector('[name="oldPass"]').value = "";
+              form.querySelector('[name="newPass"]').value = "";
+            },
+            function (err) {
+              passBtn.disabled = false;
+              noteEl.textContent = (err && err.message) || "Не удалось сменить пароль.";
+            }
+          );
         });
       }
 

@@ -951,6 +951,26 @@ if ($act === 'portfolio-review') {
     respond(array('ok' => true));
 }
 
+if ($act === 'change-password') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $old = isset($in['old']) ? (string) $in['old'] : '';
+    $new = isset($in['new']) ? (string) $in['new'] : '';
+    if (!password_verify($old, (string) $user['pass'])) fail('Текущий пароль неверный.', 403);
+    if (slen($new) < 6) fail('Новый пароль короче шести символов.');
+
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $user['id']) continue;
+        $users[$i]['pass'] = password_hash($new, PASSWORD_DEFAULT);
+        if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить пароль.', 500);
+        respond(array('ok' => true));
+    }
+    fail('Аккаунт не найден.', 404);
+}
+
 /* ------------------------------------------------------- согласие на обработку */
 
 if ($act === 'consent-send') {

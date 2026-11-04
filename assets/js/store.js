@@ -1486,6 +1486,21 @@ window.Store = (function () {
     });
   }
 
+  /* смена пароля: сервер проверяет текущий пароль и хранит только хеш */
+  function changePassword(oldPass, newPass) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы сменить пароль."));
+    return api("change-password", { token: token, old: oldPass, new: newPass }).then(
+      function (res) {
+        if (res && res.ok) return true;
+        throw new Error((res && res.error) || "Не удалось сменить пароль.");
+      },
+      function () {
+        throw new Error("Нет связи с сервером. Попробуйте ещё раз.");
+      }
+    );
+  }
+
   function portfolioQueue(password) {
     return api("portfolio-queue", { password: password });
   }
@@ -1563,6 +1578,7 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    changePassword: changePassword,
     portfolio: portfolio,
     refreshPortfolio: refreshPortfolio,
     portfolioSend: portfolioSend,
