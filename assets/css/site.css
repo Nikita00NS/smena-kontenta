@@ -6474,3 +6474,95 @@ html[data-theme="light"] .founder__photo--mono {
   text-decoration: none;
   border-bottom: 1px solid currentColor;
 }
+
+/* восстановление доступа */
+.auth-link {
+  display: block;
+  margin: 12px auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.auth-link:hover {
+  color: var(--accent);
+}
+.recovery {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 14px;
+}
+.recovery.is-hidden {
+  display: none;
+}
+.recovery__lead {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.recovery__form {
+  display: grid;
+  gap: 12px;
+}
+.recovery__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.recovery__divider::before,
+.recovery__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.recovery__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--accent);
+}
+.recovery__code {
+  margin: 0 0 14px;
+  padding: 16px 18px;
+  border: 1px dashed var(--accent);
+  border-radius: 14px;
+  background: var(--paper-2);
+}
+.recovery__code.is-hidden {
+  display: none;
+}
+.recovery__code span {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.recovery__code b {
+  display: block;
+  margin: 6px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+.recovery__code p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
