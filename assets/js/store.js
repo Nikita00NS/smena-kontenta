@@ -240,16 +240,21 @@ window.Store = (function () {
           return { ok: true, user: res.user, remote: true, recoveryCode: res.recoveryCode || "" };
         }
         if (res && (res.offline || res.serverBroken)) {
-          var local = register(payload);
-          if (local.ok) local.offline = true;
-          return local;
+          return {
+            ok: false,
+            offline: true,
+            error: "Сервер не ответил, поэтому аккаунт не создан. Проверьте связь и попробуйте " +
+              "ещё раз — без сервера аккаунт существовал бы только в этом браузере.",
+          };
         }
         return { ok: false, error: (res && res.error) || "Сервер не принял регистрацию." };
       })
       .catch(function () {
-        var offlineReg = register(payload);
-        if (offlineReg.ok) offlineReg.offline = true;
-        return offlineReg;
+        return {
+          ok: false,
+          offline: true,
+          error: "Сервер не ответил, поэтому аккаунт не создан. Попробуйте ещё раз через минуту.",
+        };
       });
   }
 
@@ -1488,6 +1493,51 @@ window.Store = (function () {
     });
   }
 
+  /* Аккаунты, которые сохранились только в этом браузере: их надо перенести
+     на сервер, иначе вход не работает на других устройствах. */
+  function localOnlyAccounts() {
+    if (readToken()) return [];
+    var data = read();
+    return (data.users || []).filter(function (u) {
+      return u && u.email;
+    });
+  }
+
+  /* -------------------------------------------- состояние сайта */
+
+  function siteStatus() {
+    return api("site-status", {}).then(function (res) {
+      return res && res.ok ? res.site : null;
+    }, function () {
+      return null;
+    });
+  }
+
+  function siteSave(payload) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("site-save", {
+      token: token,
+      maintenance: !!payload.maintenance,
+      noticeOn: !!payload.noticeOn,
+      notice: payload.notice || "",
+    }).then(function (res) {
+      if (res && res.ok) return res.site;
+      throw new Error((res && res.error) || "Не сохранилось.");
+    });
+  }
+
+  /* очередь материалов по токену: без пароля редакции */
+  function apiPendingQueue() {
+    var token = readToken();
+    if (!token) return Promise.resolve([]);
+    return api("posts-queue", { token: token }).then(function (res) {
+      return res && res.ok ? res.posts || [] : [];
+    }, function () {
+      return [];
+    });
+  }
+
   /* ------------------------------------------- участники, роли, основатели */
 
   function diag() {
@@ -1865,6 +1915,10 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    apiPendingQueue: apiPendingQueue,
+    localOnlyAccounts: localOnlyAccounts,
+    siteStatus: siteStatus,
+    siteSave: siteSave,
     diag: diag,
     usersList: usersList,
     userAccess: userAccess,
