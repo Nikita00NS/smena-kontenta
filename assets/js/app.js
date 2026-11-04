@@ -3338,7 +3338,8 @@
               window.sessionStorage.setItem("smena_recovery_once", res.recoveryCode);
             } catch (e) {}
           }
-          window.location.href = next === "/profile" ? "/profile?new=1" : next;
+          /* показываем код восстановления сразу: иначе человек его не увидит */
+          window.location.href = res.recoveryCode || next === "/profile" ? "/profile?new=1" : next;
         }, function (err) {
           if (submitBtn) submitBtn.disabled = false;
           out.textContent = (err && err.message) || "Не получилось создать аккаунт. Попробуйте ещё раз.";
