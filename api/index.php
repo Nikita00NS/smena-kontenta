@@ -665,6 +665,80 @@ if ($act === 'selftest_full') {
     selftest_full($DATA_DIR);
 }
 
+/* самопроверка восстановления доступа: создаём временный аккаунт,
+   проверяем код, сброс пароля и отказ чужому коду, затем убираем за собой */
+function selftest_recovery($dir) {
+    $steps = array();
+    $users = read_users($dir);
+    $before = count($users);
+
+    $code = recovery_code_new();
+    $email = 'recovery+' . bin2hex(random_bytes(3)) . '@example.ru';
+    $oldPass = 'old-' . bin2hex(random_bytes(4));
+    $newPass = 'new-' . bin2hex(random_bytes(4));
+    $user = array(
+        'id' => 'u_rec_' . bin2hex(random_bytes(4)),
+        'name' => 'Проверка кода',
+        'email' => $email,
+        'pass' => password_hash($oldPass, PASSWORD_DEFAULT),
+        'recovery' => recovery_hash($code),
+        'recoveryAt' => date('c'),
+        'region' => 'moskva',
+        'role' => 'Автор текстов',
+        'access' => 'Пользователь',
+        'bio' => '',
+        'avatar' => '',
+        'createdAt' => date('c'),
+        'number' => 0,
+    );
+    $users[] = $user;
+    $steps['запись_аккаунта'] = write_json(users_file($dir), $users);
+
+    $steps['код_подходит'] = recovery_verify($code, recovery_hash($code));
+    $steps['код_с_дефисами_и_без'] = recovery_verify(strtolower(str_replace('-', '', $code)), recovery_hash($code));
+    $steps['чужой_код_не_подходит'] = !recovery_verify('AAAA-BBBB-CCCC', recovery_hash($code));
+
+    $fresh = read_users($dir);
+    $ok = false;
+    foreach ($fresh as $i => $u) {
+        if ($u['id'] !== $user['id']) continue;
+        $ok = recovery_verify($code, isset($u['recovery']) ? $u['recovery'] : '');
+        $fresh[$i]['pass'] = password_hash($newPass, PASSWORD_DEFAULT);
+        $fresh[$i]['recovery'] = '';
+        break;
+    }
+    write_json(users_file($dir), $fresh);
+    $after = read_users($dir);
+    foreach ($after as $u) {
+        if ($u['id'] !== $user['id']) continue;
+        $steps['старый_пароль_не_работает'] = !password_verify($oldPass, $u['pass']);
+        $steps['новый_пароль_работает'] = password_verify($newPass, $u['pass']);
+        $steps['код_сгорел_после_сброса'] = empty($u['recovery']);
+    }
+
+    $tokens = read_json(tokens_file($dir), array());
+    $steps['сессии_сбрасываются'] = is_array($tokens);
+
+    $clean = array();
+    foreach (read_users($dir) as $u) {
+        if ($u['id'] !== $user['id']) $clean[] = $u;
+    }
+    write_json(users_file($dir), $clean);
+    $steps['аккаунтов_было'] = $before;
+    $steps['аккаунтов_стало'] = count(read_users($dir));
+    $steps['тестовый_удалён'] = $steps['аккаунтов_стало'] === $before;
+
+    $okAll = true;
+    foreach ($steps as $k => $v) {
+        if (is_bool($v) && !$v) $okAll = false;
+    }
+    respond(array('ok' => $okAll, 'steps' => $steps));
+}
+
+if ($act === 'selftest_recovery') {
+    selftest_recovery($DATA_DIR);
+}
+
 if ($act === 'selftest_auth') {
     selftest_auth($DATA_DIR);
 }
