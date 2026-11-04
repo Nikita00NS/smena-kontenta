@@ -6566,3 +6566,119 @@ html[data-theme="light"] .founder__photo--mono {
   font-size: 13px;
   color: var(--ink-soft);
 }
+
+/* поддержка и почта */
+.support-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .support-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.support-side {
+  display: grid;
+  gap: 14px;
+}
+.support-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.support-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+.support-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.support-list b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.support-faq {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+.support-faq details {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--paper-2);
+}
+.support-faq summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink);
+  list-style: none;
+}
+.support-faq summary::-webkit-details-marker {
+  display: none;
+}
+.support-faq summary::after {
+  content: "+";
+  float: right;
+  color: var(--accent);
+}
+.support-faq details[open] summary::after {
+  content: "−";
+}
+.support-faq p {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.support-small {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.support-note {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  min-height: 20px;
+}
+.support-note.is-ok {
+  color: var(--accent);
+}
+.support-note.is-error {
+  color: #ff5a3c;
+}
+.confirm-input {
+  flex: 0 0 auto;
+  width: 130px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-align: center;
+}
+.confirm-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}

@@ -38,6 +38,7 @@ AddDefaultCharset UTF-8
   RewriteRule ^write/?$ /write/index.html [L]
   RewriteRule ^admin/?$ /admin/index.html [L]
   RewriteRule ^article/?$ /article/index.html [L]
+  RewriteRule ^support/?$ /support/index.html [L]
   RewriteRule ^founders/?$ /founders/index.html [L]
 
 </IfModule>

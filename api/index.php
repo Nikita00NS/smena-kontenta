@@ -87,6 +87,10 @@ function body() {
     return $cache;
 }
 
+/* отправка писем: свой SMTP-клиент без сторонних библиотек */
+define('SMENA_API', true);
+require __DIR__ . '/smtp.php';
+
 function action() {
     if (isset($_GET['action'])) return (string) $_GET['action'];
     $in = body();
@@ -324,7 +328,8 @@ function public_user($u) {
         'bio' => isset($u['bio']) ? $u['bio'] : '',
         'avatar' => isset($u['avatar']) ? $u['avatar'] : '',
         'createdAt' => isset($u['createdAt']) ? $u['createdAt'] : '',
-        'number' => isset($u['number']) ? $u['number'] : 0,
+        'number' => isset($u['number']) ? (int) $u['number'] : 0,
+        'emailVerified' => !empty($u['emailVerified']),
     );
 }
 
@@ -461,8 +466,8 @@ function public_portfolio($item) {
    человеку один раз при регистрации и хранится у него. Если код потерян —
    заявка уходит в редакцию, и администрация выдаёт новый код вручную.
    Как только появится почта на домене, эта же функция начнёт отправлять
-   код письмом: достаточно заполнить SMENA_MAIL_FROM ниже. */
-if (!defined('SMENA_MAIL_FROM')) define('SMENA_MAIL_FROM', '');
+   код письмом — как только в админке заполнены настройки SMTP. */
+
 
 function recovery_code_new() {
     $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -512,14 +517,7 @@ function public_recovery_request($r) {
 
 /* Письмо отправляется только если задан адрес отправителя.
    Возвращает true, если сервер принял письмо. */
-function mail_send($to, $subject, $body) {
-    if (SMENA_MAIL_FROM === '' || !function_exists('mail')) return false;
-    $headers = "From: Смена контента <" . SMENA_MAIL_FROM . ">\r\n" .
-        "Content-Type: text/plain; charset=UTF-8\r\n" .
-        "MIME-Version: 1.0\r\n";
-    $subject_enc = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-    return @mail($to, $subject_enc, $body, $headers);
-}
+/* mail_send() живёт в smtp.php: SMTP, а не локальный sendmail */
 
 function is_top_admin($user) {
     return $user && in_array(isset($user['access']) ? $user['access'] : '', array('Директор', 'Администрация'), true);
@@ -1552,13 +1550,30 @@ if ($act === 'reg') {
     $recovery = recovery_code_new();
     $user['recovery'] = recovery_hash($recovery);
     $user['recoveryAt'] = date('c');
+
+    /* подтверждение почты: шестизначный код, живёт 30 минут */
+    $confirmCode = (string) random_int(100000, 999999);
+    $user['emailVerified'] = false;
+    $user['confirm'] = password_hash($confirmCode, PASSWORD_DEFAULT);
+    $user['confirmAt'] = date('c');
+
     $users[] = $user;
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить аккаунт.', 500);
+    $mailSent = false;
+    if (smtp_configured($DATA_DIR)) {
+        $mailSent = mail_send(
+            $email,
+            'Подтверждение почты — Смена контента',
+            mail_code_text($confirmCode, 30, 'подтверждения почты'),
+            mail_code_html($confirmCode, 30, 'подтверждения почты')
+        );
+    }
     respond(array(
         'ok' => true,
         'user' => public_user($user),
         'token' => new_token($DATA_DIR, $id),
         'recoveryCode' => $recovery,
+        'mailSent' => $mailSent,
     ));
 }
 
@@ -1763,6 +1778,270 @@ if ($act === 'recovery-close') {
     if (!$done) fail('Заявка не найдена или уже закрыта.', 404);
     write_json(recovery_requests_file($DATA_DIR), $list);
     respond(array('ok' => true));
+}
+
+/* ------------------------------------------------------- почта проекта */
+
+if ($act === 'mail-status') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Почту настраивает только директор и администрация.', 403);
+    respond(array('ok' => true, 'mail' => smtp_public_config($DATA_DIR)));
+}
+
+if ($act === 'mail-save') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Почту настраивает только директор и администрация.', 403);
+
+    $cfg = smtp_config($DATA_DIR);
+    $host = text(isset($in['host']) ? $in['host'] : '', 120);
+    $port = (int) (isset($in['port']) ? $in['port'] : 465);
+    $secure = (isset($in['secure']) && $in['secure'] === 'tls') ? 'tls' : 'ssl';
+    $login = text(isset($in['user']) ? $in['user'] : '', 160);
+    $pass = isset($in['pass']) ? (string) $in['pass'] : '';
+    $from = norm_email(isset($in['from']) ? $in['from'] : '');
+    $fromName = text(isset($in['fromName']) ? $in['fromName'] : '', 80);
+    $notify = norm_email(isset($in['notify']) ? $in['notify'] : '');
+
+    if ($host === '') fail('Укажите SMTP-сервер, например smtp-pulse.com.');
+    if ($port < 1 || $port > 65535) fail('Порт должен быть от 1 до 65535.');
+    if (!$from) fail('Укажите адрес отправителя: с него уходят письма.');
+    if ($fromName === '') $fromName = 'Смена контента';
+
+    $cfg['host'] = $host;
+    $cfg['port'] = $port;
+    $cfg['secure'] = $secure;
+    $cfg['user'] = $login;
+    if ($pass !== '') $cfg['pass'] = $pass;
+    $cfg['from'] = $from;
+    $cfg['fromName'] = $fromName;
+    $cfg['notify'] = $notify;
+    $cfg['updatedAt'] = date('c');
+
+    if (!write_json(smtp_config_file($DATA_DIR), $cfg)) fail('Не удалось сохранить настройки почты.', 500);
+    respond(array('ok' => true, 'mail' => smtp_public_config($DATA_DIR)));
+}
+
+if ($act === 'mail-test') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Проверку почты делает только директор и администрация.', 403);
+
+    $to = norm_email(isset($in['to']) ? $in['to'] : '');
+    if (!$to) $to = isset($user['email']) ? $user['email'] : '';
+    if (!$to) fail('Укажите, куда отправить проверочное письмо.');
+
+    $cfg = smtp_config($DATA_DIR);
+    if (!smtp_configured($DATA_DIR)) fail('Сначала сохраните настройки почты.', 400);
+
+    $res = smtp_send_mail(
+        $cfg,
+        $to,
+        'Проверка почты — Смена контента',
+        "Это проверочное письмо с сайта smenakontenta.ru.\n\n" .
+        "Если вы его видите, значит настройки почты в порядке и коды будут доходить.\n",
+        '<div style="font-family:Arial,sans-serif;font-size:16px">' .
+        '<p>Это проверочное письмо с сайта <b>smenakontenta.ru</b>.</p>' .
+        '<p>Если вы его видите — настройки почты в порядке, коды будут доходить.</p></div>'
+    );
+    if (empty($res['ok'])) fail((string) $res['error'], 502);
+    respond(array('ok' => true, 'to' => $to));
+}
+
+/* ------------------------------------------------- подтверждение почты */
+
+if ($act === 'confirm-send') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!empty($user['emailVerified'])) respond(array('ok' => true, 'already' => true, 'mailSent' => false));
+
+    $last = strtotime((string) (isset($user['confirmSentAt']) ? $user['confirmSentAt'] : ''));
+    if ($last && (time() - $last) < 45) {
+        fail('Письмо уже отправлено. Подождите минуту и проверьте «Спам».', 429);
+    }
+    if (!smtp_configured($DATA_DIR)) {
+        fail('Почта проекта ещё не подключена — подтверждение станет доступно, как только её настроят.', 503);
+    }
+
+    $code = (string) random_int(100000, 999999);
+    $users = read_users($DATA_DIR);
+    $email = '';
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $user['id']) continue;
+        $users[$i]['confirm'] = password_hash($code, PASSWORD_DEFAULT);
+        $users[$i]['confirmAt'] = date('c');
+        $users[$i]['confirmSentAt'] = date('c');
+        $email = $u['email'];
+        break;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить код.', 500);
+
+    $sent = mail_send(
+        $email,
+        'Код подтверждения почты — Смена контента',
+        mail_code_text($code, 30, 'подтверждения почты'),
+        mail_code_html($code, 30, 'подтверждения почты')
+    );
+    if (!$sent) fail('Сервер почты не принял письмо. Проверьте настройки в админке.', 502);
+    respond(array('ok' => true, 'mailSent' => true, 'email' => $email));
+}
+
+if ($act === 'confirm-check') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    $code = preg_replace('/[^0-9]/', '', (string) (isset($in['code']) ? $in['code'] : ''));
+    if (strlen($code) !== 6) fail('Код — шесть цифр из письма.');
+
+    $hash = isset($user['confirm']) ? (string) $user['confirm'] : '';
+    if ($hash === '' || !password_verify($code, $hash)) fail('Код не подошёл. Проверьте письмо.', 403);
+    $sentAt = strtotime((string) (isset($user['confirmAt']) ? $user['confirmAt'] : ''));
+    if ($sentAt && (time() - $sentAt) > 30 * 60) fail('Код устарел. Запросите новое письмо.', 403);
+
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $user['id']) continue;
+        $users[$i]['emailVerified'] = true;
+        $users[$i]['confirmedAt'] = date('c');
+        $users[$i]['confirm'] = '';
+        break;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить подтверждение.', 500);
+    respond(array('ok' => true));
+}
+
+/* ----------------------------------------------------- поддержка авторов */
+
+function support_file($dir) { return $dir . '/support.json'; }
+
+function read_support($dir) {
+    $list = read_json(support_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+function public_support($t) {
+    return array(
+        'id' => isset($t['id']) ? $t['id'] : '',
+        'name' => isset($t['name']) ? $t['name'] : '',
+        'email' => isset($t['email']) ? $t['email'] : '',
+        'topic' => isset($t['topic']) ? $t['topic'] : '',
+        'message' => isset($t['message']) ? $t['message'] : '',
+        'status' => isset($t['status']) ? $t['status'] : 'open',
+        'createdAt' => isset($t['createdAt']) ? $t['createdAt'] : '',
+        'closedAt' => isset($t['closedAt']) ? $t['closedAt'] : '',
+        'answer' => isset($t['answer']) ? $t['answer'] : '',
+        'mailed' => !empty($t['mailed']),
+    );
+}
+
+if ($act === 'support-send') {
+    $in = body();
+    check_rate($DATA_DIR);
+    $name = text(isset($in['name']) ? $in['name'] : '', 80);
+    $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    $topic = text(isset($in['topic']) ? $in['topic'] : '', 80);
+    $message = text(isset($in['message']) ? $in['message'] : '', 3000);
+
+    if (slen($name) < 2) fail('Напишите, как к вам обращаться.');
+    if (!$email) fail('Почта нужна, чтобы ответить.');
+    if (slen($message) < 15) fail('Опишите вопрос подробнее: минимум 15 символов.');
+
+    $tickets = read_support($DATA_DIR);
+    foreach ($tickets as $t) {
+        if ($t['email'] === $email && $t['status'] === 'open') {
+            fail('Ваше прошлое обращение ещё не закрыто — ответим на него.', 409);
+        }
+    }
+
+    $ticket = array(
+        'id' => 'sp_' . bin2hex(random_bytes(4)),
+        'name' => $name,
+        'email' => $email,
+        'topic' => $topic !== '' ? $topic : 'Общий вопрос',
+        'message' => $message,
+        'status' => 'open',
+        'createdAt' => date('c'),
+        'mailed' => false,
+    );
+
+    $cfg = smtp_config($DATA_DIR);
+    if (smtp_configured($DATA_DIR) && $cfg['notify'] !== '') {
+        $sent = smtp_send_mail(
+            $cfg,
+            $cfg['notify'],
+            'Поддержка: ' . $ticket['topic'] . ' — ' . $name,
+            "Новое обращение с сайта.\n\n" .
+            "От: " . $name . " <" . $email . ">\n" .
+            "Тема: " . $ticket['topic'] . "\n" .
+            "Номер: " . $ticket['id'] . "\n\n" .
+            $message . "\n\n" .
+            "Ответить можно прямо на это письмо — адрес автора в поле «От».\n"
+        );
+        $ticket['mailed'] = !empty($sent['ok']);
+    }
+
+    $tickets[] = $ticket;
+    if (!write_json(support_file($DATA_DIR), $tickets)) fail('Не удалось сохранить обращение.', 500);
+
+    respond(array('ok' => true, 'ticket' => public_support($ticket)));
+}
+
+if ($act === 'support-queue') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Обращения видит только директор и администрация.', 403);
+    $out = array();
+    foreach (read_support($DATA_DIR) as $t) {
+        if ($t['status'] !== 'open') continue;
+        $out[] = public_support($t);
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    respond(array('ok' => true, 'tickets' => $out));
+}
+
+if ($act === 'support-close') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Закрывает обращения только директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+    $answer = text(isset($in['answer']) ? $in['answer'] : '', 1000);
+    if (slen($answer) < 5) fail('Запишите ответ автору: минимум пять символов.');
+
+    $tickets = read_support($DATA_DIR);
+    $done = false;
+    $person = null;
+    foreach ($tickets as $i => $t) {
+        if ($t['id'] !== $id || $t['status'] !== 'open') continue;
+        $tickets[$i]['status'] = 'closed';
+        $tickets[$i]['answer'] = $answer;
+        $tickets[$i]['closedAt'] = date('c');
+        $tickets[$i]['closedBy'] = $user['name'];
+        $person = $t;
+        $done = true;
+        break;
+    }
+    if (!$done) fail('Обращение не найдено или уже закрыто.', 404);
+    write_json(support_file($DATA_DIR), $tickets);
+
+    $mailed = false;
+    if (smtp_configured($DATA_DIR)) {
+        $sent = mail_send(
+            $person['email'],
+            'Ответ поддержки — Смена контента',
+            "Здравствуйте, " . $person['name'] . "!\n\n" . $answer . "\n\n" .
+            "Ваш вопрос: " . $person['message'] . "\n\n" .
+            "Ответить можно на это письмо.\n\n—\nСмена контента\nhttps://smenakontenta.ru\n"
+        );
+        $mailed = $sent;
+    }
+    respond(array('ok' => true, 'mailed' => $mailed));
 }
 
 if ($act === 'login') {

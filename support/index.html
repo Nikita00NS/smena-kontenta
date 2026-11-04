@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Поддержка — Смена контента</title>
+  <script>try{if(localStorage.getItem("smena_theme")==="light")document.documentElement.setAttribute("data-theme","light");var a=localStorage.getItem("smena_accent");document.documentElement.setAttribute("data-accent",["orange","teal","blue","violet","green","pink"].indexOf(a)>=0?a:"orange");}catch(e){}</script>
+  <meta name="description" content="Поддержка «Смены контента»: вход и пароль, публикация материала, пресс-карта, редакции регионов. Отвечаем в течение суток.">
+  <link rel="canonical" href="https://smenakontenta.ru/support">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Смена контента">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:url" content="https://smenakontenta.ru/support">
+  <meta property="og:title" content="Поддержка — Смена контента">
+  <meta property="og:description" content="Вход и пароль, публикация материала, пресс-карта, редакции регионов. Отвечаем в течение суток.">
+  <meta property="og:image" content="https://smenakontenta.ru/assets/img/og-cover.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="icon" href="/assets/img/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.png" sizes="128x128" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <link rel="preload" href="/assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/assets/css/site.css">
+  <link rel="stylesheet" href="/assets/css/light.css">
+</head>
+<body data-page="support">
+  <div data-header></div>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="wrap page-hero__grid">
+        <div>
+          <span class="kicker">Поддержка</span>
+          <h1>Напишите нам,<br>если что-то не работает</h1>
+        </div>
+        <div class="page-hero__aside">
+          <p class="lead">Один разговор — одно обращение. Мы отвечаем на почту, которую вы
+            укажете, в течение суток. Если вопрос про доступ — приложите номер обращения,
+            так найдём быстрее.</p>
+          <div class="row" style="margin-top:6px">
+            <a class="btn btn--ghost btn--sm" href="#support-form">Написать</a>
+            <a class="btn btn--ghost btn--sm" href="/docs">Документы</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap" id="support-form">
+      <div class="support-layout">
+        <div class="panel support-card" style="padding:26px">
+          <span class="kicker">Обращение</span>
+          <h2 style="margin:8px 0 18px">Что случилось</h2>
+          <form data-support-form novalidate>
+            <div class="field">
+              <label for="s-name">Как к вам обращаться</label>
+              <input id="s-name" name="name" type="text" maxlength="80" placeholder="Имя" autocomplete="name">
+            </div>
+            <div class="field">
+              <label for="s-email">Почта для ответа</label>
+              <input id="s-email" name="email" type="email" placeholder="you@example.ru" autocomplete="email">
+            </div>
+            <div class="field">
+              <label for="s-topic">Тема</label>
+              <select id="s-topic" name="topic" data-support-topic></select>
+            </div>
+            <div class="field">
+              <label for="s-message">Что произошло</label>
+              <textarea id="s-message" name="message" rows="6" maxlength="3000"
+                placeholder="Опишите по шагам: что делали, что ожидали, что получилось"></textarea>
+              <p class="field__hint">Не присылайте пароль. Для восстановления доступа используйте
+                код из письма или заявку на странице входа.</p>
+            </div>
+            <button class="btn btn--accent" type="submit">Отправить обращение</button>
+            <p class="support-note" data-support-note></p>
+          </form>
+        </div>
+
+        <aside class="support-side">
+          <div class="panel" style="padding:22px">
+            <span class="kicker">Сроки</span>
+            <ul class="support-list">
+              <li><b>Доступ и пароль</b><span>в течение суток</span></li>
+              <li><b>Публикация материала</b><span>до двух дней</span></li>
+              <li><b>Заявка в редакцию</b><span>до семи дней, дальше — комиссия</span></li>
+              <li><b>Остальные вопросы</b><span>до двух дней</span></li>
+            </ul>
+          </div>
+
+          <div class="panel" style="padding:22px">
+            <span class="kicker">Частое</span>
+            <div class="support-faq">
+              <details>
+                <summary>Не приходит код на почту</summary>
+                <p>Проверьте папку «Спам» и правильность адреса. Письмо приходит с адреса
+                  проекта в течение минуты. Если код так и не пришёл — напишите здесь,
+                  мы выдадим код вручную.</p>
+              </details>
+              <details>
+                <summary>Материал не появляется в ленте</summary>
+                <p>Публикация идёт через редакцию. В кабинете у материала виден статус:
+                  «черновик», «на проверке», «нужны правки» или «выложен на сайт».</p>
+              </details>
+              <details>
+                <summary>Как получить пресс-карту</summary>
+                <p>Индивидуальному автору — после пяти опубликованных материалов.
+                  Участнику редакции — после трёх постов от редакции: при вступлении
+                  индивидуальная карта аннулируется.</p>
+              </details>
+              <details>
+                <summary>Нет редакции в моём регионе</summary>
+                <p>Откройте страницу своего региона: там можно создать редакцию и стать
+                  её основателем или подать заявление в уже существующую.</p>
+              </details>
+            </div>
+          </div>
+
+          <div class="panel" style="padding:22px">
+            <span class="kicker">Правила переписки</span>
+            <p class="support-small">Пишем по делу и на «вы». Не просим пароли и коды в ответных
+              письмах. Обращения хранятся, чтобы не потерять разговор, и закрываются после
+              ответа.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div data-footer></div>
+
+  <script src="/assets/js/data.js"></script>
+  <script src="/assets/js/map-data.js"></script>
+  <script src="/assets/js/store.js"></script>
+  <script src="/assets/js/app.js"></script>
+</body>
+</html>

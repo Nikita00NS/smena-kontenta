@@ -636,9 +636,10 @@
         : '<li><a href="/join">Регистрация</a></li>' +
           '<li><a href="/join#login">Вход</a></li>' +
           '<li><a href="/docs">Памятка автору</a></li>') +
+      '<li><a href="/support">Поддержка</a></li>' +
       (contactEmail()
         ? '<li><a href="mailto:' + esc(contactEmail()) + '">' + esc(contactEmail()) + "</a></li>"
-        : '<li><span class="footer-pending">Почта проекта: пока не заведена</span></li>') +
+        : "") +
       "</ul></div></div>" +
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
@@ -647,6 +648,77 @@
       ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
+  }
+
+  /* Поддержка: одно обращение — один разговор. Автор пишет, редакция
+     отвечает письмом и закрывает обращение в панели. */
+  function initSupport() {
+    var form = $("[data-support-form]");
+    if (!form) return;
+
+    var user = Store ? Store.currentUser() : null;
+    if (user) {
+      var nameEl = form.querySelector('[name="name"]');
+      var mailEl = form.querySelector('[name="email"]');
+      if (nameEl && !nameEl.value) nameEl.value = user.name || "";
+      if (mailEl && !mailEl.value) mailEl.value = user.email || "";
+    }
+
+    var topics = [
+      "Вход и пароль",
+      "Публикация материала",
+      "Пресс-карта",
+      "Редакция региона",
+      "Портфолио и баллы",
+      "Сотрудничество",
+      "Другое",
+    ];
+    var topicSelect = form.querySelector('[name="topic"]');
+    if (topicSelect) {
+      topicSelect.innerHTML = topics
+        .map(function (t) { return '<option value="' + esc(t) + '">' + esc(t) + "</option>"; })
+        .join("");
+    }
+
+    var note = $("[data-support-note]");
+    var submit = form.querySelector("button[type=submit]");
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var d = new FormData(form);
+      var name = String(d.get("name") || "").trim();
+      var email = String(d.get("email") || "").trim();
+      var topic = String(d.get("topic") || "").trim();
+      var message = String(d.get("message") || "").trim();
+
+      if (name.length < 2) { note.textContent = "Напишите, как к вам обращаться."; note.className = "support-note is-error"; return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { note.textContent = "Проверьте адрес почты — на него придёт ответ."; note.className = "support-note is-error"; return; }
+      if (message.length < 15) { note.textContent = "Опишите вопрос подробнее: минимум 15 символов."; note.className = "support-note is-error"; return; }
+
+      if (submit) submit.disabled = true;
+      note.className = "support-note";
+      note.textContent = "Отправляем…";
+
+      Store.supportSend({ name: name, email: email, topic: topic, message: message }).then(function (ticket) {
+        if (submit) submit.disabled = false;
+        form.reset();
+        if (user) {
+          var n2 = form.querySelector('[name="name"]');
+          var m2 = form.querySelector('[name="email"]');
+          if (n2) n2.value = user.name || "";
+          if (m2) m2.value = user.email || "";
+        }
+        note.className = "support-note is-ok";
+        note.innerHTML = "Обращение № " + esc(ticket.id.replace("sp_", "").toUpperCase()) +
+          " принято. Ответим на " + esc(email) + " в течение суток." +
+          (ticket.mailed ? " Копия ушла редакции." : "") +
+          " Сохраните номер — по нему быстрее найдём разговор.";
+      }, function (err) {
+        if (submit) submit.disabled = false;
+        note.className = "support-note is-error";
+        note.textContent = (err && err.message) || "Не удалось отправить обращение.";
+      });
+    });
   }
 
   /* 3. Поиск по сайту ====================================================== */
@@ -1522,6 +1594,8 @@
       mountPortfolioQueue(host);
       mountEditorialQueue(host);
       mountRecoveryQueue(host);
+      mountMailSettings(host);
+      mountSupportQueue(host);
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
@@ -1648,6 +1722,179 @@
     }
 
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
+    /* Почта: настройки SMTP и проверка письмом. Пароль наружу не отдаём. */
+    function mountMailSettings(host) {
+      var old = $("[data-mail-admin]");
+      if (old) old.remove();
+      if (!Store.mailStatus) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-mail-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Почта</span>' +
+        "<h2>Отправка писем</h2>" +
+        '<p class="sec-head__text">Через этот SMTP уходят коды подтверждения, коды ' +
+        "восстановления и ответы поддержки. Подходит SendPulse, Brevo, Яндекс, Mail.ru. " +
+        "Пароль хранится в закрытом файле на сервере и в браузер не возвращается.</p></div></div>" +
+        '<div class="panel" style="padding:22px"><div class="mail-grid">' +
+        '<div class="field"><label for="m-host">SMTP-сервер</label>' +
+        '<input id="m-host" data-m="host" type="text" placeholder="smtp-pulse.com"></div>' +
+        '<div class="field"><label for="m-port">Порт</label>' +
+        '<input id="m-port" data-m="port" type="number" value="465" min="1" max="65535"></div>' +
+        '<div class="field"><label for="m-secure">Шифрование</label>' +
+        '<select id="m-secure" data-m="secure"><option value="ssl">SSL (обычно 465)</option>' +
+        '<option value="tls">STARTTLS (обычно 587)</option></select></div>' +
+        '<div class="field"><label for="m-user">Логин</label>' +
+        '<input id="m-user" data-m="user" type="text" autocomplete="off"></div>' +
+        '<div class="field"><label for="m-pass">Пароль</label>' +
+        '<input id="m-pass" data-m="pass" type="password" autocomplete="new-password" ' +
+        'placeholder="оставьте пустым, чтобы не менять"></div>' +
+        '<div class="field"><label for="m-from">Адрес отправителя</label>' +
+        '<input id="m-from" data-m="from" type="email" placeholder="kod@smenakontenta.ru"></div>' +
+        '<div class="field"><label for="m-fromname">Имя отправителя</label>' +
+        '<input id="m-fromname" data-m="fromName" type="text" value="Смена контента"></div>' +
+        '<div class="field"><label for="m-notify">Куда приходят обращения</label>' +
+        '<input id="m-notify" data-m="notify" type="email" placeholder="ваша почта для поддержки"></div>' +
+        "</div>" +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:16px">' +
+        '<button class="btn btn--accent btn--sm" type="button" data-mail-save>Сохранить</button>' +
+        '<input class="confirm-input" style="min-width:220px" type="email" data-mail-to ' +
+        'placeholder="проверочный адрес">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-mail-test>Отправить проверку</button>' +
+        "</div>" +
+        '<p class="form__note" data-mail-status></p></div>';
+      host.appendChild(section);
+
+      var status = $("[data-mail-status]", section);
+      var values = {};
+
+      function fill(mail) {
+        if (!mail) return;
+        values = mail;
+        $$("[data-m]", section).forEach(function (el) {
+          var key = el.getAttribute("data-m");
+          if (key === "pass") return;
+          if (mail[key] !== undefined && mail[key] !== null) el.value = mail[key];
+        });
+        if (mail.configured) {
+          status.textContent = "Почта настроена: письма уходят с " + mail.from + ".";
+        } else {
+          status.textContent = "Почта ещё не настроена — коды выдаёт администрация.";
+        }
+        var to = $("[data-mail-to]", section);
+        if (to && !to.value) to.value = mail.notify || mail.from || "";
+      }
+
+      Store.mailStatus().then(fill, function () {});
+
+      var saveBtn = $("[data-mail-save]", section);
+      if (saveBtn) {
+        saveBtn.addEventListener("click", function () {
+          var payload = {};
+          $$("[data-m]", section).forEach(function (el) {
+            payload[el.getAttribute("data-m")] = el.value.trim();
+          });
+          saveBtn.disabled = true;
+          status.textContent = "Сохраняем…";
+          Store.mailSave(payload).then(function (mail) {
+            saveBtn.disabled = false;
+            var passEl = $('[data-m="pass"]', section);
+            if (passEl) passEl.value = "";
+            fill(mail);
+          }, function (err) {
+            saveBtn.disabled = false;
+            status.textContent = (err && err.message) || "Не сохранилось.";
+          });
+        });
+      }
+
+      var testBtn = $("[data-mail-test]", section);
+      if (testBtn) {
+        testBtn.addEventListener("click", function () {
+          var to = ($("[data-mail-to]", section) || {}).value || "";
+          testBtn.disabled = true;
+          status.textContent = "Отправляем проверочное письмо…";
+          Store.mailTest(to).then(function (res) {
+            testBtn.disabled = false;
+            status.textContent = "Письмо ушло на " + res.to + ". Проверьте входящие и «Спам».";
+          }, function (err) {
+            testBtn.disabled = false;
+            status.textContent = (err && err.message) || "Письмо не ушло.";
+          });
+        });
+      }
+    }
+
+    /* Обращения: автор пишет через /support, здесь — очередь и ответ. */
+    function mountSupportQueue(host) {
+      var old = $("[data-support-admin]");
+      if (old) old.remove();
+      if (!Store.supportQueue) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-support-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Поддержка</span>' +
+        "<h2>Обращения авторов</h2>" +
+        '<p class="sec-head__text">Ответ уходит автору письмом — если почта настроена. ' +
+        "Если нет, ответ сохраняется здесь, и его можно переслать вручную.</p></div></div>" +
+        '<div data-support-admin-list><p class="form__note">Загружаем…</p></div>';
+      host.appendChild(section);
+
+      var listEl = $("[data-support-admin-list]", section);
+
+      function draw(items) {
+        if (!items.length) {
+          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Обращений нет</b>' +
+            "<p>Новые вопросы появятся здесь сразу после отправки формы на /support.</p></div>";
+          return;
+        }
+        listEl.innerHTML = '<div class="editorial-queue">' + items.map(function (t) {
+          return '<div class="editorial-card"><div class="editorial-card__top"><b>' +
+            esc(t.name) + " · " + esc(t.topic) + "</b><span>" + esc(fmtDate(t.createdAt)) +
+            "</span></div>" +
+            '<div class="editorial-card__meta">' + esc(t.email) + " · № " +
+            esc(t.id.replace("sp_", "").toUpperCase()) + (t.mailed ? " · письмо ушло" : "") +
+            "</div><p>" + esc(t.message) + "</p>" +
+            '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
+            '<input class="confirm-input" style="flex:1;min-width:220px" type="text" ' +
+            'placeholder="Ответ автору" data-sp-answer="' + esc(t.id) + '">' +
+            '<button class="btn btn--accent btn--sm" type="button" data-sp-close="' + esc(t.id) +
+            '">Ответить и закрыть</button></div></div>';
+        }).join("") + "</div>";
+
+        $$("[data-sp-close]", listEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var id = b.getAttribute("data-sp-close");
+            var input = listEl.querySelector('[data-sp-answer="' + id + '"]');
+            var answer = input ? input.value.trim() : "";
+            if (answer.length < 5) {
+              window.alert("Напишите ответ — минимум пять символов.");
+              return;
+            }
+            b.disabled = true;
+            Store.supportClose(id, answer).then(function (res) {
+              b.disabled = false;
+              if (!res.mailed) {
+                window.alert("Ответ сохранён. Почта не настроена, поэтому письмо не ушло — " +
+                  "перешлите ответ вручную на адрес автора.");
+              }
+              return Store.supportQueue();
+            }).then(draw, function (e) {
+              b.disabled = false;
+              window.alert(e.message);
+            });
+          });
+        });
+      }
+
+      Store.supportQueue().then(draw, function () { draw([]); });
+    }
+
     function mountRecoveryQueue(host) {
       var old = $("[data-recovery-admin]");
       if (old) old.remove();
@@ -3373,6 +3620,80 @@
     }
   }
 
+  /* Подтверждение почты: пока адрес не подтверждён, показываем спокойную
+     карточку. Ничего не блокируем — публикация работает и без неё. */
+  function mountEmailCard(user) {
+    var host = $("[data-email-card]");
+    if (!host || !user) return;
+
+    function draw(verified) {
+      if (verified) {
+        host.innerHTML =
+          '<div class="panel" style="padding:22px">' +
+          '<span class="kicker">Почта</span>' +
+          '<h3 style="margin:6px 0 8px">Адрес подтверждён</h3>' +
+          '<p style="font-size:.94rem;color:var(--ink-soft);margin:0">' +
+          esc(user.email) + " — на этот адрес придут коды восстановления и ответы редакции.</p></div>";
+        return;
+      }
+      host.innerHTML =
+        '<div class="panel" style="padding:22px">' +
+        '<span class="kicker">Почта</span>' +
+        '<h3 style="margin:6px 0 8px">Подтвердите адрес</h3>' +
+        '<p style="font-size:.94rem;color:var(--ink-soft);margin:0 0 12px">' +
+        "Пришлём шестизначный код на " + esc(user.email) + ". Это нужно, чтобы коды " +
+        "восстановления доходили именно вам. Публиковать можно и без подтверждения.</p>" +
+        '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-confirm-send>Прислать код</button>' +
+        '<input class="confirm-input" type="text" inputmode="numeric" maxlength="6" ' +
+        'placeholder="000000" aria-label="Код из письма" data-confirm-code>' +
+        '<button class="btn btn--accent btn--sm" type="button" data-confirm-check>Подтвердить</button>' +
+        "</div>" +
+        '<p class="form__note" data-confirm-status></p></div>';
+
+      var sendBtn = $("[data-confirm-send]", host);
+      var checkBtn = $("[data-confirm-check]", host);
+      var codeInput = $("[data-confirm-code]", host);
+      var status = $("[data-confirm-status]", host);
+
+      if (sendBtn) {
+        sendBtn.addEventListener("click", function () {
+          sendBtn.disabled = true;
+          status.textContent = "Отправляем письмо…";
+          Store.confirmSend().then(function () {
+            sendBtn.disabled = false;
+            status.textContent = "Письмо ушло. Проверьте входящие и папку «Спам».";
+            if (codeInput) codeInput.focus();
+          }, function (err) {
+            sendBtn.disabled = false;
+            status.textContent = (err && err.message) || "Письмо не ушло.";
+          });
+        });
+      }
+
+      if (checkBtn) {
+        checkBtn.addEventListener("click", function () {
+          var code = (codeInput && codeInput.value || "").replace(/\D/g, "");
+          if (code.length !== 6) {
+            status.textContent = "Код — шесть цифр из письма.";
+            return;
+          }
+          checkBtn.disabled = true;
+          Store.confirmCheck(code).then(function () {
+            checkBtn.disabled = false;
+            var fresh = Store.currentUser();
+            draw(!!(fresh && fresh.emailVerified));
+          }, function (err) {
+            checkBtn.disabled = false;
+            status.textContent = (err && err.message) || "Код не подошёл.";
+          });
+        });
+      }
+    }
+
+    draw(!!user.emailVerified);
+  }
+
   /* Код восстановления: показываем один раз, потом только по кнопке. */
   function mountRecoveryCard() {
     var host = $("[data-recovery-card]");
@@ -3990,6 +4311,7 @@
         '<span class="form__note" data-profile-status>' + esc(savedNote) + "</span></div>" +
         "</form>" +
         '<div data-my-editorial style="margin-top:18px"></div>' +
+        '<div data-email-card style="margin-top:18px"></div>' +
         '<div data-recovery-card style="margin-top:18px"></div>' +
         '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
         "Отправленный материал уходит в общую приёмную редакции: он доходит до неё с любого " +
@@ -4000,6 +4322,7 @@
       initAnimations();
       mountCardApplication();
       mountMyEditorial(user);
+      mountEmailCard(user);
       mountRecoveryCard();
       syncSwatches(readAccent());
       Store.refreshPortfolio();
@@ -4953,6 +5276,7 @@
     if (page === "docs") initDocs();
     if (page === "admin") initAdmin();
     if (page === "founders") initFoundersPage();
+    if (page === "support") initSupport();
 
     initAnimations();
     initHeroParallax();

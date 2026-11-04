@@ -1488,6 +1488,97 @@ window.Store = (function () {
     });
   }
 
+  /* --------------------------------------------------- почта и поддержка */
+
+  function mailStatus() {
+    var token = readToken();
+    if (!token) return Promise.resolve(null);
+    return api("mail-status", { token: token }).then(function (res) {
+      return res && res.ok ? res.mail : null;
+    }, function () {
+      return null;
+    });
+  }
+
+  function mailSave(payload) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("mail-save", {
+      token: token,
+      host: payload.host,
+      port: payload.port,
+      secure: payload.secure,
+      user: payload.user,
+      pass: payload.pass || "",
+      from: payload.from,
+      fromName: payload.fromName,
+      notify: payload.notify,
+    }).then(function (res) {
+      if (res && res.ok) return res.mail;
+      throw new Error((res && res.error) || "Настройки не сохранились.");
+    });
+  }
+
+  function mailTest(to) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("mail-test", { token: token, to: to || "" }).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Письмо не ушло.");
+    });
+  }
+
+  function confirmSend() {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("confirm-send", { token: token }).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Письмо не ушло.");
+    });
+  }
+
+  function confirmCheck(code) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("confirm-check", { token: token, code: code }).then(function (res) {
+      if (res && res.ok) return true;
+      throw new Error((res && res.error) || "Код не подошёл.");
+    });
+  }
+
+  function supportSend(payload) {
+    return api("support-send", {
+      name: payload.name,
+      email: payload.email,
+      topic: payload.topic,
+      message: payload.message,
+    }).then(function (res) {
+      if (res && res.ok) return res.ticket;
+      throw new Error((res && res.error) || "Обращение не отправилось.");
+    }, function () {
+      throw new Error("Сервер недоступен. Попробуйте ещё раз.");
+    });
+  }
+
+  function supportQueue() {
+    var token = readToken();
+    if (!token) return Promise.resolve([]);
+    return api("support-queue", { token: token }).then(function (res) {
+      return res && res.ok ? res.tickets || [] : [];
+    }, function () {
+      return [];
+    });
+  }
+
+  function supportClose(id, answer) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("support-close", { token: token, id: id, answer: answer }).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Ответ не сохранился.");
+    });
+  }
+
   /* ------------------------------------------ восстановление доступа */
 
   /* код восстановления: выдаётся один раз и хранится у человека.
@@ -1727,6 +1818,14 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    mailStatus: mailStatus,
+    mailSave: mailSave,
+    mailTest: mailTest,
+    confirmSend: confirmSend,
+    confirmCheck: confirmCheck,
+    supportSend: supportSend,
+    supportQueue: supportQueue,
+    supportClose: supportClose,
     recoveryReset: recoveryReset,
     recoveryRequest: recoveryRequest,
     recoveryCode: recoveryCode,
