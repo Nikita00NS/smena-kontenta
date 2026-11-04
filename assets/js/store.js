@@ -1551,6 +1551,69 @@ window.Store = (function () {
     });
   }
 
+  /* карточка участника: профиль, заявления, карты, переписка */
+  function userCard(id) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("user-card", { token: token, id: id }).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Карточка не открылась.");
+    });
+  }
+
+  function userUpdate(id, patch) {
+    var token = readToken();
+    return api("user-update", Object.assign({ token: token, id: id }, patch || {})).then(function (res) {
+      if (res && res.ok) return res.user;
+      throw new Error((res && res.error) || "Профиль не сохранился.");
+    });
+  }
+
+  function cardGrant(id, number) {
+    var token = readToken();
+    return api("card-grant", { token: token, id: id, number: number || "" }).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Карта не выдалась.");
+    });
+  }
+
+  function userMessage(id, text) {
+    var token = readToken();
+    return api("user-message", { token: token, id: id, text: text }).then(function (res) {
+      if (res && res.ok) return res.message;
+      throw new Error((res && res.error) || "Сообщение не отправилось.");
+    });
+  }
+
+  function messagesMine() {
+    var token = readToken();
+    if (!token) return Promise.resolve([]);
+    return api("messages-mine", { token: token }).then(function (res) {
+      return res && res.ok ? res.messages || [] : [];
+    }, function () {
+      return [];
+    });
+  }
+
+  function consentDecide(userId, decision, note) {
+    var token = readToken();
+    return api("consent-decide", { token: token, userId: userId, decision: decision, note: note || "" })
+      .then(function (res) {
+        if (res && res.ok) return true;
+        throw new Error((res && res.error) || "Решение не сохранилось.");
+      });
+  }
+
+  function portfolioDecide(id, decision, note, points) {
+    var token = readToken();
+    return api("portfolio-decide", {
+      token: token, id: id, decision: decision, note: note || "", points: points || 0,
+    }).then(function (res) {
+      if (res && res.ok) return true;
+      throw new Error((res && res.error) || "Решение не сохранилось.");
+    });
+  }
+
   /* очередь материалов по токену: без пароля редакции */
   function apiPendingQueue() {
     var token = readToken();
@@ -1939,6 +2002,13 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    userCard: userCard,
+    userUpdate: userUpdate,
+    cardGrant: cardGrant,
+    userMessage: userMessage,
+    messagesMine: messagesMine,
+    consentDecide: consentDecide,
+    portfolioDecide: portfolioDecide,
     whoami: whoami,
     claimDirector: claimDirector,
     apiPendingQueue: apiPendingQueue,

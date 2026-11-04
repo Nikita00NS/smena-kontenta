@@ -920,11 +920,13 @@ if ($act === 'card-request') {
 if ($act === 'card-status') {
     $in = body();
     $key = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : ''));
+    $cardUser = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    $cardUserId = $cardUser ? $cardUser['id'] : '';
     if (strlen($key) < 8) fail('Не передан ключ автора.');
     $cards = read_cards($DATA_DIR);
     $mine = array();
     foreach ($cards as $card) {
-        if ($card['authorKey'] === $key) {
+        if ($card['authorKey'] === $key || ($cardUserId !== '' && isset($card['userId']) && $card['userId'] === $cardUserId)) {
             $mine[] = array(
                 'id' => $card['id'],
                 'status' => $card['status'],
@@ -1968,6 +1970,338 @@ if ($act === 'claim-director') {
     if (!$updated) fail('Аккаунт не найден.', 404);
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить роль.', 500);
     respond(array('ok' => true, 'user' => public_user($updated)));
+}
+
+/* ------------------------------------------------- карточка участника
+   Одна карточка на человека: профиль, заявления, карты, переписка.
+   Редакция открывает её из списка участников и делает всё в одном месте. */
+
+function messages_file($dir) { return $dir . '/messages.json'; }
+
+function read_messages($dir) {
+    $list = read_json(messages_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+function card_number_next($cards, $year) {
+    $max = 0;
+    foreach ($cards as $c) {
+        if (!isset($c['number'])) continue;
+        if (preg_match('/(\d+)$/', (string) $c['number'], $m)) {
+            $max = max($max, (int) $m[1]);
+        }
+    }
+    return 'СК-' . $year . '-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+}
+
+if ($act === 'user-card') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Карточку участника видит только директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ($u['id'] === $id) $target = $u;
+    }
+    if (!$target) fail('Участник не найден.', 404);
+
+    $email = strtolower((string) $target['email']);
+    $name = (string) $target['name'];
+
+    $posts = array();
+    foreach (read_json($DATA_DIR . '/posts.json', array()) as $post) {
+        if (!isset($post['authorId']) || $post['authorId'] !== $id) continue;
+        $posts[] = array(
+            'id' => $post['id'],
+            'title' => isset($post['title']) ? $post['title'] : '',
+            'status' => isset($post['status']) ? $post['status'] : '',
+            'format' => isset($post['format']) ? $post['format'] : '',
+            'date' => isset($post['date']) ? $post['date'] : '',
+        );
+    }
+    usort($posts, function ($a, $b) { return strcmp((string) $b['date'], (string) $a['date']); });
+
+    $editorialApps = array();
+    foreach (read_editorial_apps($DATA_DIR) as $a) {
+        if ($a['userId'] !== $id) continue;
+        $editorialApps[] = public_editorial_app($a);
+    }
+
+    $consents = array();
+    foreach (read_consents($DATA_DIR) as $c) {
+        if (isset($c['userId']) && $c['userId'] === $id) $consents[] = public_consent($c);
+    }
+
+    $cards = array();
+    foreach (read_cards($DATA_DIR) as $c) {
+        $mineByUser = isset($c['userId']) && $c['userId'] === $id;
+        $mineByName = isset($c['authorName']) && $c['authorName'] === $name;
+        if ($mineByUser || $mineByName) {
+            $cards[] = array(
+                'id' => $c['id'],
+                'status' => $c['status'],
+                'number' => isset($c['number']) ? $c['number'] : '',
+                'note' => isset($c['note']) ? $c['note'] : '',
+                'createdAt' => $c['createdAt'],
+                'decidedAt' => isset($c['decidedAt']) ? $c['decidedAt'] : '',
+            );
+        }
+    }
+
+    $portfolio = array();
+    foreach (read_portfolio($DATA_DIR) as $item) {
+        if ($item['userId'] !== $id) continue;
+        $portfolio[] = public_portfolio($item);
+    }
+
+    $recovery = array();
+    foreach (read_recovery_requests($DATA_DIR) as $r) {
+        if (strtolower((string) $r['email']) !== $email) continue;
+        $recovery[] = public_recovery_request($r);
+    }
+
+    $editorials = array();
+    foreach (read_editorials($DATA_DIR) as $e) {
+        if ($e['founderId'] === $id) $editorials[] = $e;
+    }
+
+    $messages = array();
+    foreach (read_messages($DATA_DIR) as $m) {
+        if ($m['userId'] !== $id) continue;
+        $messages[] = $m;
+    }
+
+    $published = 0;
+    foreach ($posts as $post) {
+        if ($post['status'] === 'published') $published++;
+    }
+
+    respond(array(
+        'ok' => true,
+        'user' => array_merge(public_user($target), array(
+            'createdAt' => isset($target['createdAt']) ? $target['createdAt'] : '',
+        )),
+        'posts' => $posts,
+        'published' => $published,
+        'editorialApps' => $editorialApps,
+        'editorialsFounded' => $editorials,
+        'consents' => $consents,
+        'cards' => $cards,
+        'portfolio' => $portfolio,
+        'recovery' => $recovery,
+        'messages' => $messages,
+        'cardNumberNext' => card_number_next(read_cards($DATA_DIR), date('Y')),
+        'cardMinPosts' => card_min_posts(),
+    ));
+}
+
+if ($act === 'user-update') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Профиль участника правит только директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+
+    $users = read_users($DATA_DIR);
+    $found = false;
+    $updated = null;
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $id) continue;
+        if (isset($in['name'])) {
+            $name = text($in['name'], 80);
+            if (slen($name) < 2) fail('Имя — минимум два символа.');
+            $users[$i]['name'] = $name;
+        }
+        if (isset($in['region'])) $users[$i]['region'] = text($in['region'], 60);
+        if (isset($in['role'])) $users[$i]['role'] = text($in['role'], 60);
+        if (isset($in['bio'])) $users[$i]['bio'] = text($in['bio'], 600);
+        if (isset($in['avatar'])) $users[$i]['avatar'] = text($in['avatar'], 400);
+        if (isset($in['emailVerified'])) $users[$i]['emailVerified'] = !empty($in['emailVerified']);
+        if (isset($in['access'])) {
+            $access = text($in['access'], 60);
+            if (!in_array($access, access_list(), true)) fail('Такой роли нет.');
+            $users[$i]['access'] = $access;
+        }
+        $updated = $users[$i];
+        $found = true;
+        break;
+    }
+    if (!$found) fail('Участник не найден.', 404);
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить профиль.', 500);
+    respond(array('ok' => true, 'user' => public_user($updated)));
+}
+
+if ($act === 'card-grant') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    $role = isset($me['access']) ? $me['access'] : '';
+    if (!in_array($role, array('Директор', 'Администрация', 'Редакционный администратор региона'), true)) {
+        fail('Карту выдаёт директор, администрация или редакционный администратор региона.', 403);
+    }
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ($u['id'] === $id) $target = $u;
+    }
+    if (!$target) fail('Участник не найден.', 404);
+
+    $cards = read_cards($DATA_DIR);
+    foreach ($cards as $c) {
+        if (isset($c['userId']) && $c['userId'] === $id && $c['status'] === 'issued') {
+            fail('У участника уже есть действующая карта: ' . $c['number'], 409);
+        }
+    }
+
+    $year = date('Y');
+    $number = text(isset($in['number']) ? $in['number'] : '', 40);
+    if ($number === '') $number = card_number_next($cards, $year);
+    $cardId = new_id('c_');
+    $cards[$cardId] = array(
+        'id' => $cardId,
+        'authorKey' => '',
+        'userId' => $id,
+        'authorName' => $target['name'],
+        'authorRegion' => isset($target['region']) ? $target['region'] : '',
+        'authorRole' => isset($target['role']) ? $target['role'] : '',
+        'posts' => array(),
+        'status' => 'issued',
+        'number' => $number,
+        'note' => 'Выдана редакцией вручную: ' . $me['name'],
+        'createdAt' => date('c'),
+        'decidedAt' => date('c'),
+    );
+    if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось выдать карту.', 500);
+
+    $editorial = null;
+    if (!empty($target['editorialId'])) {
+        foreach (read_editorials($DATA_DIR) as $e) {
+            if ($e['id'] === $target['editorialId']) $editorial = $e;
+        }
+    }
+    respond(array('ok' => true, 'number' => $number, 'editorial' => $editorial));
+}
+
+if ($act === 'user-message') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Писать участникам может только директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+    $text = text(isset($in['text']) ? $in['text'] : '', 2000);
+    if (slen($text) < 3) fail('Сообщение слишком короткое.');
+
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ($u['id'] === $id) $target = $u;
+    }
+    if (!$target) fail('Участник не найден.', 404);
+
+    $list = read_messages($DATA_DIR);
+    $msg = array(
+        'id' => 'ms_' . bin2hex(random_bytes(4)),
+        'userId' => $id,
+        'from' => $me['name'],
+        'fromRole' => isset($me['access']) ? $me['access'] : '',
+        'text' => $text,
+        'createdAt' => date('c'),
+        'read' => false,
+        'mailed' => false,
+    );
+    $mailed = false;
+    if (smtp_configured($DATA_DIR)) {
+        $mailed = mail_send(
+            $target['email'],
+            'Сообщение от редакции — Смена контента',
+            "Здравствуйте, " . $target['name'] . "!\n\n" . $text . "\n\n" .
+            "Ответить можно на это письмо или из кабинета.\n\n—\n" . $me['name'] . ", Смена контента\n"
+        );
+    }
+    $msg['mailed'] = $mailed;
+    $list[] = $msg;
+    write_json(messages_file($DATA_DIR), $list);
+    respond(array('ok' => true, 'message' => $msg));
+}
+
+if ($act === 'messages-mine') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    $out = array();
+    foreach (read_messages($DATA_DIR) as $m) {
+        if ($m['userId'] !== $me['id']) continue;
+        $out[] = $m;
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    respond(array('ok' => true, 'messages' => $out));
+}
+
+if ($act === 'messages-read') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    $list = read_messages($DATA_DIR);
+    foreach ($list as $i => $m) {
+        if ($m['userId'] === $me['id']) $list[$i]['read'] = true;
+    }
+    write_json(messages_file($DATA_DIR), $list);
+    respond(array('ok' => true));
+}
+
+if ($act === 'consent-decide') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Решение по согласию принимает директор и администрация.', 403);
+    $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
+    $note = text(isset($in['note']) ? $in['note'] : '', 400);
+    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение — «принять» или «отклонить».');
+
+    $list = read_consents($DATA_DIR);
+    $found = false;
+    foreach ($list as $i => $c) {
+        if ((isset($c['userId']) ? $c['userId'] : '') !== $userId) continue;
+        $list[$i]['status'] = $decision;
+        $list[$i]['note'] = $note;
+        $list[$i]['decidedAt'] = date('c');
+        $found = true;
+        break;
+    }
+    if (!$found) fail('Согласие не найдено.', 404);
+    write_json(consents_file($DATA_DIR), $list);
+    respond(array('ok' => true));
+}
+
+if ($act === 'portfolio-decide') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Решение по портфолио принимает директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
+    $note = text(isset($in['note']) ? $in['note'] : '', 400);
+    $points = (int) (isset($in['points']) ? $in['points'] : 0);
+    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение — «принять» или «отклонить».');
+    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание.');
+
+    $list = read_portfolio($DATA_DIR);
+    $found = false;
+    foreach ($list as $i => $item) {
+        if ($item['id'] !== $id) continue;
+        $list[$i]['status'] = $decision;
+        $list[$i]['note'] = $note;
+        $list[$i]['points'] = $decision === 'approved' ? max(0, min(50, $points)) : 0;
+        $list[$i]['decidedAt'] = date('c');
+        $found = true;
+        break;
+    }
+    if (!$found) fail('Работа не найдена.', 404);
+    write_json(portfolio_file($DATA_DIR), $list);
+    respond(array('ok' => true));
 }
 
 /* ------------------------------------------------- права участников */

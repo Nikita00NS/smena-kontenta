@@ -2108,6 +2108,8 @@
     }
 
     /* Участники и роли: права меняются на сервере, а не в браузере. */
+    /* Участники: список людей, по клику — вся карточка человека:
+       профиль, материалы, заявления, пресс-карта и переписка. */
     function mountPeople(host) {
       var old = $("[data-people-admin]");
       if (old) old.remove();
@@ -2119,55 +2121,358 @@
       section.setAttribute("data-people-admin", "");
       section.innerHTML =
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Участники</span>' +
-        "<h2>Роли и права</h2>" +
-        '<p class="sec-head__text">Здесь видно всех, кто зарегистрировался на сайте. Роль ' +
-        "меняется сразу на сервере: администрация видит заявки, основатель региона ведёт " +
-        "редакцию, директор может всё.</p></div></div>" +
-        '<div data-people-list><p class="form__note">Загружаем участников…</p></div>';
+        "<h2>Люди проекта</h2>" +
+        '<p class="sec-head__text">Нажмите на человека — откроется карточка: профиль, материалы, ' +
+        "заявления в редакцию, согласие, портфолио, пресс-карта и переписка. Всё решается здесь, " +
+        "без переходов по разделам.</p></div>" +
+        '<div class="people-search"><input type="search" placeholder="Поиск по имени или почте" ' +
+        'data-people-search aria-label="Поиск участника"></div></div>' +
+        '<div data-people-list><p class="form__note">Загружаем участников…</p></div>' +
+        '<div data-person-card></div>';
       host.appendChild(section);
 
       var listEl = $("[data-people-list]", section);
+      var cardEl = $("[data-person-card]", section);
+      var searchEl = $("[data-people-search]", section);
+      var roles = [];
+      var all = [];
+      var openedId = "";
 
-      function draw(users, roles) {
-        if (!users.length) {
+      function roleChip(access) {
+        var cls = access === "Директор" ? "status--pub"
+          : access === "Пользователь" ? "status--draft" : "status--pending";
+        return '<span class="status ' + cls + '">' + esc(access || "Пользователь") + "</span>";
+      }
+
+      function draw() {
+        var q = (searchEl && searchEl.value || "").trim().toLowerCase();
+        var users = all.filter(function (u) {
+          if (!q) return true;
+          return (u.name || "").toLowerCase().indexOf(q) !== -1 ||
+            (u.email || "").toLowerCase().indexOf(q) !== -1;
+        });
+
+        if (!all.length) {
           listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Пока никто не зарегистрировался</b>' +
-            '<p>Первый аккаунт станет директором. После этого здесь появятся роли и права.</p>' +
+            '<p>Первый аккаунт станет директором: тогда здесь появятся люди и их карточки.</p>' +
             '<p><a class="link-accent" href="/join">Открыть регистрацию</a></p></div>';
           return;
         }
+        if (!users.length) {
+          listEl.innerHTML = '<p class="form__note">Никого не нашли по запросу «' + esc(q) + '».</p>';
+          return;
+        }
+
         listEl.innerHTML = '<div class="people">' + users.map(function (u) {
-          return '<div class="people__row">' +
-            '<div class="people__who"><b>' + esc(u.name) + "</b><small>" + esc(u.email) +
-            (u.emailVerified ? " · почта подтверждена" : " · почта не подтверждена") + "</small></div>" +
-            '<div class="people__meta">' + esc(u.region || "регион не указан") +
-            " · с " + esc(fmtDate(u.createdAt)) + "</div>" +
-            '<select class="admin-access" data-person="' + esc(u.id) + '">' +
-            roles.map(function (r) {
-              return '<option' + (r === u.access ? " selected" : "") + ">" + esc(r) + "</option>";
-            }).join("") + "</select></div>";
+          return '<div class="people__row' + (u.id === openedId ? " is-open" : "") + '">' +
+            '<button class="people__open" type="button" data-open="' + esc(u.id) + '">' +
+            '<b>' + esc(u.name) + "</b><small>" + esc(u.email) + "</small></button>" +
+            '<div class="people__meta">' + esc(u.region || "регион не указан") + " · " +
+            roleChip(u.access) + "</div>" +
+            '<button class="btn btn--ghost btn--sm" type="button" data-open="' + esc(u.id) + '">' +
+            (u.id === openedId ? "Свернуть" : "Открыть карточку") + "</button></div>";
         }).join("") + "</div>";
 
-        $$("[data-person]", listEl).forEach(function (sel) {
-          sel.addEventListener("change", function () {
-            var id = sel.getAttribute("data-person");
-            sel.disabled = true;
-            Store.userAccess(id, sel.value).then(function () {
-              sel.disabled = false;
-              sel.classList.add("is-saved");
-              setTimeout(function () { sel.classList.remove("is-saved"); }, 1200);
-            }, function (err) {
-              sel.disabled = false;
-              window.alert((err && err.message) || "Права не сохранились.");
-              return Store.usersList().then(function (fresh) { draw(fresh.users, fresh.roles); });
-            });
+        $$("[data-open]", listEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var id = b.getAttribute("data-open");
+            if (id === openedId) {
+              openedId = "";
+              cardEl.innerHTML = "";
+              draw();
+              return;
+            }
+            openedId = id;
+            draw();
+            openCard(id);
           });
         });
       }
 
+      function openCard(id) {
+        cardEl.innerHTML = '<p class="form__note" style="margin-top:16px">Открываем карточку…</p>';
+        Store.userCard(id).then(function (data) {
+          renderCard(data);
+          if (cardEl.scrollIntoView) cardEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, function (err) {
+          cardEl.innerHTML = '<p class="form__note is-error" style="margin-top:16px">' +
+            esc((err && err.message) || "Карточка не открылась.") + "</p>";
+        });
+      }
+
+      function renderCard(d) {
+        var u = d.user;
+        var postsPublished = d.published || 0;
+        var cardIssued = (d.cards || []).filter(function (c) { return c.status === "issued"; })[0];
+
+        var profile =
+          '<div class="pcard"><div class="pcard__head"><div>' +
+          "<h3>" + esc(u.name) + "</h3>" +
+          '<p class="pcard__sub">' + esc(u.email) + " · " + esc(regionName(u.region) || "регион не указан") +
+          " · на проекте с " + esc(fmtDate(u.createdAt)) + "</p></div>" +
+          '<div class="pcard__badges">' + roleChip(u.access) +
+          (u.emailVerified ? '<span class="status status--pub">почта подтверждена</span>'
+            : '<span class="status status--draft">почта не подтверждена</span>') + "</div></div>" +
+
+          '<div class="pcard__grid">' +
+          '<div class="pcard__col">' +
+          '<span class="kicker">Профиль</span>' +
+          '<div class="field"><label>Имя и фамилия</label><input type="text" data-pf-name value="' +
+          esc(u.name) + '"></div>' +
+          '<div class="field"><label>Регион</label><select data-pf-region>' + regionOptions(u.region) +
+          "</select></div>" +
+          '<div class="field"><label>Роль (права)</label><select data-pf-access>' +
+          roles.map(function (r) {
+            return '<option' + (r === u.access ? " selected" : "") + ">" + esc(r) + "</option>";
+          }).join("") + "</select></div>" +
+          '<div class="field"><label>Чем занимается</label><input type="text" data-pf-role value="' +
+          esc(u.role || "") + '"></div>' +
+          '<div class="field"><label>О себе</label><textarea rows="3" data-pf-bio>' +
+          esc(u.bio || "") + "</textarea></div>" +
+          '<button class="btn btn--accent btn--sm" type="button" data-pf-save>Сохранить профиль</button>' +
+          "</div>" +
+
+          '<div class="pcard__col">' +
+          '<span class="kicker">Итоги</span>' +
+          '<div class="diag">' +
+          '<div class="diag__row"><span>Опубликовано материалов</span><b>' + postsPublished + "</b></div>" +
+          '<div class="diag__row"><span>Всего материалов</span><b>' + (d.posts || []).length + "</b></div>" +
+          '<div class="diag__row"><span>Пресс-карта</span><b>' +
+          (cardIssued ? esc(cardIssued.number) : "не выдана") + "</b></div>" +
+          '<div class="diag__row"><span>Порог для карты</span><b>' + (d.cardMinPosts || 5) +
+          " публикаций</b></div>" +
+          '<div class="diag__row"><span>Редакция</span><b>' +
+          ((d.editorialsFounded || [])[0] ? esc(d.editorialsFounded[0].name) : "не основана") + "</b></div>" +
+          "</div>" +
+          (cardIssued
+            ? '<p class="form__note">Карта ' + esc(cardIssued.number) + " выдана " +
+              esc(fmtDate(cardIssued.decidedAt || cardIssued.createdAt)) + ".</p>"
+            : '<button class="btn btn--sm" type="button" data-card-grant>Выдать пресс-карту (' +
+              esc((d.cardNumberNext || "")) + ")</button>") +
+          '<p class="form__note" data-card-note></p>' +
+          "</div></div>" +
+
+          '<div class="pcard__section"><span class="kicker">Заявления</span>' +
+          appsList(d) +
+          "</div>" +
+
+          '<div class="pcard__section"><span class="kicker">Материалы</span>' +
+          ((d.posts || []).length
+            ? '<div class="pcard__list">' + d.posts.slice(0, 8).map(function (post) {
+                var st = post.status === "published" ? "выложен"
+                  : post.status === "pending" ? "на проверке"
+                  : post.status === "rejected" ? "нужны правки" : "черновик";
+                return '<div class="pcard__line"><span>' + esc(post.title) + "</span><small>" +
+                  esc(st) + " · " + esc(fmtDate(post.date)) + "</small></div>";
+              }).join("") + "</div>"
+            : '<p class="form__note">Материалов пока нет.</p>') +
+          "</div>" +
+
+          '<div class="pcard__section"><span class="kicker">Написать участнику</span>' +
+          '<div class="pcard__compose"><textarea rows="3" data-msg-text ' +
+          'placeholder="Сообщение уйдёт на почту и появится в кабинете участника"></textarea>' +
+          '<button class="btn btn--sm" type="button" data-msg-send>Отправить</button></div>' +
+          '<p class="form__note" data-msg-note></p>' +
+          ((d.messages || []).length
+            ? '<div class="pcard__list">' + d.messages.slice().reverse().slice(0, 6).map(function (m) {
+                return '<div class="pcard__line"><span>' + esc(m.text) + "</span><small>" +
+                  esc(m.from) + " · " + esc(fmtDate(m.createdAt)) +
+                  (m.mailed ? " · письмо ушло" : " · письмо не ушло") + "</small></div>";
+              }).join("") + "</div>"
+            : "") +
+          "</div></div>";
+
+        cardEl.innerHTML = profile;
+
+        /* профиль */
+        $("[data-pf-save]", cardEl).addEventListener("click", function () {
+          var payload = {
+            name: $("[data-pf-name]", cardEl).value.trim(),
+            region: $("[data-pf-region]", cardEl).value,
+            access: $("[data-pf-access]", cardEl).value,
+            role: $("[data-pf-role]", cardEl).value.trim(),
+            bio: $("[data-pf-bio]", cardEl).value.trim(),
+          };
+          Store.userUpdate(u.id, payload).then(function () {
+            return Store.usersList();
+          }).then(function (fresh) {
+            all = fresh.users || [];
+            roles = fresh.roles || roles;
+            draw();
+            openCard(u.id);
+          }, function (err) {
+            window.alert((err && err.message) || "Профиль не сохранился.");
+          });
+        });
+
+        /* карта */
+        var grantBtn = $("[data-card-grant]", cardEl);
+        if (grantBtn) {
+          grantBtn.addEventListener("click", function () {
+            if (!window.confirm("Выдать пресс-карту " + u.name + "? Номер сформируется автоматически.")) return;
+            grantBtn.disabled = true;
+            Store.cardGrant(u.id).then(function (res) {
+              window.alert("Карта выдана: " + res.number);
+              openCard(u.id);
+            }, function (err) {
+              grantBtn.disabled = false;
+              window.alert((err && err.message) || "Карта не выдалась.");
+            });
+          });
+        }
+
+        /* сообщение */
+        var sendBtn = $("[data-msg-send]", cardEl);
+        if (sendBtn) {
+          sendBtn.addEventListener("click", function () {
+            var field = $("[data-msg-text]", cardEl);
+            var text = (field.value || "").trim();
+            var note = $("[data-msg-note]", cardEl);
+            if (text.length < 3) {
+              note.textContent = "Напишите сообщение.";
+              return;
+            }
+            sendBtn.disabled = true;
+            Store.userMessage(u.id, text).then(function (msg) {
+              sendBtn.disabled = false;
+              note.textContent = msg.mailed
+                ? "Отправлено: письмо ушло на " + u.email + "."
+                : "Сохранено в кабинете. Почта не настроена, письмо не ушло.";
+              openCard(u.id);
+            }, function (err) {
+              sendBtn.disabled = false;
+              note.textContent = (err && err.message) || "Не отправилось.";
+            });
+          });
+        }
+
+        /* решения по заявлениям */
+        $$("[data-ed-ok]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            Store.editorialReview(b.getAttribute("data-ed-ok"), "approved", "").then(function () {
+              openCard(u.id);
+            }, function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-ed-no]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var note = window.prompt("Основание отказа:", "");
+            if (note === null) return;
+            if (note.trim().length < 5) {
+              window.alert("Отказ без основания недопустим.");
+              return;
+            }
+            Store.editorialReview(b.getAttribute("data-ed-no"), "rejected", note.trim())
+              .then(function () { openCard(u.id); }, function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-consent-ok]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            Store.consentDecide(u.id, "approved", "").then(function () { openCard(u.id); },
+              function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-consent-no]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var note = window.prompt("Почему согласие не принято:", "");
+            if (note === null) return;
+            Store.consentDecide(u.id, "rejected", note.trim()).then(function () { openCard(u.id); },
+              function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-pf-item-ok]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var points = window.prompt("Сколько баллов дать работе (0–50)?", "5");
+            if (points === null) return;
+            Store.portfolioDecide(b.getAttribute("data-pf-item-ok"), "approved", "", Number(points) || 0)
+              .then(function () { openCard(u.id); }, function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-pf-item-no]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var note = window.prompt("Основание отказа:", "");
+            if (note === null) return;
+            Store.portfolioDecide(b.getAttribute("data-pf-item-no"), "rejected", note.trim(), 0)
+              .then(function () { openCard(u.id); }, function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-rc-issue]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            Store.recoveryIssue(b.getAttribute("data-rc-issue")).then(function (res) {
+              window.alert(res.code ? "Код для " + u.name + ": " + res.code
+                : "Код отправлен на " + u.email + ".");
+              openCard(u.id);
+            }, function (e) { window.alert(e.message); });
+          });
+        });
+      }
+
+      function appsList(d) {
+        var rows = [];
+        var ED = { pending: "на рассмотрении", approved: "принято", rejected: "отказ" };
+
+        (d.editorialApps || []).forEach(function (a) {
+          rows.push('<div class="pcard__line"><span>Заявление в редакцию ' + esc(a.region || "") + "</span><small>" +
+            esc(ED[a.status] || a.status) + (a.escalated ? " · в комиссии" : "") + "</small>" +
+            (a.status === "pending"
+              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-ed-ok="' +
+                esc(a.id) + '">Принять</button><button class="btn btn--ghost btn--sm" type="button" data-ed-no="' +
+                esc(a.id) + '">Отклонить</button></span>'
+              : "") + "</div>");
+        });
+
+        (d.consents || []).forEach(function (c) {
+          rows.push('<div class="pcard__line"><span>Согласие на обработку ПД</span><small>' +
+            esc(c.status === "approved" ? "принято" : c.status === "rejected" ? "отклонено" : "ждёт решения") +
+            "</small>" +
+            (c.status !== "approved"
+              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-consent-ok>' +
+                'Принять</button><button class="btn btn--ghost btn--sm" type="button" data-consent-no>' +
+                "Отклонить</button></span>"
+              : "") + "</div>");
+        });
+
+        (d.cards || []).forEach(function (c) {
+          rows.push('<div class="pcard__line"><span>Пресс-карта</span><small>' +
+            esc(c.status === "issued" ? "выдана " + (c.number || "")
+              : c.status === "pending" ? "заявка ждёт решения"
+              : c.status === "annulled" ? "аннулирована" : "возвращена") + "</small></div>");
+        });
+
+        (d.portfolio || []).forEach(function (item) {
+          rows.push('<div class="pcard__line"><span>Портфолио: ' + esc(item.title || "работа") +
+            "</span><small>" + esc(item.status === "approved" ? "принято · " + (item.points || 0) + " баллов"
+              : item.status === "rejected" ? "отказ" : "ждёт решения") + "</small>" +
+            (item.status === "pending"
+              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-pf-item-ok="' +
+                esc(item.id) + '">Принять</button><button class="btn btn--ghost btn--sm" type="button" ' +
+                'data-pf-item-no="' + esc(item.id) + '">Отклонить</button></span>'
+              : "") + "</div>");
+        });
+
+        (d.recovery || []).forEach(function (r) {
+          if (r.status !== "open") return;
+          rows.push('<div class="pcard__line"><span>Просьба о коде доступа</span><small>ждёт решения</small>' +
+            '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-rc-issue="' +
+            esc(r.id) + '">Выдать код</button></span></div>');
+        });
+
+        return rows.length ? '<div class="pcard__list">' + rows.join("") + "</div>"
+          : '<p class="form__note">Заявлений нет.</p>';
+      }
+
+      if (searchEl) {
+        searchEl.addEventListener("input", function () { draw(); });
+      }
+
       Store.usersList().then(function (res) {
-        draw(res.users, res.roles);
+        all = res.users || [];
+        roles = res.roles || Store.ACCESS || [];
+        draw();
       }, function () {
-        draw([], Store.ROLES || []);
+        all = [];
+        roles = Store.ACCESS || [];
+        draw();
       });
     }
 
@@ -2320,7 +2625,15 @@
         '<div class="panel" style="padding:20px"><div class="diag" data-diag-list>' +
         '<p class="form__note">Проверяем…</p></div>' +
         '<button class="btn btn--ghost btn--sm" type="button" data-diag-refresh ' +
-        'style="margin-top:12px">Проверить снова</button></div>';
+        'style="margin-top:12px">Проверить снова</button>' +
+        '<div class="pass-change"><span class="kicker">Пароль редакции</span>' +
+        '<p class="form__note">По нему открываются очереди, которые не привязаны к аккаунту. ' +
+        "Если не меняли — действует стандартный.</p>" +
+        '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+        '<input type="password" data-ep-old placeholder="Текущий пароль" autocomplete="current-password">' +
+        '<input type="password" data-ep-new placeholder="Новый пароль (6+)" autocomplete="new-password">' +
+        '<button class="btn btn--sm" type="button" data-ep-save>Сменить</button></div>' +
+        '<p class="form__note" data-ep-status></p></div></div>';
       host.appendChild(section);
 
       var listEl = $("[data-diag-list]", section);
@@ -2354,6 +2667,33 @@
 
       var btn = $("[data-diag-refresh]", section);
       if (btn) btn.addEventListener("click", load);
+
+      var epSave = $("[data-ep-save]", section);
+      if (epSave && Store.apiSetPass) {
+        epSave.addEventListener("click", function () {
+          var oldPass = ($("[data-ep-old]", section) || {}).value || "";
+          var newPass = ($("[data-ep-new]", section) || {}).value || "";
+          var status = $("[data-ep-status]", section);
+          if (newPass.length < 6) {
+            status.textContent = "Новый пароль — минимум шесть символов.";
+            return;
+          }
+          epSave.disabled = true;
+          Store.apiSetPass(oldPass, newPass).then(function (res) {
+            epSave.disabled = false;
+            if (res && res.ok) {
+              status.textContent = "Пароль редакции изменён. Сохраните его в надёжном месте.";
+              $("[data-ep-old]", section).value = "";
+              $("[data-ep-new]", section).value = "";
+            } else {
+              status.textContent = (res && res.error) || "Пароль не сменился.";
+            }
+          }, function (err) {
+            epSave.disabled = false;
+            status.textContent = (err && err.message) || "Пароль не сменился.";
+          });
+        });
+      }
       load();
     }
 
@@ -4299,6 +4639,30 @@
     }
   }
 
+  /* Сообщения от редакции: письма, которые администрация отправила из карточки. */
+  function mountInbox() {
+    var host = $("[data-inbox]");
+    if (!host || !Store.messagesMine) return;
+
+    Store.messagesMine().then(function (list) {
+      if (!list.length) {
+        host.innerHTML = "";
+        return;
+      }
+      var unread = list.filter(function (m) { return !m.read; }).length;
+      host.innerHTML =
+        '<div class="panel" style="padding:22px">' +
+        '<span class="kicker">Связь</span>' +
+        '<h3 style="margin:6px 0 10px">Сообщения от редакции' +
+        (unread ? " · " + unread + " новых" : "") + "</h3>" +
+        '<div class="pcard__list">' + list.slice(0, 5).map(function (m) {
+          return '<div class="pcard__line"><span>' + esc(m.text) + "</span><small>" +
+            esc(m.from || "редакция") + " · " + esc(fmtDate(m.createdAt)) + "</small></div>";
+        }).join("") + "</div>" +
+        '<p class="form__note">Ответить можно на письмо или через <a class="link-accent" href="/support">поддержку</a>.</p></div>';
+    }, function () {});
+  }
+
   /* Подтверждение почты: пока адрес не подтверждён, показываем спокойную
      карточку. Ничего не блокируем — публикация работает и без неё. */
   function mountEmailCard(user) {
@@ -4990,6 +5354,7 @@
         '<span class="form__note" data-profile-status>' + esc(savedNote) + "</span></div>" +
         "</form>" +
         '<div data-my-editorial style="margin-top:18px"></div>' +
+        '<div data-inbox style="margin-top:18px"></div>' +
         '<div data-email-card style="margin-top:18px"></div>' +
         '<div data-recovery-card style="margin-top:18px"></div>' +
         '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
@@ -5002,6 +5367,7 @@
       mountCardApplication();
       mountMyEditorial(user);
       warnLocalOnly();
+      mountInbox();
       mountEmailCard(user);
       mountRecoveryCard();
       syncSwatches(readAccent());
