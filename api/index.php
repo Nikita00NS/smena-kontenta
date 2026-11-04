@@ -430,6 +430,31 @@ function public_consent($c) {
     );
 }
 
+/* ------------------------------------------------ портфолио автора вне сайта */
+function portfolio_file($dir) { return $dir . '/portfolio.json'; }
+
+function read_portfolio($dir) {
+    $list = read_json(portfolio_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+function public_portfolio($item) {
+    return array(
+        'id' => isset($item['id']) ? $item['id'] : '',
+        'userId' => isset($item['userId']) ? $item['userId'] : '',
+        'name' => isset($item['name']) ? $item['name'] : '',
+        'title' => isset($item['title']) ? $item['title'] : '',
+        'about' => isset($item['about']) ? $item['about'] : '',
+        'files' => isset($item['files']) && is_array($item['files']) ? $item['files'] : array(),
+        'publish' => !empty($item['publish']),
+        'status' => isset($item['status']) ? $item['status'] : 'pending',
+        'note' => isset($item['note']) ? $item['note'] : '',
+        'points' => isset($item['points']) ? (int) $item['points'] : 0,
+        'createdAt' => isset($item['createdAt']) ? $item['createdAt'] : '',
+        'decidedAt' => isset($item['decidedAt']) ? $item['decidedAt'] : '',
+    );
+}
+
 /* ------------------------------------------------- самопроверка аккаунтов */
 function selftest_auth($dir) {
     $steps = array();
@@ -805,6 +830,124 @@ if ($act === 'remove') {
     if (!isset($posts[$id])) fail('Материал не найден.', 404);
     unset($posts[$id]);
     write_json($DATA_DIR . '/posts.json', $posts);
+    respond(array('ok' => true));
+}
+
+/* -------------------------------------------------------- портфолио автора */
+
+if ($act === 'portfolio-send') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $title = text(isset($in['title']) ? $in['title'] : '', 160);
+    $about = text(isset($in['about']) ? $in['about'] : '', 1200);
+    if (slen($title) < 5) fail('Название работы — хотя бы пять символов.');
+    if (slen($about) < 30) fail('Расскажите о материале: не меньше 30 символов.');
+
+    $list = read_portfolio($DATA_DIR);
+    $mine = array_filter($list, function ($i) use ($user) {
+        return isset($i['userId']) && $i['userId'] === $user['id'] && $i['status'] === 'pending';
+    });
+    if (count($mine) >= 5) fail('У вас уже пять работ на проверке — дождитесь решения комиссии.');
+
+    $files = array();
+    $raw = isset($in['files']) && is_array($in['files']) ? $in['files'] : array();
+    foreach (array_slice($raw, 0, 3) as $dataUrl) {
+        $err = '';
+        $file = data_url_file(
+            $dataUrl,
+            array(
+                'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
+                'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a', 'audio/ogg' => 'ogg', 'audio/wav' => 'wav',
+                'video/mp4' => 'mp4', 'video/webm' => 'webm',
+            ),
+            8000000,
+            $err
+        );
+        if (!$file) continue;
+        $dir = media_dir($DATA_DIR);
+        $fname = 'pf_' . $user['id'] . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $file['ext'];
+        if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) continue;
+        @chmod($dir . '/' . $fname, 0644);
+        $files[] = media_public_url($fname);
+    }
+    if (!count($files)) fail('Приложите хотя бы один файл: фото, аудио или видео.');
+
+    $item = array(
+        'id' => 'pf_' . bin2hex(random_bytes(5)),
+        'userId' => $user['id'],
+        'name' => $user['name'],
+        'title' => $title,
+        'about' => $about,
+        'files' => $files,
+        'publish' => !empty($in['publish']),
+        'status' => 'pending',
+        'note' => '',
+        'points' => 0,
+        'createdAt' => date('c'),
+        'decidedAt' => '',
+    );
+    $list[] = $item;
+    if (!write_json(portfolio_file($DATA_DIR), $list)) fail('Не удалось сохранить работу.', 500);
+    respond(array('ok' => true, 'item' => public_portfolio($item)));
+}
+
+if ($act === 'portfolio-mine') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    $mine = array();
+    foreach (read_portfolio($DATA_DIR) as $item) {
+        if (isset($item['userId']) && $item['userId'] === $user['id']) $mine[] = public_portfolio($item);
+    }
+    usort($mine, function ($a, $b) {
+        return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
+    });
+    respond(array('ok' => true, 'items' => $mine));
+}
+
+if ($act === 'portfolio-queue') {
+    $in = body();
+    $password = isset($in['password']) ? (string) $in['password'] : '';
+    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    $list = read_portfolio($DATA_DIR);
+    usort($list, function ($a, $b) {
+        return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
+    });
+    $out = array();
+    foreach ($list as $item) $out[] = public_portfolio($item);
+    respond(array('ok' => true, 'items' => $out));
+}
+
+if ($act === 'portfolio-review') {
+    $in = body();
+    $password = isset($in['password']) ? (string) $in['password'] : '';
+    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+
+    $id = isset($in['id']) ? (string) $in['id'] : '';
+    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
+    $note = text(isset($in['note']) ? $in['note'] : '', 400);
+    $points = isset($in['points']) ? max(0, min(50, (int) $in['points'])) : 5;
+    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение должно быть «одобрено» или «отклонено».');
+    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание.');
+
+    $list = read_portfolio($DATA_DIR);
+    $found = false;
+    foreach ($list as $i => $item) {
+        if ($item['id'] !== $id) continue;
+        $list[$i]['status'] = $decision;
+        $list[$i]['note'] = $note;
+        $list[$i]['decidedAt'] = date('c');
+        $list[$i]['points'] = $decision === 'approved' ? $points : 0;
+        if ($decision === 'approved' && isset($in['publish'])) {
+            $list[$i]['publish'] = !empty($in['publish']);
+        }
+        $found = true;
+        break;
+    }
+    if (!$found) fail('Работа не найдена.', 404);
+    if (!write_json(portfolio_file($DATA_DIR), $list)) fail('Не удалось сохранить решение.', 500);
     respond(array('ok' => true));
 }
 

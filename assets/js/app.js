@@ -1488,9 +1488,132 @@
       mountServerQueue(host);
       mountCardQueue(host);
       mountConsentQueue(host);
+      mountPortfolioQueue(host);
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
+    /* --- портфолио авторов: работы вне сайта -------------------------------- */
+    function mountPortfolioQueue(host) {
+      var old = $("[data-portfolio-queue]");
+      if (old) old.remove();
+      if (!Store.portfolioQueue) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-portfolio-queue", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Портфолио</span>' +
+        "<h2>Работы авторов вне сайта</h2>" +
+        '<p class="sec-head__text">Автор присылает свои материалы — фото, видео, аудио. ' +
+        "Комиссия решает, интересна ли работа, сколько баллов дать и показывать ли её на " +
+        "странице аккаунта.</p></div></div>" +
+        '<div class="panel"><div class="row" style="align-items:flex-end">' +
+        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
+        '<label for="pf-pass">Пароль редакции</label>' +
+        '<input id="pf-pass" type="password" placeholder="Тот же пароль, что и для материалов" value="' +
+        esc(savedPass()) + '"></div>' +
+        '<button class="btn btn--sm" type="button" data-pf-load>Показать работы</button></div>' +
+        '<p class="form__note" data-pf-status></p></div><div data-pf-list></div>';
+      host.appendChild(section);
+
+      var passEl = $("#pf-pass", section);
+      var statusEl = $("[data-pf-status]", section);
+      var listEl = $("[data-pf-list]", section);
+
+      function row(item) {
+        var badge =
+          item.status === "approved"
+            ? '<span class="status status--pub">одобрено · +' + (item.points || 0) + "</span>"
+            : item.status === "rejected"
+              ? '<span class="status status--rejected">не принято</span>'
+              : '<span class="status status--pending">на рассмотрении</span>';
+        var files = (item.files || [])
+          .map(function (u) {
+            var isImage = /\.(jpg|jpeg|png|webp)$/i.test(u);
+            return isImage
+              ? '<a class="portfolio-thumb" href="' + esc(u) + '" target="_blank" rel="noopener">' +
+                '<img src="' + esc(u) + '" alt=""></a>'
+              : '<a class="btn btn--sm btn--ghost" href="' + esc(u) + '" target="_blank" rel="noopener">' +
+                "Открыть файл</a>";
+          })
+          .join("");
+        return (
+          '<div class="admin-review"><div class="admin-review__top"><b>' + esc(item.title || "Работа") +
+          "</b>" + badge + "</div>" +
+          '<div class="admin-review__meta">' + esc(item.name || "Автор") + " · " +
+          esc(fmtDate(item.createdAt)) + " · " +
+          (item.publish ? "хочет на страницу аккаунта" : "только для баллов") + "</div>" +
+          '<p class="admin-review__excerpt">' + esc(item.about || "") + "</p>" +
+          '<div class="portfolio-row__files" style="margin:10px 0">' + files + "</div>" +
+          (item.status === "pending"
+            ? '<div class="admin-review__actions">' +
+              '<input class="admin-review__note" type="text" placeholder="Основание (обязательно для отказа)" ' +
+              'data-pf-note="' + esc(item.id) + '">' +
+              '<input class="admin-review__points" type="number" min="0" max="50" value="5" ' +
+              'data-pf-points="' + esc(item.id) + '" aria-label="Баллы">' +
+              '<button class="btn btn--sm" type="button" data-pf-approve="' + esc(item.id) + '">Одобрить</button>' +
+              '<button class="btn btn--sm btn--ghost" type="button" data-pf-reject="' + esc(item.id) + '">Отклонить</button>' +
+              "</div>"
+            : item.note
+              ? '<p class="admin-review__excerpt">Основание: ' + esc(item.note) + "</p>"
+              : "") +
+          "</div>"
+        );
+      }
+
+      function load() {
+        var pass = passEl.value.trim();
+        if (!pass) {
+          statusEl.textContent = "Введите пароль редакции.";
+          return;
+        }
+        statusEl.textContent = "Загружаем…";
+        Store.portfolioQueue(pass).then(function (res) {
+          if (!res || !res.ok) {
+            statusEl.textContent = (res && res.error) || "Сервер не ответил.";
+            return;
+          }
+          var list = res.items || [];
+          var waiting = list.filter(function (i) { return i.status === "pending"; }).length;
+          statusEl.textContent = "Работ всего: " + list.length + ", ждут решения: " + waiting + ".";
+          listEl.innerHTML = list.length
+            ? list.map(row).join("")
+            : '<div class="empty"><h3>Работ пока нет</h3><p>Автор добавляет их в кабинете кнопкой ' +
+              "«Добавить свои материалы».</p></div>";
+
+          $$("[data-pf-approve], [data-pf-reject]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var approve = btn.hasAttribute("data-pf-approve");
+              var id = btn.getAttribute("data-pf-approve") || btn.getAttribute("data-pf-reject");
+              var noteEl = $('[data-pf-note="' + id + '"]', listEl);
+              var pointsEl = $('[data-pf-points="' + id + '"]', listEl);
+              var note = noteEl ? noteEl.value.trim() : "";
+              if (!approve && note.length < 5) {
+                statusEl.textContent = "Чтобы отклонить, напишите основание.";
+                return;
+              }
+              btn.disabled = true;
+              Store.portfolioReview(
+                pass, id, approve ? "approved" : "rejected", note,
+                pointsEl ? Number(pointsEl.value) || 0 : 5
+              ).then(function (r) {
+                btn.disabled = false;
+                if (!r || !r.ok) {
+                  statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
+                  return;
+                }
+                load();
+              });
+            });
+          });
+        });
+      }
+
+      $("[data-pf-load]", section).addEventListener("click", load);
+      if (savedPass()) load();
+    }
+
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
     function mountConsentQueue(host) {
       var old = $("[data-consent-queue]");
@@ -2895,7 +3018,11 @@
       });
       var bonus = published.length ? 10 : 0;
       if (card && card.issued) bonus += 15;
-      var totalPoints = postPoints + bonus;
+
+      /* портфолио: работы вне сайта, за которые комиссия начислила баллы */
+      var portfolioItems = Store.portfolio();
+      var portfolioPoints = Store.portfolioPoints();
+      var totalPoints = postPoints + bonus + portfolioPoints;
 
       /* особый ПИН: выдаётся авторам с пресс-картой и участникам редакции */
       var pin = "";
@@ -2924,7 +3051,67 @@
           return "<tr><td>" + esc(b.name) + "</td><td>" + esc(b.note || "") +
             "</td><td>+" + esc(String(b.value)) + "</td></tr>";
         })
-        .join("");
+        .join("") +
+        "<tr><td>Портфолио</td><td>Одобренная комиссией работа вне сайта</td><td>+" +
+        portfolioPoints + "</td></tr>";
+
+      var portfolioRows = portfolioItems.length
+        ? portfolioItems
+            .map(function (item) {
+              var badge =
+                item.status === "approved"
+                  ? '<span class="status status--pub">одобрено · +' + (item.points || 0) + "</span>"
+                  : item.status === "rejected"
+                    ? '<span class="status status--rejected">не принято</span>'
+                    : '<span class="status status--pending">на рассмотрении</span>';
+              var preview = (item.files || [])
+                .filter(function (u) { return /\.(jpg|jpeg|png|webp)$/i.test(u); })
+                .slice(0, 3)
+                .map(function (u) {
+                  return '<a class="portfolio-thumb" href="' + esc(u) + '" target="_blank" rel="noopener">' +
+                    '<img src="' + esc(u) + '" alt="' + esc(item.title) + '" loading="lazy"></a>';
+                })
+                .join("");
+              return '<div class="portfolio-row"><div class="portfolio-row__main">' +
+                '<div class="portfolio-row__top"><b>' + esc(item.title) + "</b>" + badge + "</div>" +
+                '<p class="portfolio-row__about">' + esc(item.about) + "</p>" +
+                (preview ? '<div class="portfolio-row__files">' + preview + "</div>" : "") +
+                (item.note
+                  ? '<p class="portfolio-row__note">Основание комиссии: ' + esc(item.note) + "</p>"
+                  : "") +
+                '<div class="portfolio-row__meta">' +
+                (item.publish ? "на странице аккаунта" : "только для баллов") +
+                " · " + esc(fmtDate(item.createdAt)) + "</div></div></div>";
+            })
+            .join("")
+        : '<div class="fill-note fill-note--flat"><b>Портфолио пока пустое</b><p>Добавьте работу, ' +
+          "которая ещё не публиковалась на сайте: фотосерию, видео, подкаст. Комиссия посмотрит " +
+          "и начислит баллы, а вы решите — показывать её на странице аккаунта или оставить " +
+          "только для баллов.</p></div>";
+
+      var portfolioBlock =
+        '<div class="profile-posts portfolio" style="margin-top:44px">' +
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Портфолио</span>' +
+        "<h2>Свои материалы вне сайта</h2>" +
+        '<p class="sec-head__text">Работы, которые вы делали раньше: фотосерии, видео, подкасты. ' +
+        "Комиссия решает, интересны ли они проекту, и начисляет баллы.</p></div>" +
+        '<button class="btn btn--accent btn--sm" type="button" data-portfolio-open>' +
+        "Добавить свои материалы</button></div>" +
+        '<form class="portfolio-form is-hidden" data-portfolio-form>' +
+        '<div class="field"><label for="pf-title">Название работы</label>' +
+        '<input id="pf-title" name="title" type="text" maxlength="160" required ' +
+        'placeholder="Например: серия о ночных дворах"></div>' +
+        '<div class="field"><label for="pf-about">Что это и почему интересно</label>' +
+        '<textarea id="pf-about" name="about" rows="4" maxlength="1200" required ' +
+        'placeholder="Коротко: тема, где снимали, что получилось"></textarea></div>' +
+        '<div class="field"><label for="pf-files">Файлы (до трёх: фото, видео или аудио)</label>' +
+        '<input id="pf-files" type="file" accept="image/*,video/*,audio/*" multiple data-portfolio-files>' +
+        '<p class="field__hint" data-portfolio-files-note>Файлы хранятся на платформе, до 8 МБ каждый.</p></div>' +
+        '<label class="check-line"><input type="checkbox" name="publish" value="1">' +
+        "<span>Показать работу на странице моего аккаунта, если комиссия её одобрит</span></label>" +
+        '<div class="row"><button class="btn" type="submit">Отправить комиссии</button>' +
+        '<span class="form__note" data-portfolio-note></span></div></form>' +
+        '<div class="portfolio-list">' + portfolioRows + "</div></div>";
 
       var pointsBlock =
         '<div class="profile-posts points" style="margin-top:44px">' +
@@ -2933,7 +3120,7 @@
         '<div class="kpi" style="margin-bottom:18px">' +
         '<div class="kpi__item"><b class="points__total">' + totalPoints + "</b><span>баллов всего</span></div>" +
         '<div class="kpi__item"><b>' + postPoints + "</b><span>за материалы</span></div>" +
-        '<div class="kpi__item"><b>' + bonus + "</b><span>бонусы</span></div>" +
+        '<div class="kpi__item"><b>' + (bonus + portfolioPoints) + "</b><span>бонусы</span></div>" +
         '<div class="kpi__item"><b>' + published.length + "</b><span>опубликовано</span></div>" +
         "</div>" +
         '<p class="muted" style="max-width:640px">Баллы начисляются только за опубликованные материалы, ' +
@@ -3080,6 +3267,8 @@
 
         pointsBlock +
 
+        portfolioBlock +
+
         // материалы
         '<div class="profile-posts" style="margin-top:44px">' +
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Мои материалы</span>' +
@@ -3127,6 +3316,7 @@
       initAnimations();
       mountCardApplication();
       syncSwatches(readAccent());
+      Store.refreshPortfolio();
       Store.refreshConsent().then(function (fresh) {
         var before = (consent && consent.status) || "none";
         if (fresh && fresh.status && fresh.status !== before && host.isConnected !== false) render();
@@ -3191,6 +3381,50 @@
             }, function (err) {
               var fresh = $("[data-consent-note]", host);
               if (fresh) fresh.textContent = (err && err.message) || "Не удалось отправить согласие.";
+            });
+        });
+      }
+
+      /* «Добавить свои материалы» */
+      var pfOpen = $("[data-portfolio-open]", host);
+      var pfForm = $("[data-portfolio-form]", host);
+      if (pfOpen && pfForm) {
+        pfOpen.addEventListener("click", function () {
+          pfForm.classList.toggle("is-hidden");
+          if (!pfForm.classList.contains("is-hidden")) pfForm.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+
+        pfForm.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var noteEl = $("[data-portfolio-note]", pfForm);
+          var title = pfForm.querySelector('[name="title"]').value.trim();
+          var about = pfForm.querySelector('[name="about"]').value.trim();
+          var publish = !!pfForm.querySelector('[name="publish"]').checked;
+          var input = $("[data-portfolio-files]", pfForm);
+          var files = Array.prototype.slice.call((input && input.files) || []).slice(0, 3);
+
+          if (title.length < 5) { noteEl.textContent = "Название — хотя бы пять символов."; return; }
+          if (about.length < 30) { noteEl.textContent = "Расскажите о работе: минимум 30 символов."; return; }
+          if (!files.length) { noteEl.textContent = "Приложите хотя бы один файл."; return; }
+
+          noteEl.textContent = "Загружаем файлы…";
+          files
+            .reduce(function (chain, file) {
+              return chain.then(function (acc) {
+                return fileToDataUrl(file).then(function (dataUrl) {
+                  acc.push(dataUrl);
+                  return acc;
+                });
+              });
+            }, Promise.resolve([]))
+            .then(function (dataUrls) {
+              noteEl.textContent = "Отправляем комиссии…";
+              return Store.portfolioSend({ title: title, about: about, files: dataUrls, publish: publish });
+            })
+            .then(function () {
+              render();
+            }, function (err) {
+              noteEl.textContent = (err && err.message) || "Не удалось отправить работу.";
             });
         });
       }

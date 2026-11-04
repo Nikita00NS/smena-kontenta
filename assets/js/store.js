@@ -1422,6 +1422,91 @@ window.Store = (function () {
     );
   }
 
+  /* ------------------------------------------------- портфолио вне сайта */
+
+  /* «Добавить свои материалы»: работа не обязана быть опубликованной на сайте —
+     её смотрит комиссия и решает, интересна ли она и сколько стоит в баллах. */
+  var PORTFOLIO_KEY = "smena_portfolio_v1";
+
+  function readPortfolioCache() {
+    try {
+      var raw = window.localStorage.getItem(PORTFOLIO_KEY);
+      var list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function cachePortfolio(list) {
+    try {
+      window.localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(list || []));
+    } catch (e) {}
+  }
+
+  function portfolio() {
+    return readPortfolioCache();
+  }
+
+  function refreshPortfolio() {
+    var token = readToken();
+    if (!token) return Promise.resolve(portfolio());
+    return api("portfolio-mine", { token: token }).then(function (res) {
+      if (res && res.ok && res.items) {
+        cachePortfolio(res.items);
+        emit();
+        return res.items;
+      }
+      return portfolio();
+    }, function () {
+      return portfolio();
+    });
+  }
+
+  function portfolioSend(items) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы добавить материалы."));
+    return api("portfolio-send", {
+      token: token,
+      title: items.title,
+      about: items.about,
+      files: items.files || [],
+      publish: !!items.publish,
+    }).then(function (res) {
+      if (res && res.ok && res.item) {
+        var list = portfolio();
+        list.unshift(res.item);
+        cachePortfolio(list);
+        emit();
+        return res.item;
+      }
+      throw new Error((res && res.error) || "Работа не отправилась.");
+    }, function () {
+      throw new Error("Нет связи с сервером. Попробуйте ещё раз.");
+    });
+  }
+
+  function portfolioQueue(password) {
+    return api("portfolio-queue", { password: password });
+  }
+
+  function portfolioReview(password, id, decision, note, points, publish) {
+    return api("portfolio-review", {
+      password: password,
+      id: id,
+      decision: decision,
+      note: note,
+      points: points,
+      publish: publish,
+    });
+  }
+
+  function portfolioPoints() {
+    return portfolio().reduce(function (sum, item) {
+      return sum + (item.status === "approved" ? Number(item.points) || 0 : 0);
+    }, 0);
+  }
+
   function consentQueue(password) {
     return api("consent-queue", { password: password });
   }
@@ -1478,6 +1563,12 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    portfolio: portfolio,
+    refreshPortfolio: refreshPortfolio,
+    portfolioSend: portfolioSend,
+    portfolioQueue: portfolioQueue,
+    portfolioReview: portfolioReview,
+    portfolioPoints: portfolioPoints,
     consent: consent,
     refreshConsent: refreshConsent,
     sendConsent: sendConsent,
