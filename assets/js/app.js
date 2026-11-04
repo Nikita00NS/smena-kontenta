@@ -1639,99 +1639,52 @@
       host.innerHTML =
         '<section class="page-hero"><div class="wrap page-hero__grid"><div>' +
         '<span class="kicker">Служебное</span><h1>Панель<br>проекта</h1></div>' +
-        '<div class="page-hero__aside"><p class="lead">Здесь заполняются данные организации и ' +
-        "правила выдачи пресс-карт. Всё, что вы сохраните, сразу появляется на сайте: в пресс-карте, " +
-        "подвале и документах.</p>" +
-        '<p class="admin-note">Материалы авторов приходят на сервер проекта — их видно ' +
-        "с любого устройства в блоке «Материалы авторов» ниже. Настройки вроде названия " +
-        "и правил пресс-карты пока хранятся в этом браузере.</p></div></div></section>" +
+        '<div class="page-hero__aside"><p class="lead">Люди, материалы, редакции, карты, ' +
+        'почта и состояние сайта — по разделам, без длинной простыни.</p>' +
+        '<p class="admin-note">Вы: «' + esc(user.name) + '» · ' + esc(user.access || "Пользователь") +
+        ' · версия интерфейса ' + esc((SC && SC.build) || "—") + "</p></div></div></section>" +
+        '<nav class="admin-tabs" data-admin-tabs></nav>' +
+        '<div class="admin-panels" data-admin-panels></div>';
 
-        '<section class="section wrap"><div class="admin-grid">' +
-        '<form class="admin-card" data-admin-org><h2>Организация</h2>' +
-        '<p class="admin-card__hint">Эти данные печатаются на пресс-карте и указываются в документах.</p>' +
-        adminField("Название проекта", "org-name", settings.org.name, "Смена контента") +
-        adminField("Кем выдана пресс-карта", "org-center", settings.org.center,
-                   "Редакция «Смена контента»") +
-        adminField("Руководитель", "org-head", settings.org.head, "Имя и фамилия") +
-        adminField("Почта для связи", "org-email", settings.org.email, "name@example.ru", "email") +
-        adminField("Телефон", "org-phone", settings.org.phone, "+7 900 000-00-00", "tel") +
-        adminField("Город", "org-city", settings.org.city, "Москва") +
-        '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
-        '<span class="form__note" data-org-status></span></div></form>' +
+      var panels = $("[data-admin-panels]", host);
+      var TABS = [
+        ["overview", "Обзор"],
+        ["people", "Люди"],
+        ["content", "Материалы"],
+        ["editorials", "Редакции"],
+        ["cards", "Карты"],
+        ["support", "Поддержка"],
+        ["mail", "Почта"],
+        ["site", "Сайт"],
+        ["server", "Сервер"],
+      ];
 
-        '<form class="admin-card" data-admin-founders><h2>Учредители</h2>' +
-        '<p class="admin-card__hint">Проект ведут два человека — их данные указываются ' +
-        'в политике конфиденциальности и соглашении как оператора.</p>' +
-        foundersFields(settings.org.founders) +
-        '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
-        '<span class="form__note" data-founders-status></span></div></form>' +
+      TABS.forEach(function (t) {
+        var div = document.createElement("div");
+        div.className = "admin-panel";
+        div.setAttribute("data-panel", t[0]);
+        div.hidden = true;
+        panels.appendChild(div);
+      });
 
-        '<form class="admin-card" data-admin-card><h2>Пресс-карта</h2>' +
-        '<p class="admin-card__hint">Правила, по которым автор получает карту с номером.</p>' +
-        adminField("Серия", "card-prefix", settings.card.prefix, "СК") +
-        adminField("Год", "card-year", settings.card.year, "2026", "number") +
-        adminField("Публикаций до личной карты", "card-min", settings.card.minPosts, "5", "number") +
-        adminField("Публикаций до карты редакции", "card-team-min", settings.card.teamMinPosts, "20", "number") +
-        adminField("Срок действия, месяцев", "card-valid", settings.card.validMonths, "12", "number") +
-        '<div class="row"><button class="btn" type="submit">Сохранить</button>' +
-        '<span class="form__note" data-card-status></span></div></form>' +
-        "</div></section>" +
+      function panel(name) {
+        return panels.querySelector('[data-panel="' + name + '"]');
+      }
 
-        '<section class="section wrap" style="padding-top:0">' +
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Проверка</span>' +
-        "<h2>Материалы на проверке</h2></div>" +
-        '<span class="sec-link">' + pending.length + " в очереди</span></div>" +
-        (pending.length
-          ? pending.map(pendingRow).join("")
-          : '<div class="empty"><h3>Очередь пуста</h3><p>Когда автор отправит материал на проверку, ' +
-            "он появится здесь: можно прочитать, опубликовать или вернуть с замечанием.</p></div>") +
-        "</section>" +
-
-        '<section class="section wrap" style="padding-top:0">' +
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Редакции</span>' +
-        "<h2>Команды проекта</h2></div></div>" +
-        (teams.length
-          ? '<div class="admin-table">' + teams.map(function (t) {
-              return '<div class="admin-table__row">' +
-                "<div><b>" + esc(t.name) + "</b><small>код " + esc(t.code) + "</small></div>" +
-                "<div>" + esc(regionName(t.region) || "—") + "</div>" +
-                "<div>" + t.members + " чел.</div>" +
-                "<div>" + t.published + " публ.</div>" +
-                '<div><span class="status ' + (t.published >= settings.card.teamMinPosts ? "status--pub" : "status--draft") + '">' +
-                (t.published >= settings.card.teamMinPosts ? "карта редакции" : "до карты " + (settings.card.teamMinPosts - t.published)) +
-                "</span></div></div>";
-            }).join("") + "</div>"
-          : '<div class="empty"><h3>Команд пока нет</h3><p>Автор может создать редакцию в личном кабинете.</p></div>') +
-        "</section>" +
-
-        '<section class="section wrap" style="padding-top:0">' +
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Авторы</span>' +
-        "<h2>Кто уже на проекте</h2></div>" +
-        '<div class="row"><button class="btn btn--sm btn--ghost" type="button" data-export>' +
-        "Скачать данные</button></div></div>" +
-        (authors.length
-          ? '<div class="admin-table">' + authors.map(authorRow).join("") + "</div>"
-          : '<div class="empty"><h3>Пока никто не зарегистрировался</h3>' +
-            "<p>Аккаунты появятся здесь после регистрации авторов.</p></div>") +
-        "</section>";
-
-      bind();
-      mountServerQueue(host);
-      mountCardQueue(host);
-      mountConsentQueue(host);
-      mountPortfolioQueue(host);
-      mountEditorialQueue(host);
-      mountRecoveryQueue(host);
       warnLocalOnly();
-      mountOverview(host);
-      mountPeople(host);
-      mountContent(host);
-      mountFoundersEditor(host);
-      mountSite(host);
-      mountDiag(host);
-      mountMailSettings(host);
-      mountSupportQueue(host);
-      buildAdminTabs(host);
+      mountOverview(panel("overview"));
+      mountPeople(panel("people"));
+      mountRecoveryQueue(panel("people"));
+      mountContent(panel("content"));
+      mountEditorialQueue(panel("editorials"));
+      mountCardQueue(panel("cards"));
+      mountSupportQueue(panel("support"));
+      mountMailSettings(panel("mail"));
+      mountSite(panel("site"));
+      mountFoundersEditor(panel("site"));
+      mountDiag(panel("server"));
+
+      buildAdminTabs(host, TABS);
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
@@ -2023,154 +1976,96 @@
       });
     }
 
-    /* Вкладки: панель делится на разделы, а не сваливается в одну простыню. */
-    function buildAdminTabs(host) {
-      var old = $("[data-admin-tabs]");
-      if (old) old.remove();
-
-      var TABS = [
-        ["overview", "Обзор"],
-        ["people", "Участники"],
-        ["content", "Материалы"],
-        ["editorials", "Редакции"],
-        ["cards", "Пресс-карты"],
-        ["support", "Поддержка"],
-        ["mail", "Почта"],
-        ["site", "Сайт"],
-        ["server", "Сервер"],
-      ];
-
-      var sections = Array.prototype.slice.call(host.querySelectorAll("section.section"));
-      var map = [
-        ["[data-people-admin]", "people"],
-        ["[data-recovery-admin]", "people"],
-        ["[data-portfolio-queue]", "content"],
-        ["[data-consent-queue]", "content"],
-        ["[data-editorial-admin]", "editorials"],
-        ["[data-card-queue]", "cards"],
-        ["[data-support-admin]", "support"],
-        ["[data-mail-admin]", "mail"],
-        ["[data-founders-admin]", "site"],
-        ["[data-diag-admin]", "server"],
-        ["[data-admin-overview]", "overview"],
-        ["[data-admin-content]", "content"],
-        ["[data-admin-site]", "site"],
-      ];
-
-      sections.forEach(function (sec) {
-        if (sec.getAttribute("data-admin-block")) return;
-        for (var i = 0; i < map.length; i++) {
-          if (sec.querySelector(map[i][0])) {
-            sec.setAttribute("data-admin-block", map[i][1]);
-            return;
-          }
-        }
-        var t = sec.textContent || "";
-        if (/Материалы на проверке|Команды проекта|Кто уже на проекте|Серверная очередь/.test(t)) {
-          sec.setAttribute("data-admin-block", "content");
-        } else if (sec.querySelector(".admin-grid")) {
-          sec.setAttribute("data-admin-block", "site");
-        }
-      });
-
-      var nav = document.createElement("nav");
-      nav.className = "admin-tabs";
-      nav.setAttribute("data-admin-tabs", "");
+    /* Вкладки: каждая показывает ровно одну панель и поднимает страницу к её началу. */
+    function buildAdminTabs(host, TABS) {
+      var nav = $("[data-admin-tabs]", host);
+      if (!nav) return;
       nav.innerHTML = TABS.map(function (t) {
         return '<button class="admin-tabs__btn" type="button" data-admin-tab="' + t[0] + '">' +
           esc(t[1]) + "</button>";
       }).join("");
 
-      var hero = host.querySelector(".page-hero");
-      if (hero && hero.parentNode) hero.parentNode.insertBefore(nav, hero.nextSibling);
-      else host.insertBefore(nav, host.firstChild);
+      var panels = $("[data-admin-panels]", host);
 
       function show(id) {
-        $$("[data-admin-block]", host).forEach(function (sec) {
-          sec.hidden = sec.getAttribute("data-admin-block") !== id;
+        $$("[data-panel]", panels).forEach(function (p) {
+          p.hidden = p.getAttribute("data-panel") !== id;
         });
-        $$('[data-admin-tab]', nav).forEach(function (b) {
+        $$("[data-admin-tab]", nav).forEach(function (b) {
           b.classList.toggle("is-on", b.getAttribute("data-admin-tab") === id);
         });
         try { window.localStorage.setItem("smena_admin_tab", id); } catch (e) {}
       }
 
-      $$('[data-admin-tab]', nav).forEach(function (b) {
+      $$("[data-admin-tab]", nav).forEach(function (b) {
         b.addEventListener("click", function () {
           show(b.getAttribute("data-admin-tab"));
-          window.scrollTo({ top: 0, behavior: "smooth" });
+          var top = nav.getBoundingClientRect().top + window.pageYOffset - 8;
+          window.scrollTo(0, top);
         });
       });
 
       var saved = "";
       try { saved = window.localStorage.getItem("smena_admin_tab") || ""; } catch (e) {}
-      show(saved || "overview");
+      var exists = TABS.some(function (t) { return t[0] === saved; });
+      show(exists ? saved : "overview");
     }
 
-    /* Участники и роли: права меняются на сервере, а не в браузере. */
-    /* Участники: список людей, по клику — вся карточка человека:
-       профиль, материалы, заявления, пресс-карта и переписка. */
+    /* Люди: список с поиском, по клику — карточка человека со всеми решениями. */
     function mountPeople(host) {
-      var old = $("[data-people-admin]");
-      if (old) old.remove();
       if (!Store.usersList) return;
 
-      var section = document.createElement("section");
-      section.className = "section wrap";
-      section.setAttribute("style", "padding-top:0");
-      section.setAttribute("data-people-admin", "");
-      section.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Участники</span>' +
-        "<h2>Люди проекта</h2>" +
+      host.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Люди</span>' +
+        "<h2>Участники проекта</h2>" +
         '<p class="sec-head__text">Нажмите на человека — откроется карточка: профиль, материалы, ' +
-        "заявления в редакцию, согласие, портфолио, пресс-карта и переписка. Всё решается здесь, " +
-        "без переходов по разделам.</p></div>" +
-        '<div class="people-search"><input type="search" placeholder="Поиск по имени или почте" ' +
+        "заявления, пресс-карта и переписка. Всё решается на одном экране.</p></div>" +
+        '<div class="people-search"><input type="search" placeholder="Поиск: имя или почта" ' +
         'data-people-search aria-label="Поиск участника"></div></div>' +
         '<div data-people-list><p class="form__note">Загружаем участников…</p></div>' +
         '<div data-person-card></div>';
-      host.appendChild(section);
 
-      var listEl = $("[data-people-list]", section);
-      var cardEl = $("[data-person-card]", section);
-      var searchEl = $("[data-people-search]", section);
-      var roles = [];
+      var listEl = $("[data-people-list]", host);
+      var cardEl = $("[data-person-card]", host);
+      var searchEl = $("[data-people-search]", host);
       var all = [];
+      var roles = Store.ACCESS || [];
       var openedId = "";
+      var needScroll = false;
 
-      function roleChip(access) {
+      function chip(access) {
         var cls = access === "Директор" ? "status--pub"
           : access === "Пользователь" ? "status--draft" : "status--pending";
         return '<span class="status ' + cls + '">' + esc(access || "Пользователь") + "</span>";
       }
 
       function draw() {
-        var q = (searchEl && searchEl.value || "").trim().toLowerCase();
-        var users = all.filter(function (u) {
+        var q = ((searchEl && searchEl.value) || "").trim().toLowerCase();
+        var list = all.filter(function (u) {
           if (!q) return true;
           return (u.name || "").toLowerCase().indexOf(q) !== -1 ||
             (u.email || "").toLowerCase().indexOf(q) !== -1;
         });
 
         if (!all.length) {
-          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Пока никто не зарегистрировался</b>' +
-            '<p>Первый аккаунт станет директором: тогда здесь появятся люди и их карточки.</p>' +
-            '<p><a class="link-accent" href="/join">Открыть регистрацию</a></p></div>';
+          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Пока никого нет</b>' +
+            "<p>Первый зарегистрировавшийся получит права директора. После этого здесь появятся " +
+            'люди и их карточки.</p><p><a class="link-accent" href="/join">Открыть регистрацию</a></p></div>';
           return;
         }
-        if (!users.length) {
-          listEl.innerHTML = '<p class="form__note">Никого не нашли по запросу «' + esc(q) + '».</p>';
+        if (!list.length) {
+          listEl.innerHTML = '<p class="form__note">По запросу «' + esc(q) + '» никого нет.</p>';
           return;
         }
 
-        listEl.innerHTML = '<div class="people">' + users.map(function (u) {
+        listEl.innerHTML = '<div class="people">' + list.map(function (u) {
           return '<div class="people__row' + (u.id === openedId ? " is-open" : "") + '">' +
             '<button class="people__open" type="button" data-open="' + esc(u.id) + '">' +
-            '<b>' + esc(u.name) + "</b><small>" + esc(u.email) + "</small></button>" +
-            '<div class="people__meta">' + esc(u.region || "регион не указан") + " · " +
-            roleChip(u.access) + "</div>" +
+            "<b>" + esc(u.name) + "</b><small>" + esc(u.email) + "</small></button>" +
+            '<div class="people__meta">' + esc(regionName(u.region) || "регион не указан") + " · " +
+            chip(u.access) + "</div>" +
             '<button class="btn btn--ghost btn--sm" type="button" data-open="' + esc(u.id) + '">' +
-            (u.id === openedId ? "Свернуть" : "Открыть карточку") + "</button></div>";
+            (u.id === openedId ? "Свернуть" : "Открыть") + "</button></div>";
         }).join("") + "</div>";
 
         $$("[data-open]", listEl).forEach(function (b) {
@@ -2183,6 +2078,7 @@
               return;
             }
             openedId = id;
+            needScroll = true;
             draw();
             openCard(id);
           });
@@ -2191,100 +2087,137 @@
 
       function openCard(id) {
         cardEl.innerHTML = '<p class="form__note" style="margin-top:16px">Открываем карточку…</p>';
-        Store.userCard(id).then(function (data) {
-          renderCard(data);
-          if (cardEl.scrollIntoView) cardEl.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, function (err) {
+        Store.userCard(id).then(renderCard, function (err) {
           cardEl.innerHTML = '<p class="form__note is-error" style="margin-top:16px">' +
             esc((err && err.message) || "Карточка не открылась.") + "</p>";
         });
       }
 
+      function appsList(d) {
+        var rows = [];
+        var ED = { pending: "ждёт решения", approved: "принято", rejected: "отказ" };
+
+        (d.editorialApps || []).forEach(function (a) {
+          rows.push('<div class="pcard__line"><span>Заявление в редакцию</span><small>' +
+            esc(ED[a.status] || a.status) + (a.escalated ? " · в комиссии" : "") + "</small>" +
+            (a.status === "pending"
+              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-ed-ok="' +
+                esc(a.id) + '">Принять</button><button class="btn btn--ghost btn--sm" type="button" ' +
+                'data-ed-no="' + esc(a.id) + '">Отклонить</button></span>'
+              : "<span></span>") + "</div>");
+        });
+
+        (d.consents || []).forEach(function (c) {
+          rows.push('<div class="pcard__line"><span>Согласие на обработку ПД</span><small>' +
+            esc(ED[c.status] || "ждёт решения") + "</small>" +
+            (c.status !== "approved"
+              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-consent-ok>' +
+                'Принять</button><button class="btn btn--ghost btn--sm" type="button" data-consent-no>' +
+                "Отклонить</button></span>"
+              : "<span></span>") + "</div>");
+        });
+
+        (d.cards || []).forEach(function (c) {
+          rows.push('<div class="pcard__line"><span>Пресс-карта</span><small>' +
+            esc(c.status === "issued" ? "выдана " + (c.number || "")
+              : c.status === "pending" ? "заявка ждёт решения"
+                : c.status === "annulled" ? "аннулирована" : "возвращена") +
+            "</small><span></span></div>");
+        });
+
+        (d.portfolio || []).forEach(function (item) {
+          rows.push('<div class="pcard__line"><span>Портфолио: ' + esc(item.title || "работа") +
+            "</span><small>" + esc(item.status === "approved" ? "принято · " + (item.points || 0) + " б."
+              : item.status === "rejected" ? "отказ" : "ждёт решения") + "</small>" +
+            (item.status === "pending"
+              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" ' +
+                'data-pf-item-ok="' + esc(item.id) + '">Принять</button><button class="btn btn--ghost ' +
+                'btn--sm" type="button" data-pf-item-no="' + esc(item.id) + '">Отклонить</button></span>'
+              : "<span></span>") + "</div>");
+        });
+
+        (d.recovery || []).forEach(function (r) {
+          if (r.status !== "open") return;
+          rows.push('<div class="pcard__line"><span>Просьба о коде доступа</span><small>ждёт</small>' +
+            '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-rc-issue="' +
+            esc(r.id) + '">Выдать код</button></span></div>');
+        });
+
+        return rows.length ? '<div class="pcard__list">' + rows.join("") + "</div>"
+          : '<p class="form__note">Заявлений нет.</p>';
+      }
+
       function renderCard(d) {
         var u = d.user;
-        var postsPublished = d.published || 0;
-        var cardIssued = (d.cards || []).filter(function (c) { return c.status === "issued"; })[0];
+        var issued = (d.cards || []).filter(function (c) { return c.status === "issued"; })[0];
+        var founded = (d.editorialsFounded || [])[0];
 
-        var profile =
-          '<div class="pcard"><div class="pcard__head"><div>' +
-          "<h3>" + esc(u.name) + "</h3>" +
+        cardEl.innerHTML =
+          '<div class="pcard">' +
+          '<div class="pcard__head"><div><h3>' + esc(u.name) + "</h3>" +
           '<p class="pcard__sub">' + esc(u.email) + " · " + esc(regionName(u.region) || "регион не указан") +
-          " · на проекте с " + esc(fmtDate(u.createdAt)) + "</p></div>" +
-          '<div class="pcard__badges">' + roleChip(u.access) +
+          " · с " + esc(fmtDate(u.createdAt)) + "</p></div>" +
+          '<div class="pcard__badges">' + chip(u.access) +
           (u.emailVerified ? '<span class="status status--pub">почта подтверждена</span>'
             : '<span class="status status--draft">почта не подтверждена</span>') + "</div></div>" +
 
           '<div class="pcard__grid">' +
-          '<div class="pcard__col">' +
-          '<span class="kicker">Профиль</span>' +
+          '<div class="pcard__col"><span class="kicker">Профиль</span>' +
           '<div class="field"><label>Имя и фамилия</label><input type="text" data-pf-name value="' +
           esc(u.name) + '"></div>' +
-          '<div class="field"><label>Регион</label><select data-pf-region>' + regionOptions(u.region) +
-          "</select></div>" +
+          '<div class="field"><label>Регион</label><select data-pf-region>' +
+          regionOptions(u.region) + "</select></div>" +
           '<div class="field"><label>Роль (права)</label><select data-pf-access>' +
           roles.map(function (r) {
             return '<option' + (r === u.access ? " selected" : "") + ">" + esc(r) + "</option>";
           }).join("") + "</select></div>" +
           '<div class="field"><label>Чем занимается</label><input type="text" data-pf-role value="' +
           esc(u.role || "") + '"></div>' +
-          '<div class="field"><label>О себе</label><textarea rows="3" data-pf-bio>' +
+          '<div class="field"><label>О себе</label><textarea rows="2" data-pf-bio>' +
           esc(u.bio || "") + "</textarea></div>" +
-          '<button class="btn btn--accent btn--sm" type="button" data-pf-save>Сохранить профиль</button>' +
+          '<button class="btn btn--accent btn--sm" type="button" data-pf-save>Сохранить</button>' +
           "</div>" +
 
-          '<div class="pcard__col">' +
-          '<span class="kicker">Итоги</span>' +
-          '<div class="diag">' +
-          '<div class="diag__row"><span>Опубликовано материалов</span><b>' + postsPublished + "</b></div>" +
+          '<div class="pcard__col"><span class="kicker">Итоги</span><div class="diag">' +
+          '<div class="diag__row"><span>Опубликовано</span><b>' + (d.published || 0) + "</b></div>" +
           '<div class="diag__row"><span>Всего материалов</span><b>' + (d.posts || []).length + "</b></div>" +
-          '<div class="diag__row"><span>Пресс-карта</span><b>' +
-          (cardIssued ? esc(cardIssued.number) : "не выдана") + "</b></div>" +
-          '<div class="diag__row"><span>Порог для карты</span><b>' + (d.cardMinPosts || 5) +
-          " публикаций</b></div>" +
-          '<div class="diag__row"><span>Редакция</span><b>' +
-          ((d.editorialsFounded || [])[0] ? esc(d.editorialsFounded[0].name) : "не основана") + "</b></div>" +
+          '<div class="diag__row"><span>Пресс-карта</span><b>' + (issued ? esc(issued.number) : "нет") + "</b></div>" +
+          '<div class="diag__row"><span>Редакция</span><b>' + (founded ? esc(founded.name) : "нет") + "</b></div>" +
           "</div>" +
-          (cardIssued
-            ? '<p class="form__note">Карта ' + esc(cardIssued.number) + " выдана " +
-              esc(fmtDate(cardIssued.decidedAt || cardIssued.createdAt)) + ".</p>"
-            : '<button class="btn btn--sm" type="button" data-card-grant>Выдать пресс-карту (' +
-              esc((d.cardNumberNext || "")) + ")</button>") +
-          '<p class="form__note" data-card-note></p>' +
-          "</div></div>" +
+          (issued ? "" : '<button class="btn btn--sm" type="button" data-card-grant style="margin-top:10px">' +
+            "Выдать пресс-карту · " + esc(d.cardNumberNext || "") + "</button>") +
+          '<p class="form__note" data-card-note></p></div></div>' +
 
-          '<div class="pcard__section"><span class="kicker">Заявления</span>' +
-          appsList(d) +
-          "</div>" +
+          '<div class="pcard__section"><span class="kicker">Заявления</span>' + appsList(d) + "</div>" +
 
           '<div class="pcard__section"><span class="kicker">Материалы</span>' +
           ((d.posts || []).length
-            ? '<div class="pcard__list">' + d.posts.slice(0, 8).map(function (post) {
-                var st = post.status === "published" ? "выложен"
-                  : post.status === "pending" ? "на проверке"
+            ? '<div class="pcard__list">' + d.posts.slice(0, 6).map(function (post) {
+              var st = post.status === "published" ? "выложен"
+                : post.status === "pending" ? "на проверке"
                   : post.status === "rejected" ? "нужны правки" : "черновик";
-                return '<div class="pcard__line"><span>' + esc(post.title) + "</span><small>" +
-                  esc(st) + " · " + esc(fmtDate(post.date)) + "</small></div>";
-              }).join("") + "</div>"
-            : '<p class="form__note">Материалов пока нет.</p>') +
-          "</div>" +
+              return '<div class="pcard__line"><span>' + esc(post.title) + "</span><small>" + esc(st) +
+                "</small><span></span></div>";
+            }).join("") + "</div>"
+            : '<p class="form__note">Материалов нет.</p>') + "</div>" +
 
           '<div class="pcard__section"><span class="kicker">Написать участнику</span>' +
-          '<div class="pcard__compose"><textarea rows="3" data-msg-text ' +
-          'placeholder="Сообщение уйдёт на почту и появится в кабинете участника"></textarea>' +
+          '<div class="pcard__compose"><textarea rows="2" data-msg-text ' +
+          'placeholder="Уйдёт письмом и появится в кабинете участника"></textarea>' +
           '<button class="btn btn--sm" type="button" data-msg-send>Отправить</button></div>' +
           '<p class="form__note" data-msg-note></p>' +
           ((d.messages || []).length
-            ? '<div class="pcard__list">' + d.messages.slice().reverse().slice(0, 6).map(function (m) {
-                return '<div class="pcard__line"><span>' + esc(m.text) + "</span><small>" +
-                  esc(m.from) + " · " + esc(fmtDate(m.createdAt)) +
-                  (m.mailed ? " · письмо ушло" : " · письмо не ушло") + "</small></div>";
-              }).join("") + "</div>"
-            : "") +
-          "</div></div>";
+            ? '<div class="pcard__list">' + d.messages.slice(-4).reverse().map(function (m) {
+              return '<div class="pcard__line"><span>' + esc(m.text) + "</span><small>" +
+                esc(m.from || "редакция") + " · " + esc(fmtDate(m.createdAt)) + "</small><span></span></div>";
+            }).join("") + "</div>"
+            : "") + "</div></div>";
 
-        cardEl.innerHTML = profile;
+        if (needScroll) {
+          needScroll = false;
+          if (cardEl.scrollIntoView) cardEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
 
-        /* профиль */
         $("[data-pf-save]", cardEl).addEventListener("click", function () {
           var payload = {
             name: $("[data-pf-name]", cardEl).value.trim(),
@@ -2305,11 +2238,9 @@
           });
         });
 
-        /* карта */
         var grantBtn = $("[data-card-grant]", cardEl);
         if (grantBtn) {
           grantBtn.addEventListener("click", function () {
-            if (!window.confirm("Выдать пресс-карту " + u.name + "? Номер сформируется автоматически.")) return;
             grantBtn.disabled = true;
             Store.cardGrant(u.id).then(function (res) {
               window.alert("Карта выдана: " + res.number);
@@ -2321,7 +2252,6 @@
           });
         }
 
-        /* сообщение */
         var sendBtn = $("[data-msg-send]", cardEl);
         if (sendBtn) {
           sendBtn.addEventListener("click", function () {
@@ -2335,9 +2265,8 @@
             sendBtn.disabled = true;
             Store.userMessage(u.id, text).then(function (msg) {
               sendBtn.disabled = false;
-              note.textContent = msg.mailed
-                ? "Отправлено: письмо ушло на " + u.email + "."
-                : "Сохранено в кабинете. Почта не настроена, письмо не ушло.";
+              note.textContent = msg.mailed ? "Отправлено письмом на " + u.email + "."
+                : "Сохранено в кабинете: почта не настроена, письмо не ушло.";
               openCard(u.id);
             }, function (err) {
               sendBtn.disabled = false;
@@ -2346,46 +2275,41 @@
           });
         }
 
-        /* решения по заявлениям */
+        function after() { openCard(u.id); }
+
         $$("[data-ed-ok]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
-            Store.editorialReview(b.getAttribute("data-ed-ok"), "approved", "").then(function () {
-              openCard(u.id);
-            }, function (e) { window.alert(e.message); });
+            Store.editorialReview(b.getAttribute("data-ed-ok"), "approved", "").then(after,
+              function (e) { window.alert(e.message); });
           });
         });
         $$("[data-ed-no]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
             var note = window.prompt("Основание отказа:", "");
             if (note === null) return;
-            if (note.trim().length < 5) {
-              window.alert("Отказ без основания недопустим.");
-              return;
-            }
-            Store.editorialReview(b.getAttribute("data-ed-no"), "rejected", note.trim())
-              .then(function () { openCard(u.id); }, function (e) { window.alert(e.message); });
+            if (note.trim().length < 5) { window.alert("Нужно основание."); return; }
+            Store.editorialReview(b.getAttribute("data-ed-no"), "rejected", note.trim()).then(after,
+              function (e) { window.alert(e.message); });
           });
         });
         $$("[data-consent-ok]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
-            Store.consentDecide(u.id, "approved", "").then(function () { openCard(u.id); },
-              function (e) { window.alert(e.message); });
+            Store.consentDecide(u.id, "approved", "").then(after, function (e) { window.alert(e.message); });
           });
         });
         $$("[data-consent-no]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
-            var note = window.prompt("Почему согласие не принято:", "");
+            var note = window.prompt("Почему не принято:", "");
             if (note === null) return;
-            Store.consentDecide(u.id, "rejected", note.trim()).then(function () { openCard(u.id); },
-              function (e) { window.alert(e.message); });
+            Store.consentDecide(u.id, "rejected", note.trim()).then(after, function (e) { window.alert(e.message); });
           });
         });
         $$("[data-pf-item-ok]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
-            var points = window.prompt("Сколько баллов дать работе (0–50)?", "5");
+            var points = window.prompt("Баллы за работу (0–50):", "5");
             if (points === null) return;
             Store.portfolioDecide(b.getAttribute("data-pf-item-ok"), "approved", "", Number(points) || 0)
-              .then(function () { openCard(u.id); }, function (e) { window.alert(e.message); });
+              .then(after, function (e) { window.alert(e.message); });
           });
         });
         $$("[data-pf-item-no]", cardEl).forEach(function (b) {
@@ -2393,85 +2317,27 @@
             var note = window.prompt("Основание отказа:", "");
             if (note === null) return;
             Store.portfolioDecide(b.getAttribute("data-pf-item-no"), "rejected", note.trim(), 0)
-              .then(function () { openCard(u.id); }, function (e) { window.alert(e.message); });
+              .then(after, function (e) { window.alert(e.message); });
           });
         });
         $$("[data-rc-issue]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
             Store.recoveryIssue(b.getAttribute("data-rc-issue")).then(function (res) {
-              window.alert(res.code ? "Код для " + u.name + ": " + res.code
-                : "Код отправлен на " + u.email + ".");
-              openCard(u.id);
+              window.alert(res.code ? "Код для " + u.name + ": " + res.code : "Код отправлен на " + u.email + ".");
+              after();
             }, function (e) { window.alert(e.message); });
           });
         });
       }
 
-      function appsList(d) {
-        var rows = [];
-        var ED = { pending: "на рассмотрении", approved: "принято", rejected: "отказ" };
-
-        (d.editorialApps || []).forEach(function (a) {
-          rows.push('<div class="pcard__line"><span>Заявление в редакцию ' + esc(a.region || "") + "</span><small>" +
-            esc(ED[a.status] || a.status) + (a.escalated ? " · в комиссии" : "") + "</small>" +
-            (a.status === "pending"
-              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-ed-ok="' +
-                esc(a.id) + '">Принять</button><button class="btn btn--ghost btn--sm" type="button" data-ed-no="' +
-                esc(a.id) + '">Отклонить</button></span>'
-              : "") + "</div>");
-        });
-
-        (d.consents || []).forEach(function (c) {
-          rows.push('<div class="pcard__line"><span>Согласие на обработку ПД</span><small>' +
-            esc(c.status === "approved" ? "принято" : c.status === "rejected" ? "отклонено" : "ждёт решения") +
-            "</small>" +
-            (c.status !== "approved"
-              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-consent-ok>' +
-                'Принять</button><button class="btn btn--ghost btn--sm" type="button" data-consent-no>' +
-                "Отклонить</button></span>"
-              : "") + "</div>");
-        });
-
-        (d.cards || []).forEach(function (c) {
-          rows.push('<div class="pcard__line"><span>Пресс-карта</span><small>' +
-            esc(c.status === "issued" ? "выдана " + (c.number || "")
-              : c.status === "pending" ? "заявка ждёт решения"
-              : c.status === "annulled" ? "аннулирована" : "возвращена") + "</small></div>");
-        });
-
-        (d.portfolio || []).forEach(function (item) {
-          rows.push('<div class="pcard__line"><span>Портфолио: ' + esc(item.title || "работа") +
-            "</span><small>" + esc(item.status === "approved" ? "принято · " + (item.points || 0) + " баллов"
-              : item.status === "rejected" ? "отказ" : "ждёт решения") + "</small>" +
-            (item.status === "pending"
-              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-pf-item-ok="' +
-                esc(item.id) + '">Принять</button><button class="btn btn--ghost btn--sm" type="button" ' +
-                'data-pf-item-no="' + esc(item.id) + '">Отклонить</button></span>'
-              : "") + "</div>");
-        });
-
-        (d.recovery || []).forEach(function (r) {
-          if (r.status !== "open") return;
-          rows.push('<div class="pcard__line"><span>Просьба о коде доступа</span><small>ждёт решения</small>' +
-            '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-rc-issue="' +
-            esc(r.id) + '">Выдать код</button></span></div>');
-        });
-
-        return rows.length ? '<div class="pcard__list">' + rows.join("") + "</div>"
-          : '<p class="form__note">Заявлений нет.</p>';
-      }
-
-      if (searchEl) {
-        searchEl.addEventListener("input", function () { draw(); });
-      }
+      if (searchEl) searchEl.addEventListener("input", draw);
 
       Store.usersList().then(function (res) {
         all = res.users || [];
-        roles = res.roles || Store.ACCESS || [];
+        roles = res.roles || roles;
         draw();
       }, function () {
         all = [];
-        roles = Store.ACCESS || [];
         draw();
       });
     }
