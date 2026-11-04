@@ -1521,6 +1521,7 @@
       mountConsentQueue(host);
       mountPortfolioQueue(host);
       mountEditorialQueue(host);
+      mountRecoveryQueue(host);
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
@@ -1647,6 +1648,80 @@
     }
 
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
+    function mountRecoveryQueue(host) {
+      var old = $("[data-recovery-admin]");
+      if (old) old.remove();
+      if (!Store.recoveryQueue) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-recovery-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Доступ</span>' +
+        "<h2>Заявки на восстановление пароля</h2>" +
+        '<p class="sec-head__text">Человек потерял код и просит новый. Выдайте код и передайте ' +
+        "его автору — пароль он сменит сам. Если почта проекта будет подключена, письмо уйдёт " +
+        "автоматически.</p></div></div>" +
+        '<div data-recovery-admin-list><p class="form__note">Загружаем…</p></div>';
+      host.appendChild(section);
+
+      var listEl = $("[data-recovery-admin-list]", section);
+
+      function draw(items) {
+        if (!items.length) {
+          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Заявок нет</b>' +
+            "<p>Появятся здесь, как только кто-то попросит код.</p></div>";
+          return;
+        }
+        listEl.innerHTML = '<div class="editorial-queue">' + items.map(function (r) {
+          return '<div class="editorial-card"><div class="editorial-card__top"><b>' +
+            esc(r.name || "Без имени") + "</b><span>" + esc(fmtDate(r.createdAt)) + "</span></div>" +
+            '<div class="editorial-card__meta">' + esc(r.email) + "</div>" +
+            "<p>" + esc(r.note) + "</p>" +
+            '<div class="row" style="margin-top:10px">' +
+            '<button class="btn btn--accent btn--sm" type="button" data-rc-issue="' + esc(r.id) +
+            '">Выдать код</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-rc-close="' + esc(r.id) +
+            '">Закрыть</button></div></div>';
+        }).join("") + "</div>";
+
+        $$("[data-rc-issue]", listEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            b.disabled = true;
+            Store.recoveryIssue(b.getAttribute("data-rc-issue")).then(function (res) {
+              b.disabled = false;
+              if (res.mailed) {
+                window.alert("Код отправлен на почту " + res.email + ".");
+              } else {
+                window.alert("Код для " + res.name + " (" + res.email + "):\n\n" + res.code +
+                  "\n\nПередайте его лично или письмом. После входа человек сможет выдать себе новый код.");
+              }
+              return Store.recoveryQueue();
+            }).then(draw, function (e) {
+              b.disabled = false;
+              window.alert(e.message);
+            });
+          });
+        });
+        $$("[data-rc-close]", listEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var note = window.prompt("Причина закрытия заявки:", "");
+            if (note === null) return;
+            if (note.trim().length < 5) {
+              window.alert("Причина — минимум 5 символов.");
+              return;
+            }
+            Store.recoveryClose(b.getAttribute("data-rc-close"), note.trim())
+              .then(function () { return Store.recoveryQueue(); })
+              .then(draw, function (e) { window.alert(e.message); });
+          });
+        });
+      }
+
+      Store.recoveryQueue().then(draw, function () { draw([]); });
+    }
+
     function mountEditorialQueue(host) {
       var old = $("[data-editorial-admin]");
       if (old) old.remove();
@@ -1849,7 +1924,9 @@
             ? '<span class="status status--pending">ждёт решения</span>'
             : card.status === "issued"
               ? '<span class="status status--pub">выдана ' + esc(card.number || "") + "</span>"
-              : '<span class="status status--rejected">возвращена</span>';
+              : card.status === "annulled"
+                ? '<span class="status status--rejected">аннулирована: автор в редакции</span>'
+                : '<span class="status status--rejected">возвращена</span>';
         return (
           '<div class="admin-review"><div class="admin-review__top"><b>' + esc(card.authorName || "Автор") +
           "</b>" + badge + "</div>" +
@@ -3153,6 +3230,78 @@
     });
     if (window.location.hash === "#login") switchTab("login");
 
+    /* восстановление доступа: код или заявка в редакцию */
+    var recoveryOpen = $("[data-recovery-open]", box);
+    var recoveryPanel = $("[data-recovery-panel]", box);
+    if (recoveryOpen && recoveryPanel) {
+      recoveryOpen.addEventListener("click", function () {
+        recoveryPanel.classList.toggle("is-hidden");
+        recoveryOpen.textContent = recoveryPanel.classList.contains("is-hidden")
+          ? "Забыли пароль?"
+          : "Скрыть восстановление";
+      });
+    }
+
+    var resetForm = $("[data-recovery-reset]", box);
+    if (resetForm) {
+      resetForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var d = new FormData(resetForm);
+        var err = $("[data-recovery-error]", box);
+        var btn = $("button[type=submit]", resetForm);
+        if (btn) btn.disabled = true;
+        Store.recoveryReset(
+          String(d.get("email") || "").trim(),
+          String(d.get("code") || "").trim(),
+          String(d.get("pass") || "")
+        ).then(function (res) {
+          if (btn) btn.disabled = false;
+          if (res.ok) {
+            window.location.href = "/profile?restored=1";
+            return;
+          }
+          if (err) {
+            err.textContent = res.error || "Не получилось.";
+            err.classList.remove("is-hidden");
+          }
+        });
+      });
+    }
+
+    var requestForm = $("[data-recovery-request]", box);
+    if (requestForm) {
+      requestForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var d = new FormData(requestForm);
+        var err = $("[data-recovery-request-error]", box);
+        var note = $("[data-recovery-request-note]", box);
+        var btn = $("button[type=submit]", requestForm);
+        if (btn) btn.disabled = true;
+        Store.recoveryRequest(
+          String(d.get("email") || "").trim(),
+          String(d.get("note") || "").trim()
+        ).then(function (res) {
+          if (btn) btn.disabled = false;
+          if (!res.ok) {
+            if (err) {
+              err.textContent = res.error || "Заявка не отправилась.";
+              err.classList.remove("is-hidden");
+            }
+            return;
+          }
+          if (err) err.classList.add("is-hidden");
+          if (note) {
+            note.textContent = res.mailSent
+              ? "Код отправлен на почту. Проверьте входящие и папку «Спам»."
+              : "Заявка ушла в редакцию. Код восстановления выдадут вручную — " +
+                "ответ придёт на эту почту, когда появится почтовый ящик проекта. " +
+                "Пока код не выдан, старый пароль продолжает работать.";
+          }
+          requestForm.reset();
+        });
+      });
+    }
+
     var regForm = $("[data-register-form]", box);
     if (regForm) {
       regForm.addEventListener("submit", function (e) {
@@ -3181,6 +3330,13 @@
             out.textContent = res.error;
             out.classList.remove("is-hidden");
             return;
+          }
+          /* код восстановления показывается один раз: сохраните его,
+             иначе доступ возвращается только через заявку в редакцию */
+          if (res.recoveryCode) {
+            try {
+              window.sessionStorage.setItem("smena_recovery_once", res.recoveryCode);
+            } catch (e) {}
           }
           window.location.href = next === "/profile" ? "/profile?new=1" : next;
         }, function (err) {
@@ -3211,6 +3367,54 @@
           if (loginBtn) loginBtn.disabled = false;
           out.textContent = (err && err.message) || "Не удалось войти. Попробуйте ещё раз.";
           out.classList.remove("is-hidden");
+        });
+      });
+    }
+  }
+
+  /* Код восстановления: показываем один раз, потом только по кнопке. */
+  function mountRecoveryCard() {
+    var host = $("[data-recovery-card]");
+    if (!host) return;
+
+    var once = "";
+    try {
+      once = window.sessionStorage.getItem("smena_recovery_once") || "";
+      window.sessionStorage.removeItem("smena_recovery_once");
+    } catch (e) {}
+
+    host.innerHTML =
+      '<div class="panel" style="padding:22px">' +
+      '<span class="kicker">Доступ</span>' +
+      '<h3 style="margin:6px 0 8px">Код восстановления</h3>' +
+      '<p style="font-size:.94rem;color:var(--ink-soft);margin:0 0 14px">' +
+      "Пока почта проекта не подключена, доступ возвращается по коду. Он выдаётся один раз " +
+      "и действует, пока не сменён. Храните его отдельно от пароля.</p>" +
+      (once
+        ? '<div class="recovery__code"><span>Ваш код</span><b data-recovery-value>' + esc(once) +
+          "</b><p>Сохраните его сейчас: второй раз он не покажется.</p></div>"
+        : '<div class="recovery__code is-hidden" data-recovery-box><span>Ваш новый код</span>' +
+          "<b data-recovery-value></b><p>Запишите его. Прежний код больше не действует.</p></div>") +
+      '<button class="btn btn--ghost btn--sm" type="button" data-recovery-new>' +
+      (once ? "Выдать новый код" : "Показать новый код") + "</button>" +
+      '<p class="form__note" data-recovery-status></p></div>';
+
+    var btn = $("[data-recovery-new]", host);
+    var box = $("[data-recovery-box]", host);
+    var value = $("[data-recovery-value]", host);
+    var status = $("[data-recovery-status]", host);
+
+    if (btn) {
+      btn.addEventListener("click", function () {
+        btn.disabled = true;
+        Store.recoveryCode().then(function (code) {
+          btn.disabled = false;
+          if (box) box.classList.remove("is-hidden");
+          if (value) value.textContent = code;
+          if (status) status.textContent = "Код обновлён. Старый больше не действует.";
+        }, function (err) {
+          btn.disabled = false;
+          if (status) status.textContent = (err && err.message) || "Код не выдался.";
         });
       });
     }
@@ -3785,6 +3989,7 @@
         '<span class="form__note" data-profile-status>' + esc(savedNote) + "</span></div>" +
         "</form>" +
         '<div data-my-editorial style="margin-top:18px"></div>' +
+        '<div data-recovery-card style="margin-top:18px"></div>' +
         '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
         "Отправленный материал уходит в общую приёмную редакции: он доходит до неё с любого " +
         "устройства, а после одобрения его видят все посетители сайта.</div>" +
@@ -3794,6 +3999,7 @@
       initAnimations();
       mountCardApplication();
       mountMyEditorial(user);
+      mountRecoveryCard();
       syncSwatches(readAccent());
       Store.refreshPortfolio();
       Store.refreshConsent().then(function (fresh) {

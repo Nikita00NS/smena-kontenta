@@ -455,6 +455,76 @@ function public_portfolio($item) {
     );
 }
 
+/* ------------------------------------------- восстановление доступа */
+
+/* Пока почтовый ящик на домене не подключён, код восстановления выдаётся
+   человеку один раз при регистрации и хранится у него. Если код потерян —
+   заявка уходит в редакцию, и администрация выдаёт новый код вручную.
+   Как только появится почта на домене, эта же функция начнёт отправлять
+   код письмом: достаточно заполнить SMENA_MAIL_FROM ниже. */
+if (!defined('SMENA_MAIL_FROM')) define('SMENA_MAIL_FROM', '');
+
+function recovery_code_new() {
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    $parts = array();
+    for ($g = 0; $g < 3; $g++) {
+        $chunk = '';
+        for ($i = 0; $i < 4; $i++) {
+            $chunk .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+        }
+        $parts[] = $chunk;
+    }
+    return implode('-', $parts);
+}
+
+function recovery_normalize($code) {
+    return strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', (string) $code));
+}
+
+function recovery_hash($code) {
+    return password_hash(recovery_normalize($code), PASSWORD_DEFAULT);
+}
+
+function recovery_verify($code, $hash) {
+    if (!$hash) return false;
+    return password_verify(recovery_normalize($code), (string) $hash);
+}
+
+function recovery_requests_file($dir) { return $dir . '/recovery.json'; }
+
+function read_recovery_requests($dir) {
+    $list = read_json(recovery_requests_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+function public_recovery_request($r) {
+    return array(
+        'id' => isset($r['id']) ? $r['id'] : '',
+        'email' => isset($r['email']) ? $r['email'] : '',
+        'name' => isset($r['name']) ? $r['name'] : '',
+        'note' => isset($r['note']) ? $r['note'] : '',
+        'status' => isset($r['status']) ? $r['status'] : 'open',
+        'createdAt' => isset($r['createdAt']) ? $r['createdAt'] : '',
+        'decidedAt' => isset($r['decidedAt']) ? $r['decidedAt'] : '',
+        'decidedBy' => isset($r['decidedBy']) ? $r['decidedBy'] : '',
+    );
+}
+
+/* Письмо отправляется только если задан адрес отправителя.
+   Возвращает true, если сервер принял письмо. */
+function mail_send($to, $subject, $body) {
+    if (SMENA_MAIL_FROM === '' || !function_exists('mail')) return false;
+    $headers = "From: Смена контента <" . SMENA_MAIL_FROM . ">\r\n" .
+        "Content-Type: text/plain; charset=UTF-8\r\n" .
+        "MIME-Version: 1.0\r\n";
+    $subject_enc = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    return @mail($to, $subject_enc, $body, $headers);
+}
+
+function is_top_admin($user) {
+    return $user && in_array(isset($user['access']) ? $user['access'] : '', array('Директор', 'Администрация'), true);
+}
+
 /* ------------------------------------------------- редакции в регионах */
 function editorials_file($dir) { return $dir . '/editorials.json'; }
 function editorial_apps_file($dir) { return $dir . '/editorial-apps.json'; }
@@ -999,6 +1069,7 @@ if ($act === 'editorial-apply') {
 
     $app = array(
         'id' => 'ap_' . bin2hex(random_bytes(5)),
+        'authorKey' => preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : '')),
         'editorialId' => $editorialId,
         'region' => $target['region'],
         'userId' => $user['id'],
@@ -1096,6 +1167,22 @@ if ($act === 'editorial-review') {
         $found = true;
 
         if ($decision === 'approved') {
+            /* индивидуальная пресс-карта аннулируется: у автора теперь редакционная */
+            if (!empty($a['authorKey'])) {
+                $cards = read_cards($DATA_DIR);
+                $touched = false;
+                foreach ($cards as $k => $card) {
+                    if ($card['authorKey'] !== $a['authorKey']) continue;
+                    if (!in_array($card['status'], array('pending', 'issued'), true)) continue;
+                    $cards[$k]['status'] = 'annulled';
+                    $cards[$k]['note'] = 'Аннулирована: автор вступил в редакцию региона — ' .
+                        $owner['name'] . '. Действует редакционная пресс-карта после трёх постов.';
+                    $cards[$k]['decidedAt'] = date('c');
+                    $touched = true;
+                }
+                if ($touched) write_json($DATA_DIR . '/cards.json', $cards);
+            }
+
             $users = read_users($DATA_DIR);
             foreach ($users as $j => $u) {
                 if ($u['id'] !== $a['userId']) continue;
@@ -1388,9 +1475,220 @@ if ($act === 'reg') {
         'createdAt' => date('c'),
         'number' => 100 + count($users) + 1,
     );
+    $recovery = recovery_code_new();
+    $user['recovery'] = recovery_hash($recovery);
+    $user['recoveryAt'] = date('c');
     $users[] = $user;
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить аккаунт.', 500);
-    respond(array('ok' => true, 'user' => public_user($user), 'token' => new_token($DATA_DIR, $id)));
+    respond(array(
+        'ok' => true,
+        'user' => public_user($user),
+        'token' => new_token($DATA_DIR, $id),
+        'recoveryCode' => $recovery,
+    ));
+}
+
+/* ------------------------------------------- восстановление доступа */
+
+if ($act === 'recovery-code') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    $code = recovery_code_new();
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $user['id']) continue;
+        $users[$i]['recovery'] = recovery_hash($code);
+        $users[$i]['recoveryAt'] = date('c');
+        break;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось обновить код.', 500);
+    respond(array('ok' => true, 'recoveryCode' => $code));
+}
+
+if ($act === 'recovery-reset') {
+    $in = body();
+    check_login_rate($DATA_DIR);
+    $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    $code = isset($in['code']) ? (string) $in['code'] : '';
+    $new = isset($in['pass']) ? (string) $in['pass'] : '';
+    if (!$email) fail('Введите почту аккаунта.');
+    if (recovery_normalize($code) === '') fail('Введите код восстановления.');
+    if (slen($new) < 6) fail('Новый пароль — не короче шести символов.');
+
+    $users = read_users($DATA_DIR);
+    $found = false;
+    $userId = '';
+    foreach ($users as $i => $u) {
+        if (strtolower((string) $u['email']) !== $email) continue;
+        if (!recovery_verify($code, isset($u['recovery']) ? $u['recovery'] : '')) {
+            fail('Код не подошёл. Он выдаётся один раз и действует, пока не сменён.', 403);
+        }
+        $users[$i]['pass'] = password_hash($new, PASSWORD_DEFAULT);
+        /* старый код сгорает: новый выдаётся после входа, в кабинете */
+        $users[$i]['recovery'] = '';
+        $users[$i]['recoveryAt'] = '';
+        $userId = $u['id'];
+        $found = true;
+        break;
+    }
+    if (!$found) fail('Аккаунт с такой почтой не найден.', 404);
+    write_json(users_file($DATA_DIR), $users);
+
+    /* все прежние сессии закрываются: новый пароль — новая жизнь */
+    $tokens = read_json(tokens_file($DATA_DIR), array());
+    if (is_array($tokens)) {
+        foreach ($tokens as $t => $info) {
+            if (isset($info['id']) && $info['id'] === $userId) unset($tokens[$t]);
+        }
+        write_json(tokens_file($DATA_DIR), $tokens);
+    }
+    respond(array('ok' => true, 'token' => new_token($DATA_DIR, $userId)));
+}
+
+if ($act === 'recovery-request') {
+    $in = body();
+    check_rate($DATA_DIR);
+    $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    $note = text(isset($in['note']) ? $in['note'] : '', 400);
+    if (!$email) fail('Введите почту аккаунта.');
+    if (slen($note) < 10) fail('Опишите ситуацию: хотя бы десять символов.');
+
+    $users = read_users($DATA_DIR);
+    $name = '';
+    foreach ($users as $u) {
+        if (strtolower((string) $u['email']) === $email) {
+            $name = $u['name'];
+            break;
+        }
+    }
+
+    $list = read_recovery_requests($DATA_DIR);
+    foreach ($list as $r) {
+        if ($r['email'] === $email && $r['status'] === 'open') {
+            fail('Заявка уже отправлена и ждёт решения редакции.');
+        }
+    }
+    $req = array(
+        'id' => 'rc_' . bin2hex(random_bytes(4)),
+        'email' => $email,
+        'name' => $name,
+        'note' => $note,
+        'status' => 'open',
+        'createdAt' => date('c'),
+        'decidedAt' => '',
+        'decidedBy' => '',
+    );
+    $list[] = $req;
+    if (!write_json(recovery_requests_file($DATA_DIR), $list)) fail('Не удалось сохранить заявку.', 500);
+
+    /* если почта на домене уже подключена, код уходит письмом автоматически */
+    $mailSent = false;
+    if ($name !== '') {
+        foreach ($users as $i => $u) {
+            if (strtolower((string) $u['email']) !== $email) continue;
+            $code = recovery_code_new();
+            $users[$i]['recovery'] = recovery_hash($code);
+            $users[$i]['recoveryAt'] = date('c');
+            write_json(users_file($DATA_DIR), $users);
+            $mailSent = mail_send(
+                $email,
+                'Код восстановления доступа — Смена контента',
+                "Код восстановления: " . $code . "\n\n" .
+                "Введите его на странице входа вместе с почтой и новым паролем. " .
+                "Если вы не запрашивали код, просто проигнорируйте письмо."
+            );
+            break;
+        }
+    }
+    respond(array('ok' => true, 'mailSent' => $mailSent, 'request' => public_recovery_request($req)));
+}
+
+if ($act === 'recovery-queue') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Заявки видит только директор и администрация.', 403);
+    $out = array();
+    foreach (read_recovery_requests($DATA_DIR) as $r) {
+        if ($r['status'] !== 'open') continue;
+        $out[] = public_recovery_request($r);
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    respond(array('ok' => true, 'requests' => $out));
+}
+
+if ($act === 'recovery-issue') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Код выдаёт только директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+
+    $list = read_recovery_requests($DATA_DIR);
+    $target = null;
+    $index = -1;
+    foreach ($list as $i => $r) {
+        if ($r['id'] === $id && $r['status'] === 'open') { $target = $r; $index = $i; }
+    }
+    if (!$target) fail('Заявка не найдена или уже закрыта.', 404);
+
+    $users = read_users($DATA_DIR);
+    $code = recovery_code_new();
+    $person = null;
+    foreach ($users as $i => $u) {
+        if (strtolower((string) $u['email']) !== $target['email']) continue;
+        $users[$i]['recovery'] = recovery_hash($code);
+        $users[$i]['recoveryAt'] = date('c');
+        $person = $u;
+        break;
+    }
+    if (!$person) fail('Аккаунт с такой почтой не найден — возможно, опечатка в заявке.', 404);
+    write_json(users_file($DATA_DIR), $users);
+
+    $mailed = mail_send(
+        $target['email'],
+        'Код восстановления доступа — Смена контента',
+        "Код восстановления: " . $code . "\n\nВведите его на странице входа."
+    );
+
+    $list[$index]['status'] = 'issued';
+    $list[$index]['decidedAt'] = date('c');
+    $list[$index]['decidedBy'] = $user['name'];
+    write_json(recovery_requests_file($DATA_DIR), $list);
+
+    respond(array(
+        'ok' => true,
+        'code' => $mailed ? '' : $code,
+        'mailed' => $mailed,
+        'email' => $target['email'],
+        'name' => $person['name'],
+    ));
+}
+
+if ($act === 'recovery-close') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($user)) fail('Закрывает заявку только директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+    $note = text(isset($in['note']) ? $in['note'] : '', 300);
+    if (slen($note) < 5) fail('Причина закрытия обязательна: минимум пять символов.');
+
+    $list = read_recovery_requests($DATA_DIR);
+    $done = false;
+    foreach ($list as $i => $r) {
+        if ($r['id'] !== $id || $r['status'] !== 'open') continue;
+        $list[$i]['status'] = 'closed';
+        $list[$i]['note'] = $list[$i]['note'] . ' | Решение: ' . $note;
+        $list[$i]['decidedAt'] = date('c');
+        $list[$i]['decidedBy'] = $user['name'];
+        $done = true;
+        break;
+    }
+    if (!$done) fail('Заявка не найдена или уже закрыта.', 404);
+    write_json(recovery_requests_file($DATA_DIR), $list);
+    respond(array('ok' => true));
 }
 
 if ($act === 'login') {

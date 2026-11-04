@@ -237,7 +237,7 @@ window.Store = (function () {
           cacheUser(res.user);
           mirrorUser(res.user);
           emit();
-          return { ok: true, user: res.user, remote: true };
+          return { ok: true, user: res.user, remote: true, recoveryCode: res.recoveryCode || "" };
         }
         if (res && (res.offline || res.serverBroken)) {
           var local = register(payload);
@@ -1488,6 +1488,74 @@ window.Store = (function () {
     });
   }
 
+  /* ------------------------------------------ восстановление доступа */
+
+  /* код восстановления: выдаётся один раз и хранится у человека.
+     Пока почта на домене не подключена, это единственный способ
+     вернуть доступ самому; иначе — заявка в редакцию. */
+  function recoveryReset(email, code, pass) {
+    return api("recovery-reset", { email: email, code: code, pass: pass }).then(function (res) {
+      if (res && res.ok && res.token) {
+        saveToken(res.token);
+        if (res.user) {
+          cacheUser(res.user);
+          mirrorUser(res.user);
+        }
+        emit();
+        return { ok: true, user: res.user || null };
+      }
+      return { ok: false, error: (res && res.error) || "Пароль не сменился." };
+    }, function () {
+      return { ok: false, error: "Сервер недоступен. Попробуйте ещё раз." };
+    });
+  }
+
+  function recoveryRequest(email, note) {
+    return api("recovery-request", { email: email, note: note }).then(function (res) {
+      if (res && res.ok) return { ok: true, mailSent: !!res.mailSent };
+      return { ok: false, error: (res && res.error) || "Заявка не отправилась." };
+    }, function () {
+      return { ok: false, error: "Сервер недоступен. Попробуйте ещё раз." };
+    });
+  }
+
+  function recoveryCode() {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("recovery-code", { token: token }).then(function (res) {
+      if (res && res.ok) return res.recoveryCode;
+      throw new Error((res && res.error) || "Код не выдался.");
+    });
+  }
+
+  function recoveryQueue() {
+    var token = readToken();
+    if (!token) return Promise.resolve([]);
+    return api("recovery-queue", { token: token }).then(function (res) {
+      return res && res.ok ? res.requests || [] : [];
+    }, function () {
+      return [];
+    });
+  }
+
+  function recoveryIssue(id) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("recovery-issue", { token: token, id: id }).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Код не выдан.");
+    });
+  }
+
+  function recoveryClose(id, note) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("recovery-close", { token: token, id: id, note: note }).then(function (res) {
+      if (res && res.ok) return true;
+      throw new Error((res && res.error) || "Заявка не закрылась.");
+    });
+  }
+
   /* ---------------------------------------------------- редакции в регионах */
 
   function editorialList(region) {
@@ -1521,6 +1589,7 @@ window.Store = (function () {
       editorialId: payload.editorialId,
       birthDate: payload.birthDate,
       why: payload.why,
+      authorKey: authorKey(),
       portfolio: payload.portfolio || [],
       sitePosts: payload.sitePosts || [],
     }).then(function (res) {
@@ -1658,6 +1727,12 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    recoveryReset: recoveryReset,
+    recoveryRequest: recoveryRequest,
+    recoveryCode: recoveryCode,
+    recoveryQueue: recoveryQueue,
+    recoveryIssue: recoveryIssue,
+    recoveryClose: recoveryClose,
     editorialList: editorialList,
     editorialCreate: editorialCreate,
     editorialApply: editorialApply,

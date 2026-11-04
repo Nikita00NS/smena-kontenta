@@ -78,6 +78,9 @@
                   и <a href="/assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">политику конфиденциальности</a>.</span>
               </label>
               <div class="auth-error is-hidden" data-register-error></div>
+              <p class="recovery__note" style="color:var(--muted)">После регистрации вы увидите код
+                восстановления — сохраните его: пока почта проекта не подключена, это единственный
+                способ вернуть пароль самому.</p>
               <button class="btn btn--accent btn--block" type="submit">Создать аккаунт</button>
               <p class="form__note" style="margin-top:12px">Аккаунт один на все устройства: вошли на телефоне — он открывается и на компьютере. Почта и пароль — единственный способ входа, соцсети не нужны.</p>
             </form>
@@ -96,6 +99,45 @@
               <div class="auth-error is-hidden" data-login-error></div>
               <button class="btn btn--block" type="submit">Войти</button>
             </form>
+            <button class="auth-link" type="button" data-recovery-open>Забыли пароль?</button>
+
+            <div class="recovery is-hidden" data-recovery-panel>
+              <p class="recovery__lead">Доступ возвращается по коду восстановления — он выдаётся один
+                раз при регистрации. Если код потерян, оставьте заявку: редакция выдаст новый.</p>
+
+              <form class="recovery__form" data-recovery-reset novalidate>
+                <div class="field">
+                  <label for="r-email">Почта аккаунта</label>
+                  <input id="r-email" name="email" type="email" placeholder="you@example.ru" autocomplete="email">
+                </div>
+                <div class="field">
+                  <label for="r-code">Код восстановления</label>
+                  <input id="r-code" name="code" type="text" placeholder="XXXX-XXXX-XXXX" autocomplete="one-time-code">
+                </div>
+                <div class="field">
+                  <label for="r-pass">Новый пароль</label>
+                  <input id="r-pass" name="pass" type="password" placeholder="Не короче шести символов" autocomplete="new-password">
+                </div>
+                <div class="auth-error is-hidden" data-recovery-error></div>
+                <button class="btn btn--block" type="submit">Сменить пароль и войти</button>
+              </form>
+
+              <div class="recovery__divider"><span>кода нет</span></div>
+
+              <form class="recovery__form" data-recovery-request novalidate>
+                <div class="field">
+                  <label for="rq-email">Почта аккаунта</label>
+                  <input id="rq-email" name="email" type="email" placeholder="you@example.ru" autocomplete="email">
+                </div>
+                <div class="field">
+                  <label for="rq-note">Что случилось</label>
+                  <textarea id="rq-note" name="note" rows="3" maxlength="400" placeholder="Например: сменил телефон, код не сохранил"></textarea>
+                </div>
+                <div class="auth-error is-hidden" data-recovery-request-error></div>
+                <button class="btn btn--ghost btn--block" type="submit">Оставить заявку на код</button>
+                <p class="recovery__note" data-recovery-request-note></p>
+              </form>
+            </div>
           </div>
         </div>
 
