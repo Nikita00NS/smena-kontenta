@@ -1926,6 +1926,50 @@ if ($act === 'posts-queue') {
     respond(array('ok' => true, 'posts' => $out));
 }
 
+if ($act === 'whoami') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    $users = read_users($DATA_DIR);
+    $director = null;
+    foreach ($users as $u) {
+        if ((isset($u['access']) ? $u['access'] : '') === 'Директор') {
+            $director = $u;
+            break;
+        }
+    }
+    respond(array(
+        'ok' => true,
+        'signedIn' => (bool) $me,
+        'user' => $me ? public_user($me) : null,
+        'accounts' => count($users),
+        'directorExists' => (bool) $director,
+        'directorName' => $director ? $director['name'] : '',
+        'canClaimDirector' => !$director && $me && count($users) <= 1,
+    ));
+}
+
+if ($act === 'claim-director') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Сначала войдите в аккаунт.', 401);
+    $users = read_users($DATA_DIR);
+    foreach ($users as $u) {
+        if ((isset($u['access']) ? $u['access'] : '') === 'Директор') {
+            fail('Директор уже есть: ' . $u['name'] . '. Роль меняет он.', 409);
+        }
+    }
+    $updated = null;
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $me['id']) continue;
+        $users[$i]['access'] = 'Директор';
+        $updated = $users[$i];
+        break;
+    }
+    if (!$updated) fail('Аккаунт не найден.', 404);
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить роль.', 500);
+    respond(array('ok' => true, 'user' => public_user($updated)));
+}
+
 /* ------------------------------------------------- права участников */
 
 function access_list() {

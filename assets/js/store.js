@@ -1527,6 +1527,30 @@ window.Store = (function () {
     });
   }
 
+  /* кто я для сервера: роль, число аккаунтов, есть ли директор */
+  function whoami() {
+    var token = readToken();
+    return api("whoami", { token: token }).then(function (res) {
+      return res && res.ok ? res : null;
+    }, function () {
+      return null;
+    });
+  }
+
+  function claimDirector() {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Сначала войдите в аккаунт."));
+    return api("claim-director", { token: token }).then(function (res) {
+      if (res && res.ok) {
+        cacheUser(res.user);
+        mirrorUser(res.user);
+        emit();
+        return res.user;
+      }
+      throw new Error((res && res.error) || "Роль не выдалась.");
+    });
+  }
+
   /* очередь материалов по токену: без пароля редакции */
   function apiPendingQueue() {
     var token = readToken();
@@ -1915,6 +1939,8 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    whoami: whoami,
+    claimDirector: claimDirector,
     apiPendingQueue: apiPendingQueue,
     localOnlyAccounts: localOnlyAccounts,
     siteStatus: siteStatus,
