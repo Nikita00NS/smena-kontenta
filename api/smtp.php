@@ -30,7 +30,8 @@ function smtp_config($dir) {
     return array(
         'host' => isset($cfg['host']) ? (string) $cfg['host'] : '',
         'port' => isset($cfg['port']) ? (int) $cfg['port'] : 465,
-        'secure' => isset($cfg['secure']) && $cfg['secure'] === 'tls' ? 'tls' : 'ssl',
+        'secure' => in_array(isset($cfg['secure']) ? $cfg['secure'] : 'ssl', array('ssl', 'tls', 'none'), true)
+            ? $cfg['secure'] : 'ssl',
         'user' => isset($cfg['user']) ? (string) $cfg['user'] : '',
         'pass' => isset($cfg['pass']) ? (string) $cfg['pass'] : '',
         'from' => isset($cfg['from']) ? (string) $cfg['from'] : '',
@@ -106,7 +107,7 @@ function smtp_send_mail($cfg, $to, $subject, $text, $html = '') {
 
     $host = $cfg['host'];
     $port = (int) ($cfg['port'] ? $cfg['port'] : 465);
-    $secure = $cfg['secure'] === 'tls' ? 'tls' : 'ssl';
+    $secure = in_array($cfg['secure'], array('ssl', 'tls', 'none'), true) ? $cfg['secure'] : 'ssl';
     $transport = $secure === 'ssl' ? 'ssl://' : 'tcp://';
     $timeout = 20;
 

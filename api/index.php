@@ -741,6 +741,30 @@ if ($act === 'selftest_auth') {
     selftest_auth($DATA_DIR);
 }
 
+/* ---------------------------------------------------- служебная диагностика
+   Отвечает на вопрос «почему не пускает»: сколько аккаунтов на сервере,
+   можно ли писать файлы, настроена ли почта. Секретов здесь нет. */
+if ($act === 'diag') {
+    ensure_dir($DATA_DIR);
+    $users = read_users($DATA_DIR);
+    $posts = read_json($DATA_DIR . '/posts.json', array());
+    $rate = read_json($DATA_DIR . '/login-rate.json', array());
+    $uploads = $DATA_DIR . '/uploads';
+    respond(array(
+        'ok' => true,
+        'php' => PHP_VERSION,
+        'accounts' => count($users),
+        'first_will_be_director' => count($users) === 0,
+        'posts' => is_array($posts) ? count($posts) : 0,
+        'data_writable' => is_writable($DATA_DIR),
+        'uploads_writable' => is_dir($uploads) ? is_writable($uploads) : ensure_dir($uploads),
+        'mail_configured' => smtp_configured($DATA_DIR),
+        'mail_from' => smtp_config($DATA_DIR)['from'],
+        'rate_entries' => is_array($rate) ? count($rate) : 0,
+        'server_time' => date('c'),
+    ));
+}
+
 if ($act === 'state') {
     $posts = read_json($DATA_DIR . '/posts.json', array());
     $published = array();
@@ -1780,6 +1804,122 @@ if ($act === 'recovery-close') {
     respond(array('ok' => true));
 }
 
+/* ------------------------------------------------------------ основатели */
+
+function founders_file($dir) { return $dir . '/founders.json'; }
+
+function read_founders($dir) {
+    $list = read_json(founders_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+function public_founder($f) {
+    return array(
+        'id' => isset($f['id']) ? $f['id'] : '',
+        'name' => isset($f['name']) ? $f['name'] : '',
+        'role' => isset($f['role']) ? $f['role'] : '',
+        'city' => isset($f['city']) ? $f['city'] : '',
+        'since' => isset($f['since']) ? $f['since'] : '',
+        'bio' => isset($f['bio']) ? $f['bio'] : '',
+        'photo' => isset($f['photo']) ? $f['photo'] : '',
+    );
+}
+
+if ($act === 'founders') {
+    $out = array();
+    foreach (read_founders($DATA_DIR) as $f) $out[] = public_founder($f);
+    respond(array('ok' => true, 'founders' => $out));
+}
+
+if ($act === 'founders-save') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Основателей правит только директор и администрация.', 403);
+
+    $raw = isset($in['founders']) && is_array($in['founders']) ? $in['founders'] : array();
+    if (!$raw) fail('Список пустой.');
+    if (count($raw) > 4) fail('Основателей не больше четырёх.');
+
+    $clean = array();
+    foreach ($raw as $i => $f) {
+        $name = text(isset($f['name']) ? $f['name'] : '', 120);
+        if (slen($name) < 3) fail('У основателя должно быть имя: минимум три символа.');
+        $clean[] = array(
+            'id' => 'f' . ($i + 1),
+            'name' => $name,
+            'role' => text(isset($f['role']) ? $f['role'] : '', 80),
+            'city' => text(isset($f['city']) ? $f['city'] : '', 60),
+            'since' => text(isset($f['since']) ? $f['since'] : '', 40),
+            'bio' => text(isset($f['bio']) ? $f['bio'] : '', 900),
+            'photo' => text(isset($f['photo']) ? $f['photo'] : '', 400),
+        );
+    }
+    if (!write_json(founders_file($DATA_DIR), $clean)) fail('Не удалось сохранить основателей.', 500);
+    $out = array();
+    foreach ($clean as $f) $out[] = public_founder($f);
+    respond(array('ok' => true, 'founders' => $out));
+}
+
+/* ------------------------------------------------- права участников */
+
+function access_list() {
+    return array('Директор', 'Администрация', 'Редакционный администратор региона',
+        'Редакционный основатель', 'Пользователь');
+}
+
+if ($act === 'users') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Список участников видит только директор и администрация.', 403);
+    $out = array();
+    foreach (read_users($DATA_DIR) as $u) {
+        $out[] = array(
+            'id' => $u['id'],
+            'name' => $u['name'],
+            'email' => isset($u['email']) ? $u['email'] : '',
+            'region' => isset($u['region']) ? $u['region'] : '',
+            'access' => isset($u['access']) ? $u['access'] : 'Пользователь',
+            'emailVerified' => !empty($u['emailVerified']),
+            'createdAt' => isset($u['createdAt']) ? $u['createdAt'] : '',
+            'editorialId' => isset($u['editorialId']) ? $u['editorialId'] : '',
+        );
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $a['createdAt'], (string) $b['createdAt']); });
+    respond(array('ok' => true, 'users' => $out, 'roles' => access_list()));
+}
+
+if ($act === 'user-access') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Права меняет только директор и администрация.', 403);
+    $id = text(isset($in['id']) ? $in['id'] : '', 40);
+    $access = text(isset($in['access']) ? $in['access'] : '', 60);
+    if (!in_array($access, access_list(), true)) fail('Такой роли нет.');
+
+    $users = read_users($DATA_DIR);
+    $target = null;
+    $directors = 0;
+    foreach ($users as $u) {
+        if ((isset($u['access']) ? $u['access'] : '') === 'Директор') $directors++;
+        if ($u['id'] === $id) $target = $u;
+    }
+    if (!$target) fail('Участник не найден.', 404);
+    if ((isset($target['access']) ? $target['access'] : '') === 'Директор' && $access !== 'Директор' && $directors <= 1) {
+        fail('Директор один: сначала назначьте другого директора, потом снимайте этого.');
+    }
+
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $id) continue;
+        $users[$i]['access'] = $access;
+        break;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить права.', 500);
+    respond(array('ok' => true, 'id' => $id, 'access' => $access));
+}
+
 /* ------------------------------------------------------- почта проекта */
 
 if ($act === 'mail-status') {
@@ -1799,7 +1939,8 @@ if ($act === 'mail-save') {
     $cfg = smtp_config($DATA_DIR);
     $host = text(isset($in['host']) ? $in['host'] : '', 120);
     $port = (int) (isset($in['port']) ? $in['port'] : 465);
-    $secure = (isset($in['secure']) && $in['secure'] === 'tls') ? 'tls' : 'ssl';
+    $secure_in = isset($in['secure']) ? (string) $in['secure'] : 'ssl';
+    $secure = in_array($secure_in, array('ssl', 'tls', 'none'), true) ? $secure_in : 'ssl';
     $login = text(isset($in['user']) ? $in['user'] : '', 160);
     $pass = isset($in['pass']) ? (string) $in['pass'] : '';
     $from = norm_email(isset($in['from']) ? $in['from'] : '');
