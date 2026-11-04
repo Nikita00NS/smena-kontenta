@@ -6231,3 +6231,246 @@ html[data-theme="light"] .founder__photo--mono {
 .article-state--rejected {
   border-left-color: #d1371e;
 }
+
+/* ============================================================================
+   40. КОНТРАСТ, ПАЛИТРА В ШАПКЕ И КАРТОЧКИ РЕГИОНОВ
+   ========================================================================== */
+
+/* формат материала: при наведении текст больше не сливается с фоном */
+.format:hover,
+.format:focus-visible {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.format:hover .format__name,
+.format:focus-visible .format__name {
+  color: #fff;
+}
+.format:hover .format__n,
+.format:focus-visible .format__n {
+  color: rgba(255, 255, 255, 0.82);
+}
+.format:hover .format__desc,
+.format:focus-visible .format__desc {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.appearance {
+  position: relative;
+}
+.appearance__pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 60;
+  width: 232px;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+}
+.appearance__pop[hidden] {
+  display: none;
+}
+.appearance__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.appearance__pop .onboard__swatches {
+  gap: 8px;
+}
+.appearance__pop .onboard__swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+.appearance__theme {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.appearance__theme:hover {
+  border-color: var(--accent);
+}
+.appearance__theme svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* подсказки в тёмной панели «о проекте» */
+.panel-links {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 4px;
+}
+.panel-links a {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(244, 242, 237, 0.16);
+  color: rgba(244, 242, 237, 0.86);
+  font-size: 14px;
+  text-decoration: none;
+}
+.panel-links a::after {
+  content: "→";
+  color: var(--accent);
+}
+.panel-links a:hover {
+  color: #fff;
+}
+
+/* «Истории с мест»: карточки регионов вместо пустого места */
+.fill-note--top {
+  border-radius: 14px;
+  border-left-width: 3px;
+}
+.region-teaser {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.region-teaser__card {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper-2);
+  text-decoration: none;
+  transition: border-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.region-teaser__card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.region-teaser__name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.region-teaser__meta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* редакции региона и выбор пути */
+.path-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 16px 0 6px;
+}
+.path-choice__card {
+  display: grid;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper-2);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.path-choice__card b {
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+.path-choice__card span {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.path-choice__card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.path-choice__card.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(255, 61, 20, 0.08));
+}
+.editorial-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 4px;
+}
+.editorial-list,
+.editorial-queue {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.editorial-card {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper-2);
+}
+.editorial-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.editorial-card__top b {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--ink);
+}
+.editorial-card__top span {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.editorial-card p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.editorial-card__meta {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.editorial-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper-2);
+}
+.editorial-form.is-hidden {
+  display: none;
+}
+.link-accent {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}

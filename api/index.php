@@ -37,7 +37,7 @@ function respond($data, $code = 200) {
 }
 
 function fail($message, $code = 400) {
-    respond(array('ok' => false, 'error' => $message), $code);
+    respond(array('ok' => false, 'error' => $message, 'code' => $code), $code);
 }
 
 function ensure_dir($dir) {
@@ -455,6 +455,65 @@ function public_portfolio($item) {
     );
 }
 
+/* ------------------------------------------------- редакции в регионах */
+function editorials_file($dir) { return $dir . '/editorials.json'; }
+function editorial_apps_file($dir) { return $dir . '/editorial-apps.json'; }
+
+function read_editorials($dir) {
+    $list = read_json(editorials_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+function read_editorial_apps($dir) {
+    $list = read_json(editorial_apps_file($dir), array());
+    return is_array($list) ? $list : array();
+}
+
+/* заявка без решения семь дней уходит в центральную комиссию */
+function editorial_escalated($app) {
+    if (!isset($app['status']) || $app['status'] !== 'pending') return false;
+    if (!empty($app['escalated'])) return true;
+    $created = strtotime((string) $app['createdAt']);
+    return $created && (time() - $created) > 7 * 86400;
+}
+
+function public_editorial($e, $apps) {
+    $members = 0;
+    foreach ($apps as $a) {
+        if ($a['editorialId'] === $e['id'] && $a['status'] === 'approved') $members++;
+    }
+    return array(
+        'id' => $e['id'],
+        'region' => $e['region'],
+        'name' => $e['name'],
+        'about' => isset($e['about']) ? $e['about'] : '',
+        'founderId' => $e['founderId'],
+        'founderName' => $e['founderName'],
+        'members' => $members,
+        'createdAt' => $e['createdAt'],
+    );
+}
+
+function public_editorial_app($a) {
+    return array(
+        'id' => $a['id'],
+        'editorialId' => $a['editorialId'],
+        'region' => $a['region'],
+        'userId' => $a['userId'],
+        'name' => $a['name'],
+        'email' => isset($a['email']) ? $a['email'] : '',
+        'birthDate' => isset($a['birthDate']) ? $a['birthDate'] : '',
+        'why' => isset($a['why']) ? $a['why'] : '',
+        'portfolio' => isset($a['portfolio']) && is_array($a['portfolio']) ? $a['portfolio'] : array(),
+        'sitePosts' => isset($a['sitePosts']) && is_array($a['sitePosts']) ? $a['sitePosts'] : array(),
+        'status' => $a['status'],
+        'note' => isset($a['note']) ? $a['note'] : '',
+        'createdAt' => $a['createdAt'],
+        'decidedAt' => isset($a['decidedAt']) ? $a['decidedAt'] : '',
+        'escalated' => editorial_escalated($a),
+    );
+}
+
 /* ------------------------------------------------- самопроверка аккаунтов */
 function selftest_auth($dir) {
     $steps = array();
@@ -833,6 +892,229 @@ if ($act === 'remove') {
     respond(array('ok' => true));
 }
 
+/* ------------------------------------------------------------- редакции */
+
+if ($act === 'editorial-list') {
+    $in = body();
+    $region = text(isset($in['region']) ? $in['region'] : '', 80);
+    $apps = read_editorial_apps($DATA_DIR);
+    $out = array();
+    foreach (read_editorials($DATA_DIR) as $e) {
+        if ($region !== '' && $e['region'] !== $region) continue;
+        $out[] = public_editorial($e, $apps);
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    respond(array('ok' => true, 'editorials' => $out));
+}
+
+if ($act === 'editorial-create') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $region = text(isset($in['region']) ? $in['region'] : '', 80);
+    $name = text(isset($in['name']) ? $in['name'] : '', 120);
+    $about = text(isset($in['about']) ? $in['about'] : '', 600);
+    if (slen($name) < 3) fail('Название редакции — хотя бы три символа.');
+    if ($region === '') fail('Выберите регион редакции.');
+    if (slen($about) < 20) fail('Расскажите, чем будет заниматься редакция: минимум 20 символов.');
+
+    $list = read_editorials($DATA_DIR);
+    foreach ($list as $e) {
+        if ($e['founderId'] === $user['id']) fail('Вы уже основали редакцию. Одна редакция на человека.');
+    }
+
+    $editorial = array(
+        'id' => 'ed_' . bin2hex(random_bytes(5)),
+        'region' => $region,
+        'name' => $name,
+        'about' => $about,
+        'founderId' => $user['id'],
+        'founderName' => $user['name'],
+        'createdAt' => date('c'),
+    );
+    $list[] = $editorial;
+    if (!write_json(editorials_file($DATA_DIR), $list)) fail('Не удалось создать редакцию.', 500);
+
+    /* основатель получает права регионального редактора */
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if ($u['id'] === $user['id']) {
+            $users[$i]['access'] = 'Редакционный основатель';
+            $users[$i]['editorialId'] = $editorial['id'];
+            write_json(users_file($DATA_DIR), $users);
+            break;
+        }
+    }
+
+    respond(array('ok' => true, 'editorial' => public_editorial($editorial, array())));
+}
+
+if ($act === 'editorial-apply') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $editorialId = text(isset($in['editorialId']) ? $in['editorialId'] : '', 60);
+    $target = null;
+    foreach (read_editorials($DATA_DIR) as $e) {
+        if ($e['id'] === $editorialId) $target = $e;
+    }
+    if (!$target) fail('Редакция не найдена.', 404);
+
+    $birthDate = text(isset($in['birthDate']) ? $in['birthDate'] : '', 20);
+    $why = text(isset($in['why']) ? $in['why'] : '', 1200);
+    if (slen($birthDate) < 8) fail('Укажите дату рождения в формате ДД.ММ.ГГГГ.');
+    if (slen($why) < 30) fail('Напишите, почему хотите именно сюда: минимум 30 символов.');
+
+    $apps = read_editorial_apps($DATA_DIR);
+    foreach ($apps as $a) {
+        if ($a['userId'] === $user['id'] && $a['status'] === 'pending') {
+            fail('У вас уже есть заявка на рассмотрении.');
+        }
+    }
+
+    $portfolio = array();
+    $raw = isset($in['portfolio']) && is_array($in['portfolio']) ? $in['portfolio'] : array();
+    foreach (array_slice($raw, 0, 3) as $dataUrl) {
+        $err = '';
+        $file = data_url_file($dataUrl, array(
+            'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
+            'application/pdf' => 'pdf',
+        ), 6000000, $err);
+        if (!$file) continue;
+        $dir = media_dir($DATA_DIR);
+        $fname = 'ed_' . $user['id'] . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $file['ext'];
+        if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) continue;
+        @chmod($dir . '/' . $fname, 0644);
+        $portfolio[] = media_public_url($fname);
+    }
+
+    $sitePosts = array();
+    if (isset($in['sitePosts']) && is_array($in['sitePosts'])) {
+        foreach (array_slice($in['sitePosts'], 0, 30) as $p) {
+            $sitePosts[] = text(is_string($p) ? $p : '', 160);
+        }
+    }
+
+    $app = array(
+        'id' => 'ap_' . bin2hex(random_bytes(5)),
+        'editorialId' => $editorialId,
+        'region' => $target['region'],
+        'userId' => $user['id'],
+        'name' => $user['name'],
+        'email' => $user['email'],
+        'birthDate' => $birthDate,
+        'why' => $why,
+        'portfolio' => $portfolio,
+        'sitePosts' => $sitePosts,
+        'status' => 'pending',
+        'note' => '',
+        'createdAt' => date('c'),
+        'decidedAt' => '',
+        'escalated' => false,
+    );
+    $apps[] = $app;
+    if (!write_json(editorial_apps_file($DATA_DIR), $apps)) fail('Не удалось отправить заявку.', 500);
+    respond(array('ok' => true, 'application' => public_editorial_app($app)));
+}
+
+if ($act === 'editorial-mine') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $apps = read_editorial_apps($DATA_DIR);
+    $myApps = array();
+    foreach ($apps as $a) {
+        if ($a['userId'] === $user['id']) $myApps[] = public_editorial_app($a);
+    }
+
+    $owned = null;
+    $incoming = array();
+    foreach (read_editorials($DATA_DIR) as $e) {
+        if ($e['founderId'] !== $user['id']) continue;
+        $owned = public_editorial($e, $apps);
+        foreach ($apps as $a) {
+            if ($a['editorialId'] === $e['id']) $incoming[] = public_editorial_app($a);
+        }
+    }
+    usort($myApps, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    usort($incoming, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    respond(array('ok' => true, 'applications' => $myApps, 'editorial' => $owned, 'incoming' => $incoming));
+}
+
+if ($act === 'editorial-queue') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    if (!in_array(isset($user['access']) ? $user['access'] : '', array('Директор', 'Администрация'), true)) {
+        fail('Очередь заявок видят только директор и администрация.', 403);
+    }
+    $out = array();
+    foreach (read_editorial_apps($DATA_DIR) as $a) {
+        if ($a['status'] !== 'pending') continue;
+        $out[] = public_editorial_app($a);
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    respond(array('ok' => true, 'applications' => $out));
+}
+
+if ($act === 'editorial-review') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+
+    $id = text(isset($in['id']) ? $in['id'] : '', 60);
+    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
+    $note = text(isset($in['note']) ? $in['note'] : '', 400);
+    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение должно быть «принять» или «отказать».');
+    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно записать основание.');
+
+    $editorials = read_editorials($DATA_DIR);
+    $apps = read_editorial_apps($DATA_DIR);
+    $found = false;
+    foreach ($apps as $i => $a) {
+        if ($a['id'] !== $id) continue;
+        $owner = null;
+        foreach ($editorials as $e) {
+            if ($e['id'] === $a['editorialId']) $owner = $e;
+        }
+        if (!$owner) fail('Редакция не найдена.', 404);
+
+        $isFounder = $owner['founderId'] === $user['id'];
+        $isAdmin = in_array(isset($user['access']) ? $user['access'] : '', array('Директор', 'Администрация'), true);
+        if (!$isFounder && !$isAdmin) fail('Решение принимает основатель редакции или администрация.', 403);
+        /* если заявка уже ушла в центральную комиссию, решает только администрация */
+        if (editorial_escalated($a) && !$isAdmin) {
+            fail('Заявка передана в центральную комиссию: семь дней прошло, решает она.', 403);
+        }
+
+        $apps[$i]['status'] = $decision;
+        $apps[$i]['note'] = $note;
+        $apps[$i]['decidedAt'] = date('c');
+        $found = true;
+
+        if ($decision === 'approved') {
+            $users = read_users($DATA_DIR);
+            foreach ($users as $j => $u) {
+                if ($u['id'] !== $a['userId']) continue;
+                $users[$j]['editorialId'] = $a['editorialId'];
+                if (!in_array($u['access'], array('Директор', 'Администрация'), true)) {
+                    $users[$j]['access'] = 'Пользователь';
+                }
+                write_json(users_file($DATA_DIR), $users);
+                break;
+            }
+        }
+        break;
+    }
+    if (!$found) fail('Заявка не найдена.', 404);
+    if (!write_json(editorial_apps_file($DATA_DIR), $apps)) fail('Не удалось сохранить решение.', 500);
+    respond(array('ok' => true));
+}
+
+/* ------------------------------------------------------------------------ */
 /* -------------------------------------------------------- портфолио автора */
 
 if ($act === 'portfolio-send') {
