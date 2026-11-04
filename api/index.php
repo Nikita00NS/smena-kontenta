@@ -762,6 +762,14 @@ if ($act === 'diag') {
         'mail_from' => smtp_config($DATA_DIR)['from'],
         'rate_entries' => is_array($rate) ? count($rate) : 0,
         'server_time' => date('c'),
+        'maintenance' => site_state($DATA_DIR)['maintenance'],
+        'editorials' => count(read_editorials($DATA_DIR)),
+        'cards_pending' => count(array_filter(read_cards($DATA_DIR), function ($c) {
+            return isset($c['status']) && $c['status'] === 'pending';
+        })),
+        'support_open' => count(array_filter(read_support($DATA_DIR), function ($t) {
+            return isset($t['status']) && $t['status'] === 'open';
+        })),
     ));
 }
 
@@ -1804,6 +1812,44 @@ if ($act === 'recovery-close') {
     respond(array('ok' => true));
 }
 
+/* ------------------------------------------------------ состояние сайта */
+
+function site_file($dir) { return $dir . '/site.json'; }
+
+function site_state($dir) {
+    $cfg = read_json(site_file($dir), array());
+    if (!is_array($cfg)) $cfg = array();
+    return array(
+        'maintenance' => !empty($cfg['maintenance']),
+        'notice' => isset($cfg['notice']) ? (string) $cfg['notice'] : '',
+        'noticeOn' => !empty($cfg['noticeOn']),
+        'updatedAt' => isset($cfg['updatedAt']) ? (string) $cfg['updatedAt'] : '',
+        'updatedBy' => isset($cfg['updatedBy']) ? (string) $cfg['updatedBy'] : '',
+    );
+}
+
+if ($act === 'site-status') {
+    $state = site_state($DATA_DIR);
+    respond(array('ok' => true, 'site' => $state));
+}
+
+if ($act === 'site-save') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Состояние сайта меняет только директор и администрация.', 403);
+
+    $state = array(
+        'maintenance' => !empty($in['maintenance']),
+        'notice' => text(isset($in['notice']) ? $in['notice'] : '', 240),
+        'noticeOn' => !empty($in['noticeOn']) && text(isset($in['notice']) ? $in['notice'] : '', 240) !== '',
+        'updatedAt' => date('c'),
+        'updatedBy' => $me['name'],
+    );
+    if (!write_json(site_file($DATA_DIR), $state)) fail('Не удалось сохранить состояние сайта.', 500);
+    respond(array('ok' => true, 'site' => $state));
+}
+
 /* ------------------------------------------------------------ основатели */
 
 function founders_file($dir) { return $dir . '/founders.json'; }
@@ -1859,6 +1905,25 @@ if ($act === 'founders-save') {
     $out = array();
     foreach ($clean as $f) $out[] = public_founder($f);
     respond(array('ok' => true, 'founders' => $out));
+}
+
+if ($act === 'posts-queue') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    $role = isset($me['access']) ? $me['access'] : 'Пользователь';
+    if (!in_array($role, array('Директор', 'Администрация', 'Редакционный администратор региона',
+        'Редакционный основатель'), true)) {
+        fail('Очередь материалов видят только роли редакции.', 403);
+    }
+    $posts = read_json($DATA_DIR . '/posts.json', array());
+    $out = array();
+    foreach ($posts as $post) {
+        if (!isset($post['status']) || $post['status'] !== 'pending') continue;
+        $out[] = public_post($post);
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $b['date'], (string) $a['date']); });
+    respond(array('ok' => true, 'posts' => $out));
 }
 
 /* ------------------------------------------------- права участников */

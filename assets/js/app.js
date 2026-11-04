@@ -650,6 +650,41 @@
       "</div></div>";
   }
 
+  /* Объявление в шапке и режим технических работ. */
+  function applySiteState() {
+    if (!Store || !Store.siteStatus) return;
+    Store.siteStatus().then(function (site) {
+      if (!site) return;
+      var user = Store.currentUser();
+      var isAdmin = user && (user.access === "Директор" || user.access === "Администрация");
+
+      if (site.noticeOn && site.notice) {
+        var bar = document.createElement("div");
+        bar.className = "site-notice";
+        bar.innerHTML = '<div class="wrap site-notice__inner"><span>' + esc(site.notice) +
+          "</span></div>";
+        var mainEl = document.getElementById("main");
+        if (mainEl && mainEl.parentNode) mainEl.parentNode.insertBefore(bar, mainEl);
+      }
+
+      if (!site.maintenance || isAdmin) return;
+      var page = document.body.getAttribute("data-page");
+      if (page === "admin") return;
+
+      var host = document.getElementById("main");
+      if (!host) return;
+      host.innerHTML =
+        '<section class="section wrap"><div class="panel maint">' +
+        '<span class="kicker">Технические работы</span>' +
+        "<h1>Сайт обновляется</h1>" +
+        "<p>Мы ненадолго закрыли доступ, чтобы всё работало как надо. " +
+        "Материалы и аккаунты в порядке — вернитесь через несколько минут.</p>" +
+        (site.notice ? '<p class="maint__note">' + esc(site.notice) + "</p>" : "") +
+        '<div class="row"><a class="btn btn--ghost btn--sm" href="/join#login">Войти в кабинет</a></div>' +
+        "</div></section>";
+    }, function () {});
+  }
+
   /* Поддержка: одно обращение — один разговор. Автор пишет, редакция
      отвечает письмом и закрывает обращение в панели. */
   function initSupport() {
@@ -1594,11 +1629,15 @@
       mountPortfolioQueue(host);
       mountEditorialQueue(host);
       mountRecoveryQueue(host);
+      mountOverview(host);
       mountPeople(host);
+      mountContent(host);
       mountFoundersEditor(host);
+      mountSite(host);
       mountDiag(host);
       mountMailSettings(host);
       mountSupportQueue(host);
+      buildAdminTabs(host);
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
@@ -1725,6 +1764,255 @@
     }
 
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
+    /* Обзор: одна цифра на каждый раздел и быстрые переходы. */
+    function mountOverview(host) {
+      var old = $("[data-admin-overview]");
+      if (old) old.remove();
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-admin-overview", "");
+      section.setAttribute("data-admin-block", "overview");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Сводка</span>' +
+        "<h2>Что происходит сейчас</h2></div></div>" +
+        '<div class="overview" data-overview-cards>' +
+        '<p class="form__note">Считаем…</p></div>';
+      host.appendChild(section);
+
+      var cards = $("[data-overview-cards]", section);
+
+      function tile(tab, label, value, hint) {
+        return '<button class="overview__tile" type="button" data-go-tab="' + tab + '">' +
+          '<b>' + esc(String(value)) + "</b><span>" + esc(label) + "</span>" +
+          (hint ? "<small>" + esc(hint) + "</small>" : "") + "</button>";
+      }
+
+      Store.diag().then(function (d) {
+        if (!d) {
+          cards.innerHTML = '<p class="form__note">Сервер не отвечает — проверьте блок «Сервер».</p>';
+          return;
+        }
+        Store.usersList().then(function (res) {
+          var people = res.users || [];
+          var staff = people.filter(function (u) {
+            return u.access && u.access !== "Пользователь";
+          }).length;
+          cards.innerHTML =
+            tile("people", "участников", people.length, staff + " со служебной ролью") +
+            tile("editorials", "редакций", d.editorials || 0, "в регионах") +
+            tile("cards", "заявок на карту", d.cards_pending || 0, "ждут решения") +
+            tile("support", "обращений", d.support_open || 0, "открыты") +
+            tile("mail", "почта", d.mail_configured ? "есть" : "нет",
+              d.mail_configured ? d.mail_from : "настройте отправку") +
+            tile("site", "сайт", d.maintenance ? "на работах" : "открыт",
+              d.maintenance ? "включён режим работ" : "люди видят сайт") +
+            tile("server", "аккаунтов на сервере", d.accounts || 0, "PHP " + d.php);
+
+          $$("[data-go-tab]", cards).forEach(function (b) {
+            b.addEventListener("click", function () {
+              var target = b.getAttribute("data-go-tab");
+              var navBtn = $('[data-admin-tab="' + target + '"]');
+              if (navBtn) navBtn.click();
+            });
+          });
+        });
+      }, function () {
+        cards.innerHTML = '<p class="form__note">Не удалось получить сводку.</p>';
+      });
+    }
+
+    /* Материалы: что ждёт проверки на сервере. */
+    function mountContent(host) {
+      var old = $("[data-admin-content]");
+      if (old) old.remove();
+      if (!Store.apiPendingQueue) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-admin-content", "");
+      section.setAttribute("data-admin-block", "content");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Материалы</span>' +
+        "<h2>Очередь публикаций</h2>" +
+        '<p class="sec-head__text">Материалы приходят с сервера: их видно с любого устройства. ' +
+        "Публикация, правки и отказ — здесь же.</p></div></div>" +
+        '<div data-admin-content-list><p class="form__note">Загружаем очередь…</p></div>';
+      host.appendChild(section);
+
+      var listEl = $("[data-admin-content-list]", section);
+
+      function draw(items) {
+        if (!items.length) {
+          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Очередь пуста</b>' +
+            "<p>Новые материалы появятся здесь сразу после отправки из редактора.</p></div>";
+          return;
+        }
+        listEl.innerHTML = '<div class="editorial-queue">' + items.map(function (p) {
+          return '<div class="editorial-card"><div class="editorial-card__top"><b>' +
+            esc(p.title) + "</b><span>" + esc(p.authorName || "") + "</span></div>" +
+            '<div class="editorial-card__meta">' + esc(p.format || "") + " · " +
+            esc(fmtDate(p.date)) + " · " + esc(regionName(p.region) || "регион не выбран") +
+            "</div><p>" + esc(p.excerpt || "") + "</p></div>";
+        }).join("") + "</div>";
+      }
+
+      Store.apiPendingQueue().then(draw, function () { draw([]); });
+    }
+
+    /* Сайт: открыт или на работах, объявление в шапке. */
+    function mountSite(host) {
+      var old = $("[data-admin-site]");
+      if (old) old.remove();
+      if (!Store.siteSave) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-admin-site", "");
+      section.setAttribute("data-admin-block", "site");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Сайт</span>' +
+        "<h2>Доступ и объявления</h2>" +
+        '<p class="sec-head__text">Режим работ закрывает сайт для посетителей: они увидят ' +
+        "спокойную заглушку, а редакция продолжит работать в панели. Объявление показывается " +
+        "полосой над шапкой на всех страницах.</p></div></div>" +
+        '<div class="panel" style="padding:22px">' +
+        '<label class="switch"><input type="checkbox" data-site-maint>' +
+        "<span><b>Технические работы</b><small>Сайт закрыт для посетителей, панель работает</small></span></label>" +
+        '<label class="switch"><input type="checkbox" data-site-notice-on>' +
+        "<span><b>Объявление в шапке</b><small>Короткая строка для всех страниц</small></span></label>" +
+        '<div class="field"><label for="site-notice">Текст объявления</label>' +
+        '<input id="site-notice" data-site-notice type="text" maxlength="240" ' +
+        'placeholder="Например: набор авторов открыт до 1 декабря"></div>' +
+        '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+        '<button class="btn btn--accent btn--sm" type="button" data-site-save>Сохранить</button>' +
+        '<span class="form__note" data-site-status></span></div></div>';
+      host.appendChild(section);
+
+      var maint = $("[data-site-maint]", section);
+      var noticeOn = $("[data-site-notice-on]", section);
+      var notice = $("[data-site-notice]", section);
+      var status = $("[data-site-status]", section);
+
+      function fill(site) {
+        if (!site) return;
+        maint.checked = !!site.maintenance;
+        noticeOn.checked = !!site.noticeOn;
+        notice.value = site.notice || "";
+        status.textContent = site.updatedAt
+          ? "Последнее изменение: " + fmtDate(site.updatedAt) +
+            (site.updatedBy ? " · " + site.updatedBy : "")
+          : "Ещё не менялось.";
+      }
+
+      Store.siteStatus().then(fill, function () {});
+
+      $("[data-site-save]", section).addEventListener("click", function () {
+        if (maint.checked) {
+          var ok = window.confirm("Закрыть сайт для посетителей? Редакция продолжит работать.");
+          if (!ok) return;
+        }
+        status.textContent = "Сохраняем…";
+        Store.siteSave({
+          maintenance: maint.checked,
+          noticeOn: noticeOn.checked,
+          notice: notice.value.trim(),
+        }).then(function (site) {
+          fill(site);
+          status.textContent = "Сохранено. Обновите страницу, чтобы увидеть.";
+        }, function (err) {
+          status.textContent = (err && err.message) || "Не сохранилось.";
+        });
+      });
+    }
+
+    /* Вкладки: панель делится на разделы, а не сваливается в одну простыню. */
+    function buildAdminTabs(host) {
+      var old = $("[data-admin-tabs]");
+      if (old) old.remove();
+
+      var TABS = [
+        ["overview", "Обзор"],
+        ["people", "Участники"],
+        ["content", "Материалы"],
+        ["editorials", "Редакции"],
+        ["cards", "Пресс-карты"],
+        ["support", "Поддержка"],
+        ["mail", "Почта"],
+        ["site", "Сайт"],
+        ["server", "Сервер"],
+      ];
+
+      var sections = Array.prototype.slice.call(host.querySelectorAll("section.section"));
+      var map = [
+        ["[data-people-admin]", "people"],
+        ["[data-recovery-admin]", "people"],
+        ["[data-portfolio-queue]", "content"],
+        ["[data-consent-queue]", "content"],
+        ["[data-editorial-admin]", "editorials"],
+        ["[data-card-queue]", "cards"],
+        ["[data-support-admin]", "support"],
+        ["[data-mail-admin]", "mail"],
+        ["[data-founders-admin]", "site"],
+        ["[data-diag-admin]", "server"],
+        ["[data-admin-overview]", "overview"],
+        ["[data-admin-content]", "content"],
+        ["[data-admin-site]", "site"],
+      ];
+
+      sections.forEach(function (sec) {
+        if (sec.getAttribute("data-admin-block")) return;
+        for (var i = 0; i < map.length; i++) {
+          if (sec.querySelector(map[i][0])) {
+            sec.setAttribute("data-admin-block", map[i][1]);
+            return;
+          }
+        }
+        var t = sec.textContent || "";
+        if (/Материалы на проверке|Команды проекта|Кто уже на проекте|Серверная очередь/.test(t)) {
+          sec.setAttribute("data-admin-block", "content");
+        } else if (sec.querySelector(".admin-grid")) {
+          sec.setAttribute("data-admin-block", "site");
+        }
+      });
+
+      var nav = document.createElement("nav");
+      nav.className = "admin-tabs";
+      nav.setAttribute("data-admin-tabs", "");
+      nav.innerHTML = TABS.map(function (t) {
+        return '<button class="admin-tabs__btn" type="button" data-admin-tab="' + t[0] + '">' +
+          esc(t[1]) + "</button>";
+      }).join("");
+
+      var hero = host.querySelector(".page-hero");
+      if (hero && hero.parentNode) hero.parentNode.insertBefore(nav, hero.nextSibling);
+      else host.insertBefore(nav, host.firstChild);
+
+      function show(id) {
+        $$("[data-admin-block]", host).forEach(function (sec) {
+          sec.hidden = sec.getAttribute("data-admin-block") !== id;
+        });
+        $$('[data-admin-tab]', nav).forEach(function (b) {
+          b.classList.toggle("is-on", b.getAttribute("data-admin-tab") === id);
+        });
+        try { window.localStorage.setItem("smena_admin_tab", id); } catch (e) {}
+      }
+
+      $$('[data-admin-tab]', nav).forEach(function (b) {
+        b.addEventListener("click", function () {
+          show(b.getAttribute("data-admin-tab"));
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      });
+
+      var saved = "";
+      try { saved = window.localStorage.getItem("smena_admin_tab") || ""; } catch (e) {}
+      show(saved || "overview");
+    }
+
     /* Участники и роли: права меняются на сервере, а не в браузере. */
     function mountPeople(host) {
       var old = $("[data-people-admin]");
@@ -2013,6 +2301,7 @@
         '<input id="m-notify" data-m="notify" type="email" placeholder="ваша почта для поддержки"></div>' +
         "</div>" +
         '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:16px">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-mail-preset>Заполнить SendPulse</button>' +
         '<button class="btn btn--accent btn--sm" type="button" data-mail-save>Сохранить</button>' +
         '<input class="confirm-input" style="min-width:220px" type="email" data-mail-to ' +
         'placeholder="проверочный адрес">' +
@@ -2042,6 +2331,21 @@
       }
 
       Store.mailStatus().then(fill, function () {});
+
+      /* SendPulse: сервер и порты известны, логин и пароль копируются из панели */
+      var presetBtn = $("[data-mail-preset]", section);
+      if (presetBtn) {
+        presetBtn.addEventListener("click", function () {
+          var hostEl = $('[data-m="host"]', section);
+          var portEl = $('[data-m="port"]', section);
+          var secEl = $('[data-m="secure"]', section);
+          if (hostEl) hostEl.value = "smtp-pulse.com";
+          if (portEl) portEl.value = "465";
+          if (secEl) secEl.value = "ssl";
+          status.textContent = "Подставлены сервер и порт SendPulse. Логин и пароль скопируйте " +
+            "на странице SendPulse: «Change login» и «Change password».";
+        });
+      }
 
       var saveBtn = $("[data-mail-save]", section);
       if (saveBtn) {
@@ -3704,6 +4008,20 @@
     if (user) {
       window.location.replace(next);
       return;
+    }
+
+    /* аккаунт, который сохранился только в этом браузере, надо перенести на сервер */
+    if (Store && Store.localOnlyAccounts) {
+      var local = Store.localOnlyAccounts();
+      if (local.length) {
+        var box2 = document.createElement("div");
+        box2.className = "auth-notice";
+        box2.innerHTML = "<b>Аккаунт сохранён только в этом браузере.</b> Войдите с той же почтой " +
+          "и паролем на вкладке «Вход» — мы перенесём его на сервер, и он заработает на любом " +
+          "устройстве (" + esc(local[0].email) + ").";
+        var form2 = $("[data-register-form]", box);
+        if (form2 && form2.parentNode) form2.parentNode.insertBefore(box2, form2);
+      }
     }
 
     /* первый зарегистрированный становится директором: говорим это прямо */
@@ -5531,6 +5849,7 @@
     mountFooter();
     mountSearch();
     initPageBits();
+    applySiteState();
 
     var page = document.body.getAttribute("data-page");
     if (page === "home") initHome();
