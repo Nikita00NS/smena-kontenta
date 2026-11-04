@@ -211,6 +211,10 @@
   }
 
   var ICONS = {
+    palette:
+      '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.7" aria-hidden="true"><circle cx="9" cy="9" r="2.4"/><circle cx="15" cy="9" ' +
+      'r="2.4"/><circle cx="9" cy="15" r="2.4"/><circle cx="15" cy="15" r="2.4"/></svg>',
     search:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>',
     arrow:
@@ -266,9 +270,30 @@
     paintTheme(savedTheme());
     document.addEventListener("click", function (e) {
       var btn = e.target.closest ? e.target.closest("[data-theme-toggle]") : null;
-      if (!btn) return;
-      e.preventDefault();
-      toggleTheme();
+      if (btn) {
+        e.preventDefault();
+        toggleTheme();
+        return;
+      }
+      /* палитра и тема: кнопка в шапке на каждой странице */
+      var trigger = e.target.closest ? e.target.closest("[data-appearance-open]") : null;
+      var pop = $("[data-appearance-pop]");
+      if (trigger && pop) {
+        e.preventDefault();
+        var willOpen = pop.hasAttribute("hidden");
+        if (willOpen) pop.removeAttribute("hidden");
+        else pop.setAttribute("hidden", "");
+        trigger.setAttribute("aria-expanded", String(willOpen));
+        return;
+      }
+      if (pop && !pop.hasAttribute("hidden")) {
+        var inside = e.target.closest && e.target.closest(".appearance");
+        if (!inside) {
+          pop.setAttribute("hidden", "");
+          var t = $("[data-appearance-open]");
+          if (t) t.setAttribute("aria-expanded", "false");
+        }
+      }
     });
   }
 
@@ -521,8 +546,14 @@
       LOGO + "</a>" +
       '<nav class="nav" aria-label="Основная навигация">' + navHtml + "</nav>" +
       '<div class="header-actions">' +
-      '<button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Светлая тема">' +
-      ICONS.sun + "</button>" +
+      '<div class="appearance">' +
+      '<button class="icon-btn appearance__btn" type="button" data-appearance-open ' +
+      'aria-label="Цвет и тема" aria-expanded="false">' + ICONS.palette + "</button>" +
+      '<div class="appearance__pop" data-appearance-pop hidden>' +
+      '<span class="appearance__label">Цвет интерфейса</span>' + swatchesHtml() +
+      '<button class="appearance__theme" type="button" data-theme-toggle>' +
+      ICONS.sun + "<span>Светлая тема</span></button>" +
+      "</div></div>" +
       '<button class="icon-btn" type="button" data-search-open aria-label="Поиск по сайту">' +
       ICONS.search + "</button>" +
       accountHtml +
@@ -1489,6 +1520,7 @@
       mountCardQueue(host);
       mountConsentQueue(host);
       mountPortfolioQueue(host);
+      mountEditorialQueue(host);
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
@@ -1615,6 +1647,64 @@
     }
 
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
+    function mountEditorialQueue(host) {
+      var old = $("[data-editorial-admin]");
+      if (old) old.remove();
+      if (!Store.editorialQueue) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-editorial-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Редакции</span>' +
+        "<h2>Заявки в редакции регионов</h2>" +
+        '<p class="sec-head__text">Основатель решает сам. Если решения нет семь дней, заявка ' +
+        "попадает сюда: центральная комиссия принимает или отказывает с основанием.</p></div></div>" +
+        '<div data-editorial-admin-list><p class="form__note">Загружаем…</p></div>';
+      host.appendChild(section);
+
+      var listEl = $("[data-editorial-admin-list]", section);
+
+      function draw(items) {
+        if (!items.length) {
+          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Заявок нет</b>' +
+            "<p>Новые заявления появятся здесь в тот же момент.</p></div>";
+          return;
+        }
+        listEl.innerHTML = '<div class="editorial-queue">' + items.map(function (a) {
+          return '<div class="editorial-card"><div class="editorial-card__top"><b>' + esc(a.name) +
+            "</b><span>" + esc(fmtDate(a.createdAt)) +
+            (a.escalated ? " · передано комиссии" : "") + "</span></div>" +
+            '<div class="editorial-card__meta">' + esc(a.email) + " · " + esc(a.birthDate) +
+            " · редакция: " + esc(a.editorialId) + "</div>" +
+            "<p>" + esc(a.why) + "</p>" +
+            '<div class="row" style="margin-top:10px">' +
+            '<button class="btn btn--accent btn--sm" type="button" data-edc-ok="' + esc(a.id) + '">Принять</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-edc-no="' + esc(a.id) + '">Отказать</button>' +
+            "</div></div>";
+        }).join("") + "</div>";
+
+        $$("[data-edc-ok]", listEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            Store.editorialReview(b.getAttribute("data-edc-ok"), "approved", "")
+              .then(function () { return Store.editorialQueue(); }).then(draw, function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-edc-no]", listEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var note = window.prompt("Основание отказа:", "");
+            if (note === null) return;
+            if (note.trim().length < 5) { window.alert("Основание — минимум 5 символов."); return; }
+            Store.editorialReview(b.getAttribute("data-edc-no"), "rejected", note.trim())
+              .then(function () { return Store.editorialQueue(); }).then(draw, function (e) { window.alert(e.message); });
+          });
+        });
+      }
+
+      Store.editorialQueue().then(draw, function () { draw([]); });
+    }
+
     function mountConsentQueue(host) {
       var old = $("[data-consent-queue]");
       if (old) old.remove();
@@ -2296,11 +2386,27 @@
           ? regional.map(function (a) { return cardRow(a); }).join("")
           : "") +
         (regional.length < 3
-          ? '<div class="fill-note"><b>Историй из регионов пока немного</b>' +
+          ? '<div class="fill-note fill-note--top"><b>Историй из регионов пока немного</b>' +
             "<p>Материалов ровно столько, сколько написали авторы — мы не придумываем новости. " +
-            "Ваш город может стать следующим на карте.</p>" +
-            '<div class="row"><a class="btn btn--accent btn--sm" href="/join">Стать автором</a>' +
-            '<a class="btn btn--ghost btn--sm" href="/#map">Открыть карту</a></div></div>'
+            "Ваш город может стать следующим на карте.</p></div>" +
+            '<div class="region-teaser">' +
+            MAP.regions
+              .filter(function (x) {
+                return ["moskva", "sankt-peterburg", "sevastopol", "donetskaya-narodnaya-respublika",
+                  "zaporozhskaya-oblast", "khersonskaya-oblast"].indexOf(x.slug) !== -1;
+              })
+              .map(function (x) {
+                var n = countByRegion(x.slug);
+                return '<a class="region-teaser__card" href="' + regionUrl(x.slug) + '">' +
+                  '<span class="region-teaser__name">' + esc(x.short || x.name) + "</span>" +
+                  '<span class="region-teaser__meta">' + (n ? n + " " + plural(n, ["материал", "материала", "материалов"]) : "авторов пока нет") +
+                  "</span></a>";
+              })
+              .join("") +
+            "</div>" +
+            '<div class="row" style="margin-top:14px"><a class="btn btn--accent btn--sm" href="/join">' +
+            "Стать автором</a>" +
+            '<a class="btn btn--ghost btn--sm" href="/#map">Открыть карту</a></div>'
           : "");
     }
 
@@ -2767,6 +2873,7 @@
       "</div></div>" +
       '<div class="wrap region-body"><div class="region-layout">' +
       "<div>" +
+      '<div data-region-editorials></div>' +
       (list.length
         ? '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Лента региона</span>' +
           "<h2>" + (list.length === 1 ? "Один материал" : "Все материалы") + "</h2></div></div>" +
@@ -2802,6 +2909,210 @@
       '<div class="aside-box"><h3>На карте</h3>' +
       '<a class="btn btn--sm btn--ghost btn--block" href="/#map">Открыть всю карту</a></div>' +
       "</aside></div></div>";
+
+    mountRegionEditorials(slug, r);
+  }
+
+  /* Редакции региона: список, заявление на вступление и создание своей.
+     Заявка без решения семь дней уходит в центральную комиссию — это
+     свойство сервера, здесь только показываем статусы. */
+  function mountRegionEditorials(slug, region) {
+    var host = $("[data-region-editorials]");
+    if (!host) return;
+    var user = Store ? Store.currentUser() : null;
+
+    host.innerHTML =
+      '<div class="sec-head" style="margin-top:0"><div class="sec-head__left">' +
+      '<span class="kicker">Редакции</span><h2>Редакции региона</h2>' +
+      '<p class="sec-head__text">Основатель редакции набирает штат сам: смотрит заявление, ' +
+      "портфолио и материалы на сайте. Если решения нет семь дней, заявка уходит в центральную " +
+      "комиссию — отказ или молчание без основания не допускаются.</p></div></div>" +
+      '<div class="path-choice" data-path-choice>' +
+      '<button class="path-choice__card" type="button" data-path-pick="individual">' +
+      '<b>Писать индивидуально</b><span>Свой аккаунт, свои темы, проверка редакции. ' +
+      "Пресс-карта — после пяти публикаций.</span></button>" +
+      '<button class="path-choice__card" type="button" data-path-pick="editorial">' +
+      '<b>Вступить в редакцию региона</b><span>Заявление основателю, штат, редакционная ' +
+      "пресс-карта после трёх постов и общие проекты.</span></button></div>" +
+      '<p class="form__note" data-path-note></p>' +
+      '<div class="editorial-list" data-editorial-list><p class="media-empty">Загружаем редакции…</p></div>' +
+      (user
+        ? '<div class="editorial-actions">' +
+          '<button class="btn btn--accent btn--sm" type="button" data-editorial-join>Подать заявление в редакцию</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-editorial-new>Создать свою редакцию</button>' +
+          "</div>" +
+          '<form class="editorial-form is-hidden" data-editorial-apply>' +
+          '<div class="field"><label for="ed-target">Редакция</label>' +
+          '<select id="ed-target" name="editorialId" data-editorial-target></select></div>' +
+          '<div class="field"><label for="ed-birth">Дата рождения</label>' +
+          '<input id="ed-birth" name="birthDate" type="text" placeholder="ДД.ММ.ГГГГ" maxlength="10"></div>' +
+          '<div class="field"><label for="ed-why">Почему именно сюда</label>' +
+          '<textarea id="ed-why" name="why" rows="4" maxlength="1200" ' +
+          'placeholder="Что вы умеете, что хотите делать в редакции"></textarea></div>' +
+          '<div class="field"><label for="ed-files">Личное портфолио (до трёх файлов)</label>' +
+          '<input id="ed-files" type="file" accept="image/*,application/pdf" multiple data-editorial-files>' +
+          '<p class="field__hint">Материалы с сайта приложатся автоматически.</p></div>' +
+          '<div class="row"><button class="btn" type="submit">Отправить заявление</button>' +
+          '<span class="form__note" data-editorial-note></span></div></form>' +
+          '<form class="editorial-form is-hidden" data-editorial-create>' +
+          '<div class="field"><label for="ed-name">Название редакции</label>' +
+          '<input id="ed-name" name="name" type="text" maxlength="120" placeholder="Например, «Смена. Поволжье»"></div>' +
+          '<div class="field"><label for="ed-about">Чем будет заниматься</label>' +
+          '<textarea id="ed-about" name="about" rows="3" maxlength="600"></textarea></div>' +
+          '<div class="row"><button class="btn" type="submit">Создать редакцию</button>' +
+          '<span class="form__note" data-editorial-create-note></span></div></form>'
+        : '<div class="editorial-actions"><a class="btn btn--accent btn--sm" href="/join?next=profile">' +
+          "Войдите, чтобы вступить в редакцию</a></div>");
+
+    var listEl = $("[data-editorial-list]", host);
+    var applyForm = $("[data-editorial-apply]", host);
+    var createForm = $("[data-editorial-create]", host);
+    var targetSelect = $("[data-editorial-target]", host);
+
+    function drawList(items) {
+      if (!items.length) {
+        listEl.innerHTML =
+          '<div class="fill-note fill-note--flat"><b>В этом регионе редакции пока нет</b>' +
+          "<p>Вы можете создать её первым: заявление на имя основателя, набор штата и работа " +
+          "с авторами региона.</p></div>";
+        if (targetSelect) targetSelect.innerHTML = '<option value="">Редакций нет</option>';
+        return;
+      }
+      listEl.innerHTML = items
+        .map(function (e) {
+          return '<div class="editorial-card"><div class="editorial-card__top"><b>' + esc(e.name) +
+            "</b><span>" + (e.members || 0) + " в штате</span></div>" +
+            (e.about ? "<p>" + esc(e.about) + "</p>" : "") +
+            '<div class="editorial-card__meta">Основатель: ' + esc(e.founderName) +
+            " · " + esc(fmtDate(e.createdAt)) + "</div></div>";
+        })
+        .join("");
+      if (targetSelect) {
+        targetSelect.innerHTML = items
+          .map(function (e) {
+            return '<option value="' + esc(e.id) + '">' + esc(e.name) + "</option>";
+          })
+          .join("");
+      }
+    }
+
+    var chosen = "";
+    try { chosen = window.localStorage.getItem("smena_path_v1") || ""; } catch (e) {}
+    var pathNote = $("[data-path-note]", host);
+    function paintPath() {
+      $$("[data-path-pick]", host).forEach(function (b) {
+        b.classList.toggle("is-active", b.getAttribute("data-path-pick") === chosen);
+      });
+      if (pathNote) {
+        pathNote.textContent = chosen === "individual"
+          ? "Выбран путь индивидуального автора: публикуете сами, редакция проверяет материал."
+          : chosen === "editorial"
+            ? "Выбран путь через редакцию региона: подайте заявление ниже."
+            : "Выбор можно поменять в любой момент.";
+      }
+    }
+    $$("[data-path-pick]", host).forEach(function (b) {
+      b.addEventListener("click", function () {
+        chosen = b.getAttribute("data-path-pick");
+        try { window.localStorage.setItem("smena_path_v1", chosen); } catch (e) {}
+        paintPath();
+        if (chosen === "editorial" && applyForm && loaded.length) {
+          applyForm.classList.remove("is-hidden");
+          createForm.classList.add("is-hidden");
+          applyForm.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+    });
+    paintPath();
+
+    var loaded = [];
+    Store.editorialList(slug).then(function (items) {
+      loaded = items;
+      drawList(items);
+    });
+
+    if (!user) return;
+
+    var joinBtn = $("[data-editorial-join]", host);
+    var newBtn = $("[data-editorial-new]", host);
+    if (joinBtn && applyForm) {
+      joinBtn.addEventListener("click", function () {
+        if (!loaded.length) {
+          window.alert("В этом регионе пока нет редакций. Создайте свою.");
+          return;
+        }
+        applyForm.classList.toggle("is-hidden");
+        createForm.classList.add("is-hidden");
+      });
+    }
+    if (newBtn && createForm) {
+      newBtn.addEventListener("click", function () {
+        createForm.classList.toggle("is-hidden");
+        applyForm.classList.add("is-hidden");
+      });
+    }
+
+    if (applyForm) {
+      applyForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var noteEl = $("[data-editorial-note]", host);
+        var birthDate = applyForm.querySelector('[name="birthDate"]').value.trim();
+        var why = applyForm.querySelector('[name="why"]').value.trim();
+        var fileInput = $("[data-editorial-files]", applyForm);
+        var files = Array.prototype.slice.call((fileInput && fileInput.files) || []).slice(0, 3);
+
+        if (!/^\d{2}\.\d{2}\.\d{4}$/.test(birthDate)) {
+          noteEl.textContent = "Дата рождения в формате ДД.ММ.ГГГГ.";
+          return;
+        }
+        if (why.length < 30) {
+          noteEl.textContent = "Расскажите подробнее: минимум 30 символов.";
+          return;
+        }
+        noteEl.textContent = "Готовим заявление…";
+        var sitePosts = Store.listPosts({ authorId: user.id, status: "published" }).map(function (p) {
+          return p.title;
+        });
+        files.reduce(function (chain, file) {
+          return chain.then(function (acc) {
+            return fileToDataUrl(file).then(function (url) { acc.push(url); return acc; });
+          });
+        }, Promise.resolve([])).then(function (dataUrls) {
+          return Store.editorialApply({
+            editorialId: targetSelect.value,
+            birthDate: birthDate,
+            why: why,
+            portfolio: dataUrls,
+            sitePosts: sitePosts,
+          });
+        }).then(function () {
+          noteEl.textContent = "Заявление отправлено. Основатель редакции увидит его в кабинете.";
+          applyForm.reset();
+        }, function (err) {
+          noteEl.textContent = (err && err.message) || "Не удалось отправить заявление.";
+        });
+      });
+    }
+
+    if (createForm) {
+      createForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var noteEl = $("[data-editorial-create-note]", host);
+        var name = createForm.querySelector('[name="name"]').value.trim();
+        var about = createForm.querySelector('[name="about"]').value.trim();
+        if (name.length < 3) { noteEl.textContent = "Название — хотя бы три символа."; return; }
+        if (about.length < 20) { noteEl.textContent = "Опишите редакцию: минимум 20 символов."; return; }
+        noteEl.textContent = "Создаём…";
+        Store.editorialCreate({ region: slug, name: name, about: about }).then(function (created) {
+          noteEl.textContent = "Редакция создана. Вы её основатель.";
+          loaded.unshift(created);
+          drawList(loaded);
+          createForm.reset();
+        }, function (err) {
+          noteEl.textContent = (err && err.message) || "Редакция не создалась.";
+        });
+      });
+    }
   }
 
   /* 11. Регистрация и вход ================================================= */
@@ -2903,6 +3214,104 @@
         });
       });
     }
+  }
+
+  /* Моя редакция: статусы моих заявлений и решения основателя. */
+  function mountMyEditorial(user) {
+    var host = $("[data-my-editorial]");
+    if (!host || !user) return;
+
+    var STATUS_ED = {
+      pending: "на рассмотрении",
+      approved: "приняли",
+      rejected: "отказ",
+    };
+
+    function draw(data) {
+      var html = '<div class="sec-head" style="margin:10px 0 8px"><div class="sec-head__left">' +
+        '<span class="kicker">Редакции</span><h2 style="font-size:1.35rem">Моя редакция</h2></div></div>';
+
+      if (data.applications.length) {
+        html += '<div class="editorial-list">' + data.applications.map(function (a) {
+          var esc2 = esc;
+          return '<div class="editorial-card"><div class="editorial-card__top"><b>Заявка ' +
+            esc2(fmtDate(a.createdAt)) + "</b><span>" + esc2(STATUS_ED[a.status] || a.status) +
+            "</span></div>" +
+            (a.note ? "<p>Основание: " + esc2(a.note) + "</p>" : "") +
+            (a.escalated && a.status === "pending"
+              ? "<p>Семь дней без решения — заявка передана в центральную комиссию.</p>"
+              : "") +
+            "</div>";
+        }).join("") + "</div>";
+      } else if (!data.editorial) {
+        html += '<div class="fill-note fill-note--flat"><b>Вы пока вне редакции</b><p>' +
+          "Можно писать индивидуально или вступить в редакцию своего региона — выбор за вами.</p>" +
+          '<p><a class="link-accent" href="/region?r=' + esc(Store.currentUser().region || "moskva") +
+          '">Выбрать редакцию региона →</a></p></div>';
+      }
+
+      if (data.editorial) {
+        html += '<div class="editorial-card"><div class="editorial-card__top"><b>' +
+          esc(data.editorial.name) + "</b><span>вы основатель</span></div>" +
+          "<p>" + esc(data.editorial.about || "") + "</p>" +
+          '<div class="editorial-card__meta">' + (data.editorial.members || 0) +
+          " в штате</div></div>";
+
+        if (data.incoming.length) {
+          html += '<div class="editorial-queue">' + data.incoming.map(function (a) {
+            var body = '<div class="editorial-card"><div class="editorial-card__top"><b>' +
+              esc(a.name) + "</b><span>" + esc(STATUS_ED[a.status] || a.status) + "</span></div>" +
+              '<div class="editorial-card__meta">' + esc(a.birthDate) + " · " + esc(a.email) + "</div>" +
+              "<p>" + esc(a.why) + "</p>" +
+              (a.sitePosts && a.sitePosts.length
+                ? '<div class="editorial-card__meta">На сайте: ' +
+                  a.sitePosts.map(function (t) { return esc(t); }).join(" · ") + "</div>"
+                : "") +
+              (a.portfolio && a.portfolio.length
+                ? '<div class="editorial-card__meta">Портфолио: ' + a.portfolio.length + " файл(а)</div>"
+                : "");
+            if (a.status === "pending") {
+              body += '<div class="row" style="margin-top:10px">' +
+                '<button class="btn btn--accent btn--sm" type="button" data-ed-ok="' + esc(a.id) + '">Принять</button>' +
+                '<button class="btn btn--ghost btn--sm" type="button" data-ed-no="' + esc(a.id) + '">Отказать</button>' +
+                "</div>";
+            }
+            if (a.escalated && a.status === "pending") {
+              body += '<p class="form__note">Семь дней прошло — решает центральная комиссия.</p>';
+            }
+            return body + "</div>";
+          }).join("") + "</div>";
+        } else {
+          html += '<p class="form__note">Заявлений в редакцию пока нет. Ссылку на страницу ' +
+            "региона можно отправлять авторам.</p>";
+        }
+      }
+
+      host.innerHTML = html;
+
+      $$("[data-ed-ok]", host).forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          Store.editorialReview(btn.getAttribute("data-ed-ok"), "approved", "").then(function () {
+            return Store.editorialMine();
+          }).then(draw, function (err) { window.alert(err.message); });
+        });
+      });
+      $$("[data-ed-no]", host).forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var note = window.prompt("Основание отказа (его увидит автор):", "");
+          if (note === null) return;
+          if (note.trim().length < 5) {
+            window.alert("Отказ без основания недопустим: напишите хотя бы 5 символов.");
+            return;
+          }
+          Store.editorialReview(btn.getAttribute("data-ed-no"), "rejected", note.trim())
+            .then(function () { return Store.editorialMine(); })
+            .then(draw, function (err) { window.alert(err.message); });
+        });
+      });
+    }
+
+    Store.editorialMine().then(draw, function () {});
   }
 
   /* 12. Личный кабинет ===================================================== */
@@ -3375,6 +3784,7 @@
         '<div class="form__full row"><button class="btn" type="submit">Сохранить</button>' +
         '<span class="form__note" data-profile-status>' + esc(savedNote) + "</span></div>" +
         "</form>" +
+        '<div data-my-editorial style="margin-top:18px"></div>' +
         '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
         "Отправленный материал уходит в общую приёмную редакции: он доходит до неё с любого " +
         "устройства, а после одобрения его видят все посетители сайта.</div>" +
@@ -3383,6 +3793,7 @@
 
       initAnimations();
       mountCardApplication();
+      mountMyEditorial(user);
       syncSwatches(readAccent());
       Store.refreshPortfolio();
       Store.refreshConsent().then(function (fresh) {

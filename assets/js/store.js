@@ -324,7 +324,9 @@ window.Store = (function () {
           emit();
           return true;
         }
-        if (res && res.error) {
+        /* выходим из аккаунта только если сервер прямо сказал, что сессии нет.
+           Сетевая ошибка или сбой сервера — не повод разлогинивать человека */
+        if (res && res.code === 401) {
           saveToken("");
           cacheUser(null);
         }
@@ -1486,6 +1488,84 @@ window.Store = (function () {
     });
   }
 
+  /* ---------------------------------------------------- редакции в регионах */
+
+  function editorialList(region) {
+    return api("editorial-list", { region: region || "" }).then(function (res) {
+      if (res && res.ok && res.editorials) return res.editorials;
+      return [];
+    }, function () {
+      return [];
+    });
+  }
+
+  function editorialCreate(payload) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы создать редакцию."));
+    return api("editorial-create", {
+      token: token,
+      region: payload.region,
+      name: payload.name,
+      about: payload.about,
+    }).then(function (res) {
+      if (res && res.ok) return res.editorial;
+      throw new Error((res && res.error) || "Редакция не создалась.");
+    });
+  }
+
+  function editorialApply(payload) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы подать заявление."));
+    return api("editorial-apply", {
+      token: token,
+      editorialId: payload.editorialId,
+      birthDate: payload.birthDate,
+      why: payload.why,
+      portfolio: payload.portfolio || [],
+      sitePosts: payload.sitePosts || [],
+    }).then(function (res) {
+      if (res && res.ok) return res.application;
+      throw new Error((res && res.error) || "Заявление не отправилось.");
+    });
+  }
+
+  function editorialMine() {
+    var token = readToken();
+    if (!token) return Promise.resolve({ applications: [], editorial: null, incoming: [] });
+    return api("editorial-mine", { token: token }).then(function (res) {
+      if (res && res.ok) {
+        return {
+          applications: res.applications || [],
+          editorial: res.editorial || null,
+          incoming: res.incoming || [],
+        };
+      }
+      return { applications: [], editorial: null, incoming: [] };
+    }, function () {
+      return { applications: [], editorial: null, incoming: [] };
+    });
+  }
+
+  function editorialQueue() {
+    var token = readToken();
+    if (!token) return Promise.resolve([]);
+    return api("editorial-queue", { token: token }).then(function (res) {
+      return res && res.ok ? res.applications || [] : [];
+    }, function () {
+      return [];
+    });
+  }
+
+  function editorialReview(id, decision, note) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("editorial-review", { token: token, id: id, decision: decision, note: note })
+      .then(function (res) {
+        if (res && res.ok) return true;
+        throw new Error((res && res.error) || "Решение не сохранилось.");
+      });
+  }
+
   /* смена пароля: сервер проверяет текущий пароль и хранит только хеш */
   function changePassword(oldPass, newPass) {
     var token = readToken();
@@ -1578,6 +1658,12 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    editorialList: editorialList,
+    editorialCreate: editorialCreate,
+    editorialApply: editorialApply,
+    editorialMine: editorialMine,
+    editorialReview: editorialReview,
+    editorialQueue: editorialQueue,
     changePassword: changePassword,
     portfolio: portfolio,
     refreshPortfolio: refreshPortfolio,
