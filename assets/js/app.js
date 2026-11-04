@@ -1594,6 +1594,9 @@
       mountPortfolioQueue(host);
       mountEditorialQueue(host);
       mountRecoveryQueue(host);
+      mountPeople(host);
+      mountFoundersEditor(host);
+      mountDiag(host);
       mountMailSettings(host);
       mountSupportQueue(host);
     }
@@ -1722,6 +1725,256 @@
     }
 
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
+    /* Участники и роли: права меняются на сервере, а не в браузере. */
+    function mountPeople(host) {
+      var old = $("[data-people-admin]");
+      if (old) old.remove();
+      if (!Store.usersList) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-people-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Участники</span>' +
+        "<h2>Роли и права</h2>" +
+        '<p class="sec-head__text">Здесь видно всех, кто зарегистрировался на сайте. Роль ' +
+        "меняется сразу на сервере: администрация видит заявки, основатель региона ведёт " +
+        "редакцию, директор может всё.</p></div></div>" +
+        '<div data-people-list><p class="form__note">Загружаем участников…</p></div>';
+      host.appendChild(section);
+
+      var listEl = $("[data-people-list]", section);
+
+      function draw(users, roles) {
+        if (!users.length) {
+          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Пока никто не зарегистрировался</b>' +
+            '<p>Первый аккаунт станет директором. После этого здесь появятся роли и права.</p>' +
+            '<p><a class="link-accent" href="/join">Открыть регистрацию</a></p></div>';
+          return;
+        }
+        listEl.innerHTML = '<div class="people">' + users.map(function (u) {
+          return '<div class="people__row">' +
+            '<div class="people__who"><b>' + esc(u.name) + "</b><small>" + esc(u.email) +
+            (u.emailVerified ? " · почта подтверждена" : " · почта не подтверждена") + "</small></div>" +
+            '<div class="people__meta">' + esc(u.region || "регион не указан") +
+            " · с " + esc(fmtDate(u.createdAt)) + "</div>" +
+            '<select class="admin-access" data-person="' + esc(u.id) + '">' +
+            roles.map(function (r) {
+              return '<option' + (r === u.access ? " selected" : "") + ">" + esc(r) + "</option>";
+            }).join("") + "</select></div>";
+        }).join("") + "</div>";
+
+        $$("[data-person]", listEl).forEach(function (sel) {
+          sel.addEventListener("change", function () {
+            var id = sel.getAttribute("data-person");
+            sel.disabled = true;
+            Store.userAccess(id, sel.value).then(function () {
+              sel.disabled = false;
+              sel.classList.add("is-saved");
+              setTimeout(function () { sel.classList.remove("is-saved"); }, 1200);
+            }, function (err) {
+              sel.disabled = false;
+              window.alert((err && err.message) || "Права не сохранились.");
+              return Store.usersList().then(function (fresh) { draw(fresh.users, fresh.roles); });
+            });
+          });
+        });
+      }
+
+      Store.usersList().then(function (res) {
+        draw(res.users, res.roles);
+      }, function () {
+        draw([], Store.ROLES || []);
+      });
+    }
+
+    /* Основатели: список на странице /founders берётся отсюда. */
+    function mountFoundersEditor(host) {
+      var old = $("[data-founders-admin]");
+      if (old) old.remove();
+      if (!Store.foundersSave) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-founders-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Основатели</span>' +
+        "<h2>Кто основал проект</h2>" +
+        '<p class="sec-head__text">Эти карточки видит страница «Основатели». До четырёх человек: ' +
+        "имя, роль, город, год и пара строк о себе. Фото загружается с устройства.</p></div></div>" +
+        '<div data-founders-list></div>' +
+        '<div class="row" style="gap:10px;margin-top:14px;flex-wrap:wrap">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-founder-add>Добавить человека</button>' +
+        '<button class="btn btn--accent btn--sm" type="button" data-founders-save>Сохранить список</button>' +
+        '<span class="form__note" data-founders-status></span></div>';
+      host.appendChild(section);
+
+      var listEl = $("[data-founders-list]", section);
+      var statusEl = $("[data-founders-status]", section);
+      var state = [];
+
+      function draw() {
+        listEl.innerHTML = '<div class="people">' + state.map(function (f, i) {
+          return '<div class="founder-edit">' +
+            '<div class="founder-edit__head"><b>' + esc(f.name || "Новый человек") + "</b>" +
+            (state.length > 1
+              ? '<button class="btn btn--ghost btn--sm" type="button" data-founder-del="' + i + '">Убрать</button>'
+              : "") + "</div>" +
+            '<div class="mail-grid">' +
+            '<div class="field"><label>Имя и фамилия</label>' +
+            '<input type="text" data-f="name" data-i="' + i + '" value="' + esc(f.name || "") + '"></div>' +
+            '<div class="field"><label>Роль</label>' +
+            '<input type="text" data-f="role" data-i="' + i + '" value="' + esc(f.role || "") + '" placeholder="Основатель, главный редактор"></div>' +
+            '<div class="field"><label>Город</label>' +
+            '<input type="text" data-f="city" data-i="' + i + '" value="' + esc(f.city || "") + '"></div>' +
+            '<div class="field"><label>На проекте с</label>' +
+            '<input type="text" data-f="since" data-i="' + i + '" value="' + esc(f.since || "") + '" placeholder="2026"></div>' +
+            "</div>" +
+            '<div class="field"><label>О себе</label>' +
+            '<textarea rows="3" data-f="bio" data-i="' + i + '">' + esc(f.bio || "") + "</textarea></div>" +
+            '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+            '<input type="file" accept="image/*" data-founder-photo="' + i + '">' +
+            (f.photo ? '<span class="form__note">фото загружено</span>' : "") +
+            "</div></div>";
+        }).join("") + "</div>";
+
+        $$("[data-f]", listEl).forEach(function (el) {
+          el.addEventListener("input", function () {
+            state[Number(el.getAttribute("data-i"))][el.getAttribute("data-f")] = el.value;
+          });
+        });
+        $$("[data-founder-del]", listEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            state.splice(Number(b.getAttribute("data-founder-del")), 1);
+            draw();
+          });
+        });
+        $$("[data-founder-photo]", listEl).forEach(function (input) {
+          input.addEventListener("change", function () {
+            var file = input.files && input.files[0];
+            if (!file) return;
+            var i = Number(input.getAttribute("data-founder-photo"));
+            statusEl.textContent = "Загружаем фото…";
+            Store.uploadMedia(file).then(function (url) {
+              state[i].photo = url;
+              statusEl.textContent = "Фото загружено: " + state[i].name;
+              draw();
+            }, function () {
+              fileToDataUrl(file).then(function (url) {
+                state[i].photo = url;
+                statusEl.textContent = "Фото добавлено.";
+                draw();
+              });
+            });
+          });
+        });
+      }
+
+      Store.founders().then(function (list) {
+        state = list && list.length ? list : [];
+        if (!state.length) {
+          state = (SC.founders || []).map(function (f) {
+            return { name: f.name, role: f.role, city: f.city, since: f.since, bio: f.bio, photo: f.photo };
+          });
+        }
+        draw();
+      }, function () {
+        state = (SC.founders || []).slice();
+        draw();
+      });
+
+      var addBtn = $("[data-founder-add]", section);
+      if (addBtn) {
+        addBtn.addEventListener("click", function () {
+          if (state.length >= 4) {
+            statusEl.textContent = "Основателей не больше четырёх.";
+            return;
+          }
+          state.push({ name: "", role: "", city: "", since: "2026", bio: "", photo: "" });
+          draw();
+        });
+      }
+
+      var saveBtn = $("[data-founders-save]", section);
+      if (saveBtn) {
+        saveBtn.addEventListener("click", function () {
+          var filled = state.filter(function (f) { return (f.name || "").trim().length >= 3; });
+          if (!filled.length) {
+            statusEl.textContent = "Нужно хотя бы одно имя: минимум три символа.";
+            return;
+          }
+          saveBtn.disabled = true;
+          statusEl.textContent = "Сохраняем…";
+          Store.foundersSave(filled).then(function (saved) {
+            saveBtn.disabled = false;
+            state = saved;
+            draw();
+            statusEl.textContent = "Сохранено. Страница «Основатели» уже обновилась.";
+          }, function (err) {
+            saveBtn.disabled = false;
+            statusEl.textContent = (err && err.message) || "Не сохранилось.";
+          });
+        });
+      }
+    }
+
+    /* Диагностика: почему не пускает и что с сервером. */
+    function mountDiag(host) {
+      var old = $("[data-diag-admin]");
+      if (old) old.remove();
+      if (!Store.diag) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-diag-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Сервер</span>' +
+        "<h2>Состояние проекта</h2>" +
+        '<p class="sec-head__text">Проверка без паролей и личных данных: сколько аккаунтов, ' +
+        "можно ли писать файлы, настроена ли почта.</p></div></div>" +
+        '<div class="panel" style="padding:20px"><div class="diag" data-diag-list>' +
+        '<p class="form__note">Проверяем…</p></div>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-diag-refresh ' +
+        'style="margin-top:12px">Проверить снова</button></div>';
+      host.appendChild(section);
+
+      var listEl = $("[data-diag-list]", section);
+
+      function row(label, value, good) {
+        return '<div class="diag__row"><span>' + esc(label) + '</span><b class="' +
+          (good === false ? "is-bad" : good === true ? "is-good" : "") + '">' + esc(String(value)) + "</b></div>";
+      }
+
+      function load() {
+        listEl.innerHTML = '<p class="form__note">Проверяем…</p>';
+        Store.diag().then(function (d) {
+          if (!d) {
+            listEl.innerHTML = '<p class="form__note">Сервер не отвечает.</p>';
+            return;
+          }
+          listEl.innerHTML =
+            row("PHP", d.php) +
+            row("Аккаунтов на сервере", d.accounts, d.accounts > 0) +
+            row("Первый аккаунт станет директором", d.first_will_be_director ? "да" : "нет",
+              d.first_will_be_director) +
+            row("Материалов", d.posts) +
+            row("Запись данных", d.data_writable ? "разрешена" : "запрещена", !!d.data_writable) +
+            row("Загрузка медиа", d.uploads_writable ? "разрешена" : "запрещена", !!d.uploads_writable) +
+            row("Почта", d.mail_configured ? "настроена" : "не настроена", !!d.mail_configured) +
+            row("Отправитель", d.mail_from || "—") +
+            row("Попыток входа за час", d.rate_entries) +
+            row("Время сервера", fmtDate(d.server_time));
+        });
+      }
+
+      var btn = $("[data-diag-refresh]", section);
+      if (btn) btn.addEventListener("click", load);
+      load();
+    }
+
     /* Почта: настройки SMTP и проверка письмом. Пароль наружу не отдаём. */
     function mountMailSettings(host) {
       var old = $("[data-mail-admin]");
@@ -1745,7 +1998,8 @@
         '<input id="m-port" data-m="port" type="number" value="465" min="1" max="65535"></div>' +
         '<div class="field"><label for="m-secure">Шифрование</label>' +
         '<select id="m-secure" data-m="secure"><option value="ssl">SSL (обычно 465)</option>' +
-        '<option value="tls">STARTTLS (обычно 587)</option></select></div>' +
+        '<option value="tls">STARTTLS (обычно 587)</option>' +
+        '<option value="none">Без шифрования (обычно 2525)</option></select></div>' +
         '<div class="field"><label for="m-user">Логин</label>' +
         '<input id="m-user" data-m="user" type="text" autocomplete="off"></div>' +
         '<div class="field"><label for="m-pass">Пароль</label>' +
@@ -3450,6 +3704,19 @@
     if (user) {
       window.location.replace(next);
       return;
+    }
+
+    /* первый зарегистрированный становится директором: говорим это прямо */
+    if (Store && Store.diag) {
+      Store.diag().then(function (d) {
+        if (!d || !d.first_will_be_director) return;
+        var notice = document.createElement("div");
+        notice.className = "auth-notice";
+        notice.innerHTML = "<b>Вы первый.</b> Аккаунт, созданный первым, получает права " +
+          "директора: панель проекта, права участников, выдача пресс-карт.";
+        var anchorEl = $("[data-register-form]", box);
+        if (anchorEl && anchorEl.parentNode) anchorEl.parentNode.insertBefore(notice, anchorEl);
+      }, function () {});
     }
 
     var regionSelect = $("[data-auth-region]", box);
@@ -5275,7 +5542,16 @@
     if (page === "write") initWrite();
     if (page === "docs") initDocs();
     if (page === "admin") initAdmin();
-    if (page === "founders") initFoundersPage();
+    if (page === "founders") {
+      if (Store && Store.founders) {
+        Store.founders().then(function (list) {
+          if (list && list.length) SC.founders = list;
+          initFoundersPage();
+        }, initFoundersPage);
+      } else {
+        initFoundersPage();
+      }
+    }
     if (page === "support") initSupport();
 
     initAnimations();

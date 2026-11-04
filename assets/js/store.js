@@ -1488,6 +1488,53 @@ window.Store = (function () {
     });
   }
 
+  /* ------------------------------------------- участники, роли, основатели */
+
+  function diag() {
+    return api("diag", {}).then(function (res) {
+      return res && res.ok ? res : null;
+    }, function () {
+      return null;
+    });
+  }
+
+  function usersList() {
+    var token = readToken();
+    if (!token) return Promise.resolve({ users: [], roles: ROLES });
+    return api("users", { token: token }).then(function (res) {
+      if (res && res.ok) return { users: res.users || [], roles: res.roles || ROLES };
+      return { users: [], roles: ROLES, error: (res && res.error) || "" };
+    }, function () {
+      return { users: [], roles: ROLES, error: "Сервер недоступен." };
+    });
+  }
+
+  function userAccess(id, access) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("user-access", { token: token, id: id, access: access }).then(function (res) {
+      if (res && res.ok) return true;
+      throw new Error((res && res.error) || "Права не сохранились.");
+    });
+  }
+
+  function founders() {
+    return api("founders", {}).then(function (res) {
+      return res && res.ok ? res.founders || [] : [];
+    }, function () {
+      return [];
+    });
+  }
+
+  function foundersSave(list) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("founders-save", { token: token, founders: list }).then(function (res) {
+      if (res && res.ok) return res.founders || [];
+      throw new Error((res && res.error) || "Список не сохранился.");
+    });
+  }
+
   /* --------------------------------------------------- почта и поддержка */
 
   function mailStatus() {
@@ -1818,6 +1865,11 @@ window.Store = (function () {
     apiCardStatus: apiCardStatus,
     apiCardQueue: apiCardQueue,
     apiCardReview: apiCardReview,
+    diag: diag,
+    usersList: usersList,
+    userAccess: userAccess,
+    founders: founders,
+    foundersSave: foundersSave,
     mailStatus: mailStatus,
     mailSave: mailSave,
     mailTest: mailTest,
