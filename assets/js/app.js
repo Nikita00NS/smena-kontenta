@@ -1487,13 +1487,86 @@
     var isOwner = Store.can(user, "manage") || user.number === 101;
 
     if (!isOwner) {
+      /* Понятный экран вместо «доступ только редакции»: кто вы для сервера,
+         есть ли директор и что нажать, чтобы получить права. */
       host.innerHTML =
-        '<section class="section wrap"><div class="panel">' +
-        "<h3>Панель доступна редакции</h3>" +
-        "<p>Настройки проекта меняет первый зарегистрированный аккаунт или аккаунт с ролью " +
-        "«Редактор». Вы вошли как «" + esc(user.name) + "» — " + esc(user.role) + ".</p>" +
-        '<div class="row"><a class="btn btn--sm" href="/profile">В кабинет</a>' +
-        '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a></div></div></section>';
+        '<section class="page-hero"><div class="wrap page-hero__grid"><div>' +
+        '<span class="kicker">Служебное</span><h1>Нужны права<br>директора</h1></div>' +
+        '<div class="page-hero__aside"><p class="lead">Вы вошли как «' + esc(user.name) +
+        "», роль: <b>" + esc(user.access || "Пользователь") + "</b>. Панель открывается роли " +
+        "«Директор» — она достаётся первому аккаунту на сервере.</p></div></div></section>" +
+        '<section class="section wrap"><div class="panel" style="padding:24px">' +
+        '<div class="diag" data-gate-list><p class="form__note">Проверяем сервер…</p></div>' +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:16px">' +
+        '<button class="btn btn--accent btn--sm" type="button" data-gate-claim hidden>Получить права директора</button>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-gate-refresh>Обновить права</button>' +
+        '<a class="btn btn--ghost btn--sm" href="/profile">В кабинет</a>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-gate-logout>Выйти</button>' +
+        '</div><p class="form__note" data-gate-status></p>' +
+        '<p class="form__note">Версия интерфейса: ' + esc((SC && SC.build) || "—") + "</p>" +
+        "</div></section>";
+
+      var gateList = $("[data-gate-list]", host);
+      var gateStatus = $("[data-gate-status]", host);
+      var claimBtn = $("[data-gate-claim]", host);
+
+      function drawGate(info) {
+        if (!info) {
+          gateList.innerHTML = '<p class="form__note">Сервер не отвечает. Проверьте связь и обновите страницу.</p>';
+          return;
+        }
+        gateList.innerHTML =
+          '<div class="diag__row"><span>Вы вошли как</span><b>' + esc((info.user && info.user.name) || user.name) + "</b></div>" +
+          '<div class="diag__row"><span>Ваша роль на сервере</span><b>' +
+          esc((info.user && info.user.access) || "нет данных") + "</b></div>" +
+          '<div class="diag__row"><span>Аккаунтов на сервере</span><b>' + (info.accounts || 0) + "</b></div>" +
+          '<div class="diag__row"><span>Директор</span><b>' +
+          (info.directorExists ? esc(info.directorName || "назначен") : "не назначен") + "</b></div>";
+        if (claimBtn && info.canClaimDirector) {
+          claimBtn.hidden = false;
+        }
+      }
+
+      Store.whoami().then(drawGate, function () { drawGate(null); });
+
+      if (claimBtn) {
+        claimBtn.addEventListener("click", function () {
+          claimBtn.disabled = true;
+          Store.claimDirector().then(function () {
+            gateStatus.textContent = "Права директора выданы. Перезагружаем панель…";
+            window.location.reload();
+          }, function (err) {
+            claimBtn.disabled = false;
+            gateStatus.textContent = (err && err.message) || "Не получилось.";
+          });
+        });
+      }
+
+      var refreshBtn = $("[data-gate-refresh]", host);
+      if (refreshBtn) {
+        refreshBtn.addEventListener("click", function () {
+          gateStatus.textContent = "Обновляем…";
+          Promise.resolve(Store.refreshMe ? Store.refreshMe() : null).then(function () {
+            Store.whoami().then(function (info) {
+              drawGate(info);
+              if (info && info.user && info.user.access !== user.access) {
+                window.location.reload();
+                return;
+              }
+              gateStatus.textContent = "Права не изменились: роль на сервере — " +
+                ((info && info.user && info.user.access) || "неизвестна") + ".";
+            });
+          });
+        });
+      }
+
+      var logoutBtn = $("[data-gate-logout]", host);
+      if (logoutBtn) {
+        logoutBtn.addEventListener("click", function () {
+          if (Store.logout) Store.logout();
+          window.location.replace("/join#login");
+        });
+      }
       return;
     }
 
