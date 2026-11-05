@@ -5549,7 +5549,11 @@
             '<p class="presscard__code" style="font-size:1.1rem">' + esc(last.number || "") + "</p>" +
             "<p>Номер действует один год. Карту можно показать на месте съёмки или встречи — " +
             "она подтверждает, что вы пишете для «Смены контента».</p>" +
-            '<p class="form__note">Материалов в заявке: ' + (last.posts || []).length + "</p></div>";
+            '<p class="form__note">Материалов в заявке: ' + (last.posts || []).length + "</p>" +
+            (last.issuePlace ? '<p class="form__note">Где получить: ' + esc(last.issuePlace) + "</p>" : "") +
+            '<p class="form__note"><a class="link-accent" href="/assets/docs/blank-press-karty.pdf" ' +
+            'target="_blank" rel="noopener">Бланк карты для печати</a> — если нужно показать карту до того, ' +
+            "как она придёт.</p></div>";
           return;
         }
 
