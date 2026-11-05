@@ -1803,7 +1803,8 @@ if ($act === 'reg') {
             $email,
             'Подтверждение почты — Смена контента',
             mail_code_text($confirmCode, 30, 'подтверждения почты'),
-            mail_code_html($confirmCode, 30, 'подтверждения почты')
+            mail_code_html($confirmCode, 30, 'подтверждения почты'),
+            'kod'
         );
     }
     respond(array(
@@ -1923,7 +1924,9 @@ if ($act === 'recovery-request') {
                 'Код восстановления доступа — Смена контента',
                 "Код восстановления: " . $code . "\n\n" .
                 "Введите его на странице входа вместе с почтой и новым паролем. " .
-                "Если вы не запрашивали код, просто проигнорируйте письмо."
+                "Если вы не запрашивали код, просто проигнорируйте письмо.",
+                '',
+                'kod'
             );
             break;
         }
@@ -1976,7 +1979,9 @@ if ($act === 'recovery-issue') {
     $mailed = mail_send(
         $target['email'],
         'Код восстановления доступа — Смена контента',
-        "Код восстановления: " . $code . "\n\nВведите его на странице входа."
+        "Код восстановления: " . $code . "\n\nВведите его на странице входа.",
+        '',
+        'kod'
     );
 
     $list[$index]['status'] = 'issued';
@@ -2424,7 +2429,9 @@ if ($act === 'user-message') {
             $target['email'],
             'Сообщение от редакции — Смена контента',
             "Здравствуйте, " . $target['name'] . "!\n\n" . $text . "\n\n" .
-            "Ответить можно на это письмо или из кабинета.\n\n—\n" . $me['name'] . ", Смена контента\n"
+            "Ответить можно на это письмо или из кабинета.\n\n—\n" . $me['name'] . ", Смена контента\n",
+            '',
+            'redakcia'
         );
     }
     $msg['mailed'] = $mailed;
@@ -2818,7 +2825,8 @@ if ($act === 'confirm-send') {
         $email,
         'Код подтверждения почты — Смена контента',
         mail_code_text($code, 30, 'подтверждения почты'),
-        mail_code_html($code, 30, 'подтверждения почты')
+        mail_code_html($code, 30, 'подтверждения почты'),
+        'kod'
     );
     if (!$sent) fail('Сервер почты не принял письмо. Проверьте настройки в админке.', 502);
     respond(array('ok' => true, 'mailSent' => true, 'email' => $email));
@@ -2904,6 +2912,10 @@ if ($act === 'support-send') {
 
     $cfg = smtp_config($DATA_DIR);
     if (smtp_configured($DATA_DIR) && $cfg['notify'] !== '') {
+        $support_from = mail_from_kind('support');
+        if ($support_from !== '') {
+            $cfg['from'] = $support_from;
+        }
         $sent = smtp_send_mail(
             $cfg,
             $cfg['notify'],
@@ -2970,7 +2982,9 @@ if ($act === 'support-close') {
             'Ответ поддержки — Смена контента',
             "Здравствуйте, " . $person['name'] . "!\n\n" . $answer . "\n\n" .
             "Ваш вопрос: " . $person['message'] . "\n\n" .
-            "Ответить можно на это письмо.\n\n—\nСмена контента\nhttps://smenakontenta.ru\n"
+            "Ответить можно на это письмо.\n\n—\nСмена контента\nhttps://smenakontenta.ru\n",
+            '',
+            'support'
         );
         $mailed = $sent;
     }

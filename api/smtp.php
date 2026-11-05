@@ -232,10 +232,36 @@ function smtp_send_mail($cfg, $to, $subject, $text, $html = '') {
 }
 
 /* Отправка через настройки сайта: используется везде в index.php */
-function mail_send($to, $subject, $text, $html = '') {
+/* Домен проекта: на нём работают адреса-алиасы (kod@, support@, redakcia@).
+   Отдельных ящиков не заводится: письма уходят от имени домена. */
+const SMENA_MAIL_DOMAIN = 'smenakontenta.ru';
+
+/* Кому пишем — от того и отправляем: коды от kod@, поддержка от support@,
+   редакция от redakcia@. Если домен ещё не подтверждён у почтового сервиса,
+   mail_send() отправит письмо с основного адреса, чтобы оно не потерялось. */
+function mail_from_kind($kind) {
+    $aliases = array('kod', 'support', 'redakcia', 'hello', 'press');
+    if (!in_array($kind, $aliases, true)) return '';
     $cfg = smtp_config($GLOBALS['DATA_DIR']);
-    if (!smtp_configured($GLOBALS['DATA_DIR'])) {
+    $at = strrpos($cfg['from'], '@');
+    if ($at === false) return '';
+    $domain = substr($cfg['from'], $at + 1);
+    if (strcasecmp($domain, SMENA_MAIL_DOMAIN) !== 0) return '';
+    return $kind . '@' . SMENA_MAIL_DOMAIN;
+}
+
+function mail_send($to, $subject, $text, $html = '', $kind = '') {
+    $dir = $GLOBALS['DATA_DIR'];
+    if (!smtp_configured($dir)) {
         return false;
+    }
+    $cfg = smtp_config($dir);
+    $from = $kind === '' ? '' : mail_from_kind($kind);
+    if ($from !== '' && strcasecmp($from, $cfg['from']) !== 0) {
+        $trial = $cfg;
+        $trial['from'] = $from;
+        $res = smtp_send_mail($trial, $to, $subject, $text, $html);
+        if (!empty($res['ok'])) return true;
     }
     $res = smtp_send_mail($cfg, $to, $subject, $text, $html);
     return !empty($res['ok']);
