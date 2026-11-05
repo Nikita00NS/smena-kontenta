@@ -102,8 +102,7 @@ OPERATORS = [
 
 SITE = "smenakontenta.ru"
 PROJECT = "Смена контента"
-CONTACT = ("форма обратной связи на странице %s/support или адрес электронной почты, "
-           "указанный в разделе «Документы» на сайте" % SITE)
+CONTACT = "форма обратной связи на странице %s/support" % SITE
 
 
 class NumberedCanvas(pdfcanvas.Canvas):

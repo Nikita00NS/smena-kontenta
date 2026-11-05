@@ -2698,6 +2698,58 @@ if ($act === 'mail-setup') {
     ));
 }
 
+/* Смена адреса отправителя: сначала пробная отправка, и только если сервер
+   её принял — запись в настройки. Так рабочая почта не ломается из-за
+   неподтверждённого домена: при ошибке остаётся прежний отправитель. */
+if ($act === 'mail-from') {
+    $in = array_merge(body(), $_GET);
+    if (!is_editor($DATA_DIR, isset($in['pass']) ? (string) $in['pass'] : '')) {
+        fail('Неверный пароль редакции.', 403);
+    }
+    $from = norm_email(isset($in['from']) ? $in['from'] : '');
+    if (!$from) fail('Укажите адрес отправителя.');
+    $to = norm_email(isset($in['test']) ? $in['test'] : '');
+
+    if ($to !== '') {
+        $trial = smtp_config($DATA_DIR);
+        $trial['from'] = $from;
+        if (isset($in['fromName']) && (string) $in['fromName'] !== '') {
+            $trial['fromName'] = text($in['fromName'], 80);
+        }
+        $sent = smtp_send_mail(
+            $trial,
+            $to,
+            'Проверка отправителя — Смена контента',
+            "Это проверка нового адреса отправителя на сайте smenakontenta.ru.\n" .
+            "Если письмо пришло, значит домен подтверждён и письма будут уходить с него.\n",
+            '<div style="font-family:Arial,sans-serif;font-size:16px">' .
+            '<p>Проверка нового адреса отправителя на сайте <b>smenakontenta.ru</b>.</p>' .
+            '<p>Если письмо пришло — домен подтверждён, письма уходят с него.</p></div>'
+        );
+        if (empty($sent['ok'])) {
+            fail('Сервер почты не принял адрес ' . $from . ': ' . (string) $sent['error'], 502);
+        }
+        $saved = smtp_config($DATA_DIR);
+        $saved['from'] = $from;
+        if (isset($in['fromName']) && (string) $in['fromName'] !== '') {
+            $saved['fromName'] = text($in['fromName'], 80);
+        }
+        $saved['updatedAt'] = date('c');
+        $saved['setupDone'] = true;
+        $saved['lastTest'] = array('ok' => true, 'error' => '', 'to' => $to, 'at' => date('c'));
+        if (!write_json(smtp_config_file($DATA_DIR), $saved)) fail('Не удалось сохранить настройки.', 500);
+        respond(array('ok' => true, 'switched' => true, 'from' => $from,
+                      'mail' => smtp_public_config($DATA_DIR)));
+    }
+
+    $cfg = smtp_config($DATA_DIR);
+    $cfg['from'] = $from;
+    $cfg['updatedAt'] = date('c');
+    $cfg['setupDone'] = true;
+    if (!write_json(smtp_config_file($DATA_DIR), $cfg)) fail('Не удалось сохранить настройки.', 500);
+    respond(array('ok' => true, 'switched' => true, 'mail' => smtp_public_config($DATA_DIR)));
+}
+
 if ($act === 'mail-test') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
