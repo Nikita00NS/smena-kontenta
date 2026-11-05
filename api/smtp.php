@@ -38,6 +38,8 @@ function smtp_config($dir) {
         'fromName' => isset($cfg['fromName']) ? (string) $cfg['fromName'] : 'Смена контента',
         'notify' => isset($cfg['notify']) ? (string) $cfg['notify'] : '',
         'updatedAt' => isset($cfg['updatedAt']) ? (string) $cfg['updatedAt'] : '',
+        'lastTest' => isset($cfg['lastTest']) && is_array($cfg['lastTest']) ? $cfg['lastTest'] : null,
+        'setupDone' => !empty($cfg['setupDone']),
     );
 }
 
@@ -59,6 +61,7 @@ function smtp_public_config($dir) {
         'notify' => $cfg['notify'],
         'hasPassword' => $cfg['pass'] !== '',
         'updatedAt' => $cfg['updatedAt'],
+        'lastTest' => $cfg['lastTest'],
     );
 }
 

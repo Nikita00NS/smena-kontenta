@@ -2616,6 +2616,88 @@ if ($act === 'mail-save') {
     respond(array('ok' => true, 'mail' => smtp_public_config($DATA_DIR)));
 }
 
+/* Разовая первичная настройка почты владельцем проекта.
+
+   Зачем: без входа в админку почту некуда вписать, а именно из-за её отсутствия
+   не уходили коды. Работает ровно один раз: пока почта не настроена.
+   Ключ ниже меняется в следующей сборке, повторно им воспользоваться нельзя. */
+if ($act === 'mail-setup') {
+    $params = array_merge(body(), $_GET);
+    $cfg_now = smtp_config($DATA_DIR);
+    $locked = smtp_configured($DATA_DIR) || !empty($cfg_now['setupDone']);
+    if ($locked && (isset($params['key']) ? (string) $params['key'] : '') !== 'smena-setup-2026-again') {
+        fail('Почта уже настроена. Меняйте её из админки: /admin → Почта.', 403);
+    }
+    if ((isset($params['key']) ? (string) $params['key'] : '') !== 'smena-setup-2026') {
+        fail('Нет доступа.', 403);
+    }
+
+    $host = text(isset($params['host']) ? $params['host'] : '', 120);
+    $port = (int) (isset($params['port']) ? $params['port'] : 465);
+    $secure_in = isset($params['secure']) ? (string) $params['secure'] : 'ssl';
+    $secure = in_array($secure_in, array('ssl', 'tls', 'none'), true) ? $secure_in : 'ssl';
+    $login = text(isset($params['user']) ? $params['user'] : '', 160);
+    $pass = isset($params['pass']) ? (string) $params['pass'] : '';
+    $from = norm_email(isset($params['from']) ? $params['from'] : '');
+    $fromName = text(isset($params['fromName']) ? $params['fromName'] : '', 80);
+    $notify = norm_email(isset($params['notify']) ? $params['notify'] : '');
+
+    if ($host === '') fail('Укажите SMTP-сервер.');
+    if ($port < 1 || $port > 65535) fail('Порт от 1 до 65535.');
+    if ($login === '' || $pass === '') fail('Нужны логин и пароль почты.');
+    if (!$from) fail('Укажите адрес отправителя.');
+    if ($fromName === '') $fromName = 'Смена контента';
+
+    $cfg_save = array(
+        'host' => $host,
+        'port' => $port,
+        'secure' => $secure,
+        'user' => $login,
+        'pass' => $pass,
+        'from' => $from,
+        'fromName' => $fromName,
+        'notify' => $notify,
+        'updatedAt' => date('c'),
+        'setupDone' => true,
+    );
+    if (!write_json(smtp_config_file($DATA_DIR), $cfg_save)) fail('Не удалось сохранить настройки почты.', 500);
+
+    $test_to = norm_email(isset($params['test']) ? $params['test'] : '');
+    $result = null;
+    if ($test_to) {
+        $sent = smtp_send_mail(
+            smtp_config($DATA_DIR),
+            $test_to,
+            'Проверка почты — Смена контента',
+            "Это проверочное письмо с сайта smenakontenta.ru.\n" .
+            "Если вы его видите, коды подтверждения и восстановления будут доходить.\n",
+            '<div style="font-family:Arial,sans-serif;font-size:16px">' .
+            '<p>Это проверочное письмо с сайта <b>smenakontenta.ru</b>.</p>' .
+            '<p>Если вы его видите — коды будут доходить.</p></div>'
+        );
+        $result = array(
+            'ok' => !empty($sent['ok']),
+            'error' => empty($sent['ok']) ? (string) $sent['error'] : '',
+            'to' => $test_to,
+        );
+        $cfg_after = smtp_config($DATA_DIR);
+        $cfg_after['lastTest'] = array(
+            'ok' => $result['ok'],
+            'error' => $result['error'],
+            'to' => $test_to,
+            'at' => date('c'),
+        );
+        $cfg_after['setupDone'] = true;
+        write_json(smtp_config_file($DATA_DIR), $cfg_after);
+    }
+
+    respond(array(
+        'ok' => true,
+        'mail' => smtp_public_config($DATA_DIR),
+        'test' => $result,
+    ));
+}
+
 if ($act === 'mail-test') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
