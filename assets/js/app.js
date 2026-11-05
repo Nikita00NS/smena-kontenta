@@ -2579,6 +2579,8 @@
         '<p class="sec-head__text">Через этот SMTP уходят коды подтверждения, коды ' +
         "восстановления и ответы поддержки. Подходит SendPulse, Brevo, Яндекс, Mail.ru. " +
         "Пароль хранится в закрытом файле на сервере и в браузер не возвращается.</p></div></div>" +
+        '<div data-mail-banner class="fill-note fill-note--flat" style="margin-bottom:16px">' +
+        "Проверяем настройки почты…</div>" +
         '<div class="panel" style="padding:22px"><div class="mail-grid">' +
         '<div class="field"><label for="m-host">SMTP-сервер</label>' +
         '<input id="m-host" data-m="host" type="text" placeholder="smtp-pulse.com"></div>' +
@@ -2613,9 +2615,33 @@
       var status = $("[data-mail-status]", section);
       var values = {};
 
+      function banner(mail) {
+        var box = $("[data-mail-banner]", section);
+        if (!box) return;
+        var last = mail && mail.lastTest;
+        if (mail && mail.configured) {
+          box.innerHTML = "<b>Почта подключена.</b> Письма уходят с " + esc(mail.from) +
+            ". Коды подтверждения и восстановления доходят до людей." +
+            (last
+              ? "<br><span style=\"font-size:13px\">Последняя проверка: " +
+                esc(fmtDate(last.at)) + " — " + (last.ok ? "письмо ушло" : "ошибка: " + esc(last.error)) +
+                "</span>"
+              : "");
+          return;
+        }
+        box.innerHTML = "<b>Почта пока не подключена.</b> Пока её нет: коды подтверждения не " +
+          "уходят, восстановление пароля идёт через заявку в редакцию. Регистрация работает и " +
+          "без почты — аккаунт создаётся сразу." +
+          (last
+            ? "<br><span style=\"font-size:13px\">Последняя попытка " + esc(fmtDate(last.at)) +
+              ": " + esc(last.error || "письмо ушло") + "</span>"
+            : "");
+      }
+
       function fill(mail) {
         if (!mail) return;
         values = mail;
+        banner(mail);
         $$("[data-m]", section).forEach(function (el) {
           var key = el.getAttribute("data-m");
           if (key === "pass") return;
@@ -2677,9 +2703,11 @@
           Store.mailTest(to).then(function (res) {
             testBtn.disabled = false;
             status.textContent = "Письмо ушло на " + res.to + ". Проверьте входящие и «Спам».";
+            Store.mailStatus().then(fill, function () {});
           }, function (err) {
             testBtn.disabled = false;
             status.textContent = (err && err.message) || "Письмо не ушло.";
+            Store.mailStatus().then(fill, function () {});
           });
         });
       }
@@ -3003,12 +3031,12 @@
       section.innerHTML =
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Пресс-карты</span>' +
         "<h2>Заявки на карту автора</h2>" +
-        '<p class="sec-head__text">Автор прикладывает свои опубликованные материалы по номерам. ' +
-        "Одобрение выдаёт карту с номером, автор увидит её в кабинете.</p></div></div>" +
+        '<p class="sec-head__text">Автор подаёт заявку из кабинета и сразу выбирает, как получить ' +
+        "карту: лично в Москве или почтой. Выдача присваивает номер, автор видит его у себя.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
         '<div class="field" style="margin:0;flex:1;min-width:220px">' +
-        '<label for="card-pass">Пароль редакции</label>' +
-        '<input id="card-pass" type="password" placeholder="Тот же пароль, что и для материалов" value="' +
+        '<label for="card-pass">Пароль редакции (нужен, только если не вошли директором)</label>' +
+        '<input id="card-pass" type="password" placeholder="Можно оставить пустым" value="' +
         esc(savedPass()) + '"></div>' +
         '<button class="btn btn--sm" type="button" data-card-load>Показать заявки</button></div>' +
         '<p class="form__note" data-card-status></p></div><div data-card-list></div>';
@@ -3038,6 +3066,7 @@
           '<div class="admin-review__meta">Материалов в заявке: ' + (card.posts || []).length +
           " · " + esc(fmtDate(card.createdAt)) + "</div>" +
           '<p class="admin-review__excerpt">' + esc(posts) + "</p>" +
+          deliveryHtml(card) +
           (card.status === "pending"
             ? '<div class="admin-review__actions">' +
               '<input class="admin-review__note" type="text" placeholder="Комментарий автору" data-card-note="' + esc(card.id) + '">' +
@@ -3049,12 +3078,34 @@
         );
       }
 
+      function deliveryHtml(card) {
+        var d = card.delivery;
+        if (!d) {
+          return '<p class="admin-review__meta">Способ получения не указан — заявка старая, ' +
+            "договоритесь с автором вручную.</p>";
+        }
+        var head = d.method === "post" ? "Почтой России" : "Лично в Москве";
+        var lines = [
+          "<b>Как получить:</b> " + esc(head),
+          "<b>Фамилия и имя:</b> " + esc(d.fullName || ""),
+          "<b>Телефон:</b> " + esc(d.phone || ""),
+        ];
+        if (d.method === "post") {
+          lines.push("<b>Индекс:</b> " + esc(d.index || ""));
+          lines.push("<b>Адрес:</b> " + esc(d.address || ""));
+        }
+        if (card.issuedAt) lines.push("<b>Выдана:</b> " + esc(fmtDate(card.issuedAt)));
+        if (card.issuePlace) lines.push("<b>Где:</b> " + esc(card.issuePlace));
+        if (card.dispatch && card.dispatch.tracking) {
+          lines.push("<b>Трек-номер:</b> " + esc(card.dispatch.tracking));
+        }
+        return '<div class="pcard__list" style="margin:10px 0">' + lines.map(function (l) {
+          return '<div class="pcard__line"><span>' + l + "</span><span></span><span></span></div>";
+        }).join("") + "</div>";
+      }
+
       function load() {
         var pass = passEl.value.trim();
-        if (!pass) {
-          statusEl.textContent = "Введите пароль редакции.";
-          return;
-        }
         statusEl.textContent = "Загружаем…";
         Store.apiCardQueue(pass).then(function (res) {
           if (!res || !res.ok) {
@@ -3075,8 +3126,19 @@
               var id = btn.getAttribute("data-card-approve") || btn.getAttribute("data-card-reject");
               var approve = btn.hasAttribute("data-card-approve");
               var noteEl = $('[data-card-note="' + id + '"]', listEl);
+              var place = "";
+              var tracking = "";
+              if (approve) {
+                place = window.prompt(
+                  "Где и когда выдали карту? Например: Москва, редакция, 12 ноября, 18:00 " +
+                  "или «Отправлено почтой, трек 1234»:",
+                  "Москва, лично из рук в руки"
+                );
+                if (place === null) return;
+                tracking = window.prompt("Трек-номер почты (если отправляли письмом). Можно пропустить:", "") || "";
+              }
               btn.disabled = true;
-              Store.apiCardReview(pass, id, approve ? "approve" : "reject", noteEl ? noteEl.value.trim() : "")
+              Store.apiCardReview(pass, id, approve ? "approve" : "reject", noteEl ? noteEl.value.trim() : "", place, tracking)
                 .then(function (r) {
                   btn.disabled = false;
                   if (!r || !r.ok) {
@@ -3091,7 +3153,7 @@
       }
 
       $("[data-card-load]", section).addEventListener("click", load);
-      if (savedPass()) load();
+      load();
     }
 
     /* --- очередь материалов, присланных авторами с их устройств ------------- */
@@ -5524,13 +5586,63 @@
         body.innerHTML =
           head +
           '<div class="panel"><div class="stack">' + rows + "</div>" +
-          '<div class="row" style="margin-top:16px">' +
+          '<div class="pcard__section" style="margin-top:18px">' +
+          '<span class="kicker">Как получить карту</span>' +
+          '<p class="form__note" style="margin:0">Карта не приходит сама: её либо передают лично ' +
+          "в Москве, либо отправляют почтой России. Выберите способ — редакция согласует с вами " +
+          "время и место выдачи.</p>" +
+          '<label class="check-line"><input type="radio" name="card-method" value="personal" checked data-card-method>' +
+          "<span><b>Лично в Москве</b><small style=\"display:block;color:var(--muted)\">" +
+          "Договоримся о встрече, карту передадут из рук в руки. Нужен телефон для связи.</small></span></label>" +
+          '<label class="check-line"><input type="radio" name="card-method" value="post" data-card-method>' +
+          "<span><b>Почтой России</b><small style=\"display:block;color:var(--muted)\">" +
+          "Заказным письмом на ваш адрес. Нужны индекс, город, улица, дом и квартира.</small></span></label>" +
+          '<div class="field"><label for="card-fullname">Фамилия и имя полностью</label>' +
+          '<input id="card-fullname" type="text" data-card-fullname placeholder="Иванова Анна Сергеевна" ' +
+          'autocomplete="name"></div>' +
+          '<div class="field"><label for="card-phone">Телефон</label>' +
+          '<input id="card-phone" type="tel" data-card-phone placeholder="+7 900 000-00-00" autocomplete="tel"></div>' +
+          '<div data-card-post-fields hidden>' +
+          '<div class="field"><label for="card-index">Индекс</label>' +
+          '<input id="card-index" type="text" inputmode="numeric" maxlength="6" data-card-index placeholder="101000"></div>' +
+          '<div class="field"><label for="card-address">Адрес</label>' +
+          '<input id="card-address" type="text" data-card-address ' +
+          'placeholder="Город, улица, дом, квартира" autocomplete="street-address"></div></div>' +
+          '<label class="check-line"><input type="checkbox" data-card-agree>' +
+          "<span>Согласен на обработку персональных данных для печати и отправки карты. " +
+          'Данные нужны только для этого и удаляются после выдачи.</span></label>' +
+          '<div class="row" style="margin-top:6px">' +
           '<button class="btn" type="button" data-card-send>Подать заявку</button>' +
-          '<span class="form__note" data-card-note>Приложите все материалы — редакция проверяет их по номерам.</span>' +
-          "</div></div>";
+          '<span class="form__note" data-card-note>Материалы уже приложены — редакция проверит их по номерам.</span>' +
+          "</div></div></div>";
 
         var send = $("[data-card-send]", section);
         var note = $("[data-card-note]", section);
+        var postFields = $("[data-card-post-fields]", section);
+        var nameEl = $("[data-card-fullname]", section);
+        var phoneEl = $("[data-card-phone]", section);
+        var indexEl = $("[data-card-index]", section);
+        var addressEl = $("[data-card-address]", section);
+        var agreeEl = $("[data-card-agree]", section);
+        var me = Store.currentUser();
+
+        if (me && nameEl && !nameEl.value) nameEl.value = me.name || "";
+
+        function methodNow() {
+          var picked = $$("[data-card-method]", section).filter(function (el) {
+            return el.checked;
+          })[0];
+          return picked ? picked.value : "personal";
+        }
+
+        function syncMethod() {
+          if (postFields) postFields.hidden = methodNow() !== "post";
+        }
+        $$("[data-card-method]", section).forEach(function (el) {
+          el.addEventListener("change", syncMethod);
+        });
+        syncMethod();
+
         send.addEventListener("click", function () {
           var chosen = $$("[data-card-post]", section)
             .filter(function (el) {
@@ -5547,21 +5659,53 @@
             note.textContent = "Нужно не меньше " + need + " опубликованных материалов.";
             return;
           }
-          var me = Store.currentUser();
-          send.disabled = true;
-          note.textContent = "Отправляем…";
-          Store.apiCardRequest({
-            authorName: me ? me.name : "",
-            authorRegion: me ? me.region : "",
-            authorRole: me ? me.role : "",
-            posts: chosen,
-          }).then(function (res) {
-            send.disabled = false;
-            if (!res || !res.ok) {
-              note.textContent = (res && res.error) || "Не удалось отправить заявку.";
+          var method = methodNow();
+          var fullName = (nameEl && nameEl.value || "").trim();
+          var phone = (phoneEl && phoneEl.value || "").trim();
+          if (fullName.length < 5) {
+            note.textContent = "Напишите фамилию и имя полностью — карта печатается по этим данным.";
+            return;
+          }
+          if (phone.replace(/[^0-9]/g, "").length < 10) {
+            note.textContent = "Без телефона не получится согласовать выдачу.";
+            return;
+          }
+          if (!agreeEl || !agreeEl.checked) {
+            note.textContent = "Нужно согласие на обработку данных: без него карту нельзя напечатать.";
+            return;
+          }
+          if (method === "post") {
+            var idx = (indexEl && indexEl.value || "").replace(/[^0-9]/g, "");
+            var addr = (addressEl && addressEl.value || "").trim();
+            if (idx.length !== 6) {
+              note.textContent = "Индекс — шесть цифр.";
               return;
             }
+            if (addr.length < 12) {
+              note.textContent = "Напишите адрес полностью: город, улица, дом, квартира.";
+              return;
+            }
+          }
+          send.disabled = true;
+          note.textContent = "Отправляем…";
+          Store.cardApply({
+            delivery: method,
+            fullName: fullName,
+            phone: phone,
+            index: method === "post" ? (indexEl.value || "") : "",
+            address: method === "post" ? (addressEl.value || "") : "",
+            agree: true,
+          }).then(function () {
+            send.disabled = false;
+            window.alert(
+              method === "post"
+                ? "Заявка отправлена. Карту отправим почтой — редакция напишет вам, когда письмо уйдёт."
+                : "Заявка отправлена. Редакция напишет вам, когда и где передать карту в Москве."
+            );
             render();
+          }, function (err) {
+            send.disabled = false;
+            note.textContent = (err && err.message) || "Не удалось отправить заявку.";
           });
         });
       });

@@ -1331,22 +1331,25 @@ window.Store = (function () {
   }
 
   function apiCardStatus() {
-    return api("card-status", { authorKey: authorKey() }).then(function (res) {
+    return api("card-status", { authorKey: authorKey(), token: readToken() }).then(function (res) {
       if (res && res.ok) return res;
       return { ok: false, requests: [], minPosts: 5, error: (res && res.error) || "" };
     });
   }
 
   function apiCardQueue(password) {
-    return api("card-queue", { password: String(password || "") });
+    return api("card-queue", { password: String(password || ""), token: readToken() });
   }
 
-  function apiCardReview(password, id, decision, note) {
+  function apiCardReview(password, id, decision, note, place, tracking) {
     return api("card-review", {
       password: String(password || ""),
+      token: readToken(),
       id: id,
       decision: decision,
       note: note || "",
+      place: place || "",
+      tracking: tracking || "",
     });
   }
 
@@ -1566,6 +1569,16 @@ window.Store = (function () {
     return api("user-update", Object.assign({ token: token, id: id }, patch || {})).then(function (res) {
       if (res && res.ok) return res.user;
       throw new Error((res && res.error) || "Профиль не сохранился.");
+    });
+  }
+
+  /* заявка на пресс-карту: способ получения, контакты, согласие */
+  function cardApply(input) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("card-apply", Object.assign({ token: token }, input || {})).then(function (res) {
+      if (res && res.ok) return res.request;
+      throw new Error((res && res.error) || "Заявка не отправилась.");
     });
   }
 
@@ -2004,6 +2017,7 @@ window.Store = (function () {
     apiCardReview: apiCardReview,
     userCard: userCard,
     userUpdate: userUpdate,
+    cardApply: cardApply,
     cardGrant: cardGrant,
     userMessage: userMessage,
     messagesMine: messagesMine,

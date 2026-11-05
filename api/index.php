@@ -28,7 +28,31 @@ const MAX_POSTS = 2000;          // сколько материалов хран
 const RATE_LIMIT = 25;           // отправок с одного адреса в час
 const DEFAULT_EDITOR_PASSWORD = 'Redakcia-Smena-2026';
 
-$DATA_DIR = __DIR__ . '/data';
+/* ---------------------------------------------------------------------------
+   Где лежат данные: users.json, mail.json, cards.json и остальное.
+
+   Выкладка сайта по FTP синхронизирует public_html и удаляет на сервере всё,
+   чего нет в репозитории. Данные в репозиторий не попадают — значит, при
+   каждой выкладке они бы стирались: аккаунты, пароль редакции, настройки
+   почты, заявки.
+
+   Поэтому данные живут рядом с public_html, но ВНЕ его: папка smena-data.
+   Подстраховка: если снаружи писать нельзя, остаёмся в api/data.
+   --------------------------------------------------------------------------- */
+$DATA_DIR_INSIDE = __DIR__ . '/data';
+$DATA_DIR_OUTSIDE = dirname(__DIR__, 2) . '/smena-data';
+$DATA_DIR = $DATA_DIR_INSIDE;
+if (is_dir($DATA_DIR_OUTSIDE) ? is_writable($DATA_DIR_OUTSIDE) : is_writable(dirname($DATA_DIR_OUTSIDE))) {
+    $DATA_DIR = $DATA_DIR_OUTSIDE;
+}
+/* первый запуск после переезда: забираем то, что уже лежало внутри */
+if ($DATA_DIR !== $DATA_DIR_INSIDE && is_dir($DATA_DIR_INSIDE)) {
+    if (!is_dir($DATA_DIR)) @mkdir($DATA_DIR, 0755, true);
+    foreach ((array) glob($DATA_DIR_INSIDE . '/*.json') as $old_file) {
+        $new_file = $DATA_DIR . '/' . basename($old_file);
+        if (!file_exists($new_file)) @copy($old_file, $new_file);
+    }
+}
 
 function respond($data, $code = 200) {
     http_response_code($code);
@@ -741,6 +765,61 @@ if ($act === 'selftest_auth') {
     selftest_auth($DATA_DIR);
 }
 
+/* Проверка регистрации: на живой сервер заводится временный аккаунт,
+   проверяется вход по паролю и токену, потом аккаунт удаляется.
+   Ответ показывает, на каком шаге что-то не так. */
+if ($act === 'selftest_reg') {
+    ensure_dir($DATA_DIR);
+    $steps = array();
+    $testEmail = 'proverka+' . bin2hex(random_bytes(3)) . '@smenakontenta.test';
+    $testId = 'u_check_' . bin2hex(random_bytes(3));
+    $testPass = 'check-' . bin2hex(random_bytes(4));
+
+    $users = read_users($DATA_DIR);
+    $users[] = array(
+        'id' => $testId,
+        'name' => 'Проверка регистрации',
+        'email' => $testEmail,
+        'pass' => password_hash($testPass, PASSWORD_DEFAULT),
+        'region' => 'moskva',
+        'role' => 'Автор текстов',
+        'access' => 'Пользователь',
+        'bio' => '',
+        'avatar' => '',
+        'createdAt' => date('c'),
+        'number' => 999,
+        'emailVerified' => false,
+    );
+    $steps['write_user'] = write_json(users_file($DATA_DIR), $users) ? 'ok' : 'не записался';
+
+    $back = read_users($DATA_DIR);
+    $found = null;
+    foreach ($back as $u) {
+        if (isset($u['email']) && $u['email'] === $testEmail) $found = $u;
+    }
+    $steps['read_user'] = $found ? 'ok' : 'не нашёлся после записи';
+    $steps['password'] = ($found && password_verify($testPass, $found['pass'])) ? 'ok' : 'пароль не сверяется';
+
+    $token = new_token($DATA_DIR, $testId);
+    $byToken = user_by_token($DATA_DIR, $token);
+    $steps['token'] = ($byToken && $byToken['id'] === $testId) ? 'ok' : 'токен не работает';
+
+    $clean = array();
+    foreach (read_users($DATA_DIR) as $u) {
+        if (!isset($u['id']) || $u['id'] !== $testId) $clean[] = $u;
+    }
+    $steps['cleanup'] = write_json(users_file($DATA_DIR), $clean) ? 'ok' : 'временный аккаунт не удалился';
+
+    $steps['accounts_after'] = count(read_users($DATA_DIR));
+    $steps['data_mode'] = $DATA_DIR === $DATA_DIR_INSIDE ? 'inside_public' : 'outside_public';
+
+    $ok = true;
+    foreach (array('write_user', 'read_user', 'password', 'token', 'cleanup') as $k) {
+        if (!isset($steps[$k]) || $steps[$k] !== 'ok') $ok = false;
+    }
+    respond(array('ok' => $ok, 'steps' => $steps));
+}
+
 /* ---------------------------------------------------- служебная диагностика
    Отвечает на вопрос «почему не пускает»: сколько аккаунтов на сервере,
    можно ли писать файлы, настроена ли почта. Секретов здесь нет. */
@@ -753,6 +832,8 @@ if ($act === 'diag') {
     respond(array(
         'ok' => true,
         'php' => PHP_VERSION,
+        'data_mode' => $DATA_DIR === $DATA_DIR_INSIDE ? 'inside_public' : 'outside_public',
+        'data_writable' => is_writable($DATA_DIR),
         'accounts' => count($users),
         'first_will_be_director' => count($users) === 0,
         'posts' => is_array($posts) ? count($posts) : 0,
@@ -853,6 +934,16 @@ if ($act === 'submit') {
 }
 
 /* ------------------------------------------------------- пресс-карта автора */
+/* Очередь карт открыта либо по паролю редакции, либо вошедшему директору:
+   в админке человек уже вошёл, второй пароль спрашивать незачем. */
+function require_editor_or_admin($dir, $in) {
+    $pass = isset($in['password']) ? (string) $in['password'] : '';
+    if ($pass !== '' && is_editor($dir, $pass)) return;
+    $user = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
+    if ($user && is_top_admin($user)) return;
+    fail('Нужен вход директора или пароль редакции.', 403);
+}
+
 function card_min_posts() {
     return 5;
 }
@@ -935,15 +1026,117 @@ if ($act === 'card-status') {
                 'createdAt' => $card['createdAt'],
                 'decidedAt' => $card['decidedAt'],
                 'posts' => $card['posts'],
+                'delivery' => isset($card['delivery']) ? $card['delivery'] : null,
+                'issuedAt' => isset($card['issuedAt']) ? $card['issuedAt'] : null,
+                'issuePlace' => isset($card['issuePlace']) ? $card['issuePlace'] : '',
+                'dispatch' => isset($card['dispatch']) ? $card['dispatch'] : null,
             );
         }
     }
     respond(array('ok' => true, 'requests' => $mine, 'minPosts' => card_min_posts()));
 }
 
+/* Заявка на пресс-карту: подаёт сам автор из кабинета.
+   Карта не приходит сама: её либо выдают лично в Москве, либо отправляют
+   почтой. Поэтому в заявке сразу спрашиваем способ получения и контакты. */
+if ($act === 'card-apply') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+
+    $posts = read_json($DATA_DIR . '/posts.json', array());
+    $mine = array();
+    foreach ($posts as $post) {
+        if (!isset($post['authorId']) || $post['authorId'] !== $me['id']) continue;
+        if (!isset($post['status']) || $post['status'] !== 'published') continue;
+        $mine[] = $post;
+    }
+    usort($mine, function ($a, $b) {
+        return strcmp((string) (isset($b['date']) ? $b['date'] : ''), (string) (isset($a['date']) ? $a['date'] : ''));
+    });
+
+    $need = card_min_posts();
+    if (count($mine) < $need) {
+        fail('Для заявки нужно не меньше ' . $need . ' опубликованных материалов. У вас: ' . count($mine) . '.', 400);
+    }
+
+    $cards = read_cards($DATA_DIR);
+    foreach ($cards as $card) {
+        if (!isset($card['userId']) || $card['userId'] !== $me['id']) continue;
+        if ($card['status'] === 'issued') fail('У вас уже есть пресс-карта: ' . $card['number'], 409);
+        if ($card['status'] === 'pending') fail('Заявка уже отправлена и ждёт решения редакции.', 409);
+    }
+
+    $method = isset($in['delivery']) ? (string) $in['delivery'] : '';
+    if ($method !== 'personal' && $method !== 'post') {
+        fail('Выберите, как получить карту: лично в Москве или почтой.');
+    }
+    $fullName = text(isset($in['fullName']) ? $in['fullName'] : '', 120);
+    if (slen($fullName) < 5) fail('Напишите фамилию и имя полностью — карта печатается по этим данным.');
+    $phone = (string) (isset($in['phone']) ? $in['phone'] : '');
+    $phoneDigits = preg_replace('/[^0-9]/', '', $phone);
+    if (strlen($phoneDigits) < 10) fail('Телефон нужен, чтобы договориться о выдаче.');
+    if (empty($in['agree'])) fail('Без согласия на обработку данных мы не можем напечатать и отправить карту.');
+
+    $city = text(isset($in['city']) ? $in['city'] : '', 80);
+    $index = preg_replace('/[^0-9]/', '', (string) (isset($in['index']) ? $in['index'] : ''));
+    $address = text(isset($in['address']) ? $in['address'] : '', 300);
+    if ($method === 'post') {
+        if (strlen($index) !== 6) fail('Индекс — шесть цифр.');
+        if (slen($address) < 12) fail('Напишите адрес полностью: город, улица, дом, квартира.');
+    } else {
+        $city = 'Москва';
+        $index = '';
+        $address = '';
+    }
+
+    $attached = array();
+    foreach (array_slice($mine, 0, 20) as $post) {
+        $attached[] = array(
+            'id' => $post['id'],
+            'number' => isset($post['number']) ? (int) $post['number'] : 0,
+            'title' => $post['title'],
+            'date' => isset($post['date']) ? $post['date'] : '',
+            'region' => isset($post['region']) ? $post['region'] : '',
+        );
+    }
+
+    $now = date('c');
+    $id = new_id('c_');
+    $cards[$id] = array(
+        'id' => $id,
+        'authorKey' => '',
+        'userId' => $me['id'],
+        'authorName' => $me['name'],
+        'authorRegion' => isset($me['region']) ? $me['region'] : '',
+        'authorRole' => isset($me['role']) ? $me['role'] : '',
+        'authorEmail' => $me['email'],
+        'posts' => $attached,
+        'status' => 'pending',
+        'number' => '',
+        'note' => '',
+        'delivery' => array(
+            'method' => $method,
+            'fullName' => $fullName,
+            'phone' => $phoneDigits,
+            'city' => $city,
+            'index' => $index,
+            'address' => $address,
+            'agreedAt' => $now,
+        ),
+        'createdAt' => $now,
+        'decidedAt' => null,
+        'issuedAt' => null,
+        'issuePlace' => '',
+        'dispatch' => array('tracking' => '', 'sentAt' => ''),
+    );
+    if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить заявку.', 500);
+    respond(array('ok' => true, 'request' => $cards[$id]));
+}
+
 if ($act === 'card-queue') {
     $in = body();
-    if (!is_editor($DATA_DIR, isset($in['password']) ? $in['password'] : '')) fail('Неверный пароль редакции.', 403);
+    require_editor_or_admin($DATA_DIR, $in);
     $cards = read_cards($DATA_DIR);
     $out = array();
     foreach ($cards as $card) {
@@ -957,10 +1150,12 @@ if ($act === 'card-queue') {
 
 if ($act === 'card-review') {
     $in = body();
-    if (!is_editor($DATA_DIR, isset($in['password']) ? $in['password'] : '')) fail('Неверный пароль редакции.', 403);
+    require_editor_or_admin($DATA_DIR, $in);
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
     $note = text(isset($in['note']) ? $in['note'] : '', 600);
+    $place = text(isset($in['place']) ? $in['place'] : '', 200);
+    $tracking = text(isset($in['tracking']) ? $in['tracking'] : '', 60);
     if ($decision !== 'approve' && $decision !== 'reject') fail('Неизвестное решение.');
 
     $cards = read_cards($DATA_DIR);
@@ -975,6 +1170,15 @@ if ($act === 'card-review') {
         }
         $cards[$id]['number'] = 'СК-' . $year . '-' . str_pad((string) ($seq + 1), 3, '0', STR_PAD_LEFT);
         $cards[$id]['status'] = 'issued';
+        $cards[$id]['issuedAt'] = $now;
+        $cards[$id]['issuePlace'] = $place;
+        if ($tracking !== '') {
+            if (!isset($cards[$id]['dispatch']) || !is_array($cards[$id]['dispatch'])) {
+                $cards[$id]['dispatch'] = array('tracking' => '', 'sentAt' => '');
+            }
+            $cards[$id]['dispatch']['tracking'] = $tracking;
+            $cards[$id]['dispatch']['sentAt'] = $now;
+        }
     } else {
         $cards[$id]['status'] = 'rejected';
     }
@@ -2044,6 +2248,9 @@ if ($act === 'user-card') {
                 'status' => $c['status'],
                 'number' => isset($c['number']) ? $c['number'] : '',
                 'note' => isset($c['note']) ? $c['note'] : '',
+                'delivery' => isset($c['delivery']) ? $c['delivery'] : null,
+                'issuePlace' => isset($c['issuePlace']) ? $c['issuePlace'] : '',
+                'issuedAt' => isset($c['issuedAt']) ? $c['issuedAt'] : '',
                 'createdAt' => $c['createdAt'],
                 'decidedAt' => isset($c['decidedAt']) ? $c['decidedAt'] : '',
             );
@@ -2432,8 +2639,16 @@ if ($act === 'mail-test') {
         '<p>Это проверочное письмо с сайта <b>smenakontenta.ru</b>.</p>' .
         '<p>Если вы его видите — настройки почты в порядке, коды будут доходить.</p></div>'
     );
+    $cfg_after = smtp_config($DATA_DIR);
+    $cfg_after['lastTest'] = array(
+        'ok' => !empty($res['ok']),
+        'error' => empty($res['ok']) ? (string) $res['error'] : '',
+        'to' => $to,
+        'at' => date('c'),
+    );
+    write_json(smtp_config_file($DATA_DIR), $cfg_after);
     if (empty($res['ok'])) fail((string) $res['error'], 502);
-    respond(array('ok' => true, 'to' => $to));
+    respond(array('ok' => true, 'to' => $to, 'lastTest' => $cfg_after['lastTest']));
 }
 
 /* ------------------------------------------------- подтверждение почты */
