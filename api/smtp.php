@@ -193,6 +193,12 @@ function smtp_send_mail($cfg, $to, $subject, $text, $html = '') {
     $headers = array();
     $headers[] = 'Date: ' . date('r');
     $headers[] = 'From: ' . smtp_encode_header($cfg['fromName']) . ' <' . $from . '>';
+    /* Ящиков на домене нет: без Reply-To ответ на письмо ушёл бы в никуда.
+       Ответы идут на адрес, указанный в настройках почты (поле «Куда приходят
+       обращения»), — это личная почта владельца проекта. */
+    if (!empty($cfg['notify']) && filter_var($cfg['notify'], FILTER_VALIDATE_EMAIL)) {
+        $headers[] = 'Reply-To: <' . $cfg['notify'] . '>';
+    }
     $headers[] = 'To: <' . $to . '>';
     $headers[] = 'Subject: ' . smtp_encode_header($subject);
     $headers[] = 'Message-ID: <' . bin2hex(random_bytes(8)) . '@' . $host . '>';
