@@ -5636,6 +5636,12 @@ html[data-theme="light"] .founder__photo--mono {
   font-size: clamp(17px, 1.6vw, 22px);
   padding-bottom: 8px;
 }
+
+/* на главной логотип партнёра — компактный, чтобы полоса не разъезжалась */
+.partners--strip .partner__logo {
+  width: 64px;
+  height: 64px;
+}
 .partners--strip .partner__body p {
   display: none;
 }

@@ -1730,6 +1730,7 @@
       var TABS = [
         ["overview", "Обзор"],
         ["people", "Люди"],
+        ["hiring", "Приём на работу"],
         ["content", "Материалы"],
         ["editorials", "Редакции"],
         ["cards", "Карты"],
@@ -1760,7 +1761,7 @@
       mountSupportQueue(panel("support"));
       mountMailClient(panel("support"));
       mountMailSettings(panel("support"));
-      mountHiringAdmin(panel("people"));
+      mountHiringAdmin(panel("hiring"));
       mountTasksAdmin(panel("people"));
       mountSite(panel("site"));
       mountAuthorsShow(panel("site"));
