@@ -7206,3 +7206,182 @@ html[data-theme="light"] .founder__photo--mono {
   .mail-boxes { grid-template-columns: 1fr; }
   .mail-box-card { padding: 16px; }
 }
+
+/* ---------------------------------------------------------------------------
+   Почта: три колонки как в обычной почте — ящики и папки, список писем,
+   открытое письмо. Работает и в тёмной теме: все фоны от переменных.
+   --------------------------------------------------------------------------- */
+.mail-app {
+  display: grid;
+  grid-template-columns: 250px minmax(280px, 1fr) minmax(320px, 1.15fr);
+  gap: 16px;
+  align-items: start;
+}
+.mail-side {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 14px;
+  position: sticky;
+  top: 84px;
+}
+.mail-side__write { width: 100%; }
+.mail-side__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin: 16px 0 6px;
+}
+.mail-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.mail-box:hover { background: rgba(127, 127, 127, 0.12); }
+.mail-box.is-on {
+  border-left-color: currentColor;
+  background: rgba(127, 127, 127, 0.16);
+  font-weight: 600;
+}
+.mail-box__addr { font-size: 0.75rem; font-weight: 400; opacity: 0.65; }
+.mail-box__off { font-size: 0.7rem; margin-left: 6px; color: #a11; font-weight: 400; }
+.mail-folder {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.mail-folder:hover { background: rgba(127, 127, 127, 0.12); }
+.mail-folder.is-on {
+  background: rgba(127, 127, 127, 0.22);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 currentColor;
+}
+.mail-side__link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mail-list-wrap {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+}
+.mail-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.mail-bar input { flex: 1; min-width: 0; }
+.mail-state {
+  margin: 0;
+  padding: 4px 12px 0;
+  font-size: 0.76rem;
+  min-height: 1.3em;
+  opacity: 0.7;
+}
+.mail-list { overflow: auto; max-height: 68vh; }
+.mail-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  align-items: flex-start;
+  position: relative;
+}
+.mail-row:hover { background: rgba(127, 127, 127, 0.12); }
+.mail-row.is-open { background: rgba(127, 127, 127, 0.18); }
+.mail-row__ava {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.mail-row__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.mail-row__top { display: flex; justify-content: space-between; gap: 8px; }
+.mail-row__from, .mail-row__subj, .mail-row__prev {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mail-row__from { font-weight: 500; }
+.mail-row__date { font-size: 0.73rem; flex: none; opacity: 0.6; }
+.mail-row__subj { font-size: 0.9rem; }
+.mail-row__prev { font-size: 0.75rem; opacity: 0.6; }
+.mail-row.is-unread .mail-row__from,
+.mail-row.is-unread .mail-row__subj { font-weight: 700; }
+.mail-row__dot {
+  position: absolute;
+  right: 8px;
+  bottom: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.mail-row__star { font-size: 0.8rem; opacity: 0.8; }
+.mail-read {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 20px;
+  min-height: 520px;
+}
+.mail-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  text-align: center;
+  opacity: 0.65;
+}
+.mail-empty b { font-size: 1rem; }
+@media (max-width: 1080px) {
+  .mail-app { grid-template-columns: 220px 1fr; }
+  .mail-read { grid-column: 1 / -1; min-height: 340px; }
+}
+@media (max-width: 760px) {
+  .mail-app { grid-template-columns: 1fr; }
+  .mail-side { position: static; }
+  .mail-read { min-height: 260px; }
+  .mail-list { max-height: none; }
+}

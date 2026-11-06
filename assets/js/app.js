@@ -2816,31 +2816,36 @@
       section.setAttribute("data-mail-client", "");
       section.innerHTML =
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Почта проекта</span>' +
-        "<h2>Ящики и письма</h2>" +
-        '<p class="sec-head__text">Четыре ящика на домене: редакция, общие вопросы, системные письма и ' +
-        "поддержка. Здесь можно читать входящие, отвечать, пересылать и отправлять письма от имени ящика. " +
-        "Пароли ящиков хранятся на сервере и в браузер не возвращаются.</p></div></div>" +
-        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px" data-mailboxes></div>' +
-        '<div class="panel" style="padding:16px;margin-bottom:14px">' +
-        '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">' +
-        '<select data-mail-folder style="max-width:200px">' +
-        '<option value="INBOX">Входящие</option><option value="Sent">Отправленные</option>' +
-        '<option value="Drafts">Черновики</option><option value="Archive">Архив</option>' +
-        '<option value="Junk">Спам</option><option value="Trash">Корзина</option></select>' +
-        '<input type="search" data-mail-q placeholder="Поиск: отправитель, тема, текст" style="flex:1;min-width:180px">' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-mail-refresh>Обновить</button>' +
-        '<button class="btn btn--accent btn--sm" type="button" data-mail-write>Написать</button>' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-mail-drafts>Черновики</button>' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-mail-templates>Шаблоны писем</button>' +
+        "<h2>Почта</h2>" +
+        '<p class="sec-head__text">Слева — ящики и папки, в середине письма, справа открытое письмо. ' +
+        "Читать, отвечать, пересылать и отправлять можно прямо здесь; пароли ящиков хранятся на " +
+        "сервере и в браузер не возвращаются.</p></div></div>" +
+        '<div class="mail-app">' +
+          '<aside class="mail-side">' +
+            '<button class="btn btn--accent btn--sm mail-side__write" type="button" data-mail-write>Написать письмо</button>' +
+            '<div class="mail-side__label">Ящики</div>' +
+            '<div class="mail-side__boxes" data-mailboxes></div>' +
+            '<div class="mail-side__label">Папки</div>' +
+            '<div class="mail-side__folders" data-mail-folders></div>' +
+            '<div class="mail-side__label">Ещё</div>' +
+            '<button class="mail-side__link" type="button" data-mail-drafts>Черновики</button>' +
+            '<button class="mail-side__link" type="button" data-mail-templates>Шаблоны писем</button>' +
+          "</aside>" +
+          '<section class="mail-list-wrap">' +
+            '<div class="mail-bar">' +
+              '<input type="search" data-mail-q placeholder="Поиск по письмам">' +
+              '<button class="btn btn--ghost btn--sm" type="button" data-mail-refresh>Обновить</button>' +
+            "</div>" +
+            '<p class="mail-state" data-mail-state></p>' +
+            '<div class="mail-list" data-mail-list>' +
+              '<p class="form__note" style="padding:18px">Загружаем письма…</p></div>' +
+          "</section>" +
+          '<section class="mail-read" data-mail-read>' +
+            '<div class="mail-empty"><b>Письмо не выбрано</b>' +
+            "<p>Выберите ящик и папку слева, затем письмо в списке — оно откроется здесь.</p></div>" +
+          "</section>" +
         "</div>" +
-        '<p class="form__note" data-mail-state style="margin:10px 0 0"></p></div>' +
         '<div data-mail-compose></div>' +
-        '<div class="mail-split">' +
-        '<div class="panel" style="padding:0;overflow:hidden" data-mail-list>' +
-        '<p class="form__note" style="padding:18px">Загружаем письма…</p></div>' +
-        '<div class="panel" style="padding:18px" data-mail-read>' +
-        '<p class="form__note">Выберите письмо слева — здесь появится текст, вложения и ответ.</p></div>' +
-        "</div>" +
         '<div data-mail-templates-box style="margin-top:14px"></div>';
       host.appendChild(section);
 
@@ -2849,7 +2854,7 @@
       var readEl = $("[data-mail-read]", section);
       var composeEl = $("[data-mail-compose]", section);
       var stateEl = $("[data-mail-state]", section);
-      var folderEl = $("[data-mail-folder]", section);
+      var foldersEl = $("[data-mail-folders]", section);
       var qEl = $("[data-mail-q]", section);
       var templatesEl = $("[data-mail-templates-box]", section);
       var state = { box: "editorial", boxes: [], letters: [], msg: null, folder: "INBOX", search: "", offline: false };
@@ -2867,21 +2872,72 @@
 
       function drawBoxes() {
         boxesEl.innerHTML = state.boxes.map(function (b) {
-          var on = b.key === state.box ? " btn--accent" : " btn--ghost";
-          return '<button class="btn btn--sm' + on + '" type="button" data-box="' + esc(b.key) + '">' +
-            esc(b.label) + (b.ready ? "" : " · не подключён") + "</button>";
-        }).join("") +
-          '<span class="form__note" style="align-self:center;margin-left:auto">' +
-          esc(boxLabel(state.box)) + "</span>";
+          var on = b.key === state.box ? " is-on" : "";
+          return '<button class="mail-box' + on + '" type="button" data-box="' + esc(b.key) + '">' +
+            '<span class="mail-box__label">' + esc(b.label) +
+            (b.ready ? "" : '<span class="mail-box__off">не подключён</span>') + "</span>" +
+            '<span class="mail-box__addr">' + esc(b.address) + "</span></button>";
+        }).join("") || '<p class="form__note">Ящики не загрузились. Проверьте связь и нажмите «Обновить».</p>';
         $$("[data-box]", boxesEl).forEach(function (b) {
           b.addEventListener("click", function () {
             state.box = b.getAttribute("data-box");
             state.msg = null;
-            readEl.innerHTML = '<p class="form__note">Выберите письмо слева.</p>';
+            state.folder = "INBOX";
+            readEl.innerHTML = '<div class="mail-empty"><b>Письмо не выбрано</b>' +
+              "<p>Выберите письмо в списке.</p></div>";
             drawBoxes();
+            loadFolders();
             load();
           });
         });
+      }
+
+      /* Папки берём у самого ящика: у редакции их девять, у нового — пять.
+         Названия сервера переводим на русский, незнакомые показываем как есть. */
+      function folderLabel(name) {
+        var low = String(name || "").toLowerCase();
+        if (low === "inbox") return "Входящие";
+        if (low === "sent" || low === "sent items" || low === "отправленные") return "Отправленные";
+        if (low === "drafts" || low === "черновики") return "Черновики";
+        if (low === "trash" || low === "deleted" || low === "корзина") return "Корзина";
+        if (low === "junk" || low === "spam" || low === "спам") return "Спам";
+        if (low === "archive" || low === "архив") return "Архив";
+        return name;
+      }
+
+      function drawFolders(names) {
+        var order = ["inbox", "sent", "drafts", "archive", "junk", "trash"];
+        names = (names || []).slice().sort(function (a, b) {
+          var ia = order.indexOf(String(a).toLowerCase());
+          var ib = order.indexOf(String(b).toLowerCase());
+          if (ia < 0) ia = 50;
+          if (ib < 0) ib = 50;
+          return ia - ib;
+        });
+        if (!names.length) names = ["INBOX", "Sent", "Drafts", "Archive", "Junk", "Trash"];
+        foldersEl.innerHTML = names.map(function (n) {
+          var on = n === state.folder ? " is-on" : "";
+          return '<button class="mail-folder' + on + '" type="button" data-folder="' + esc(n) + '">' +
+            esc(folderLabel(n)) + "</button>";
+        }).join("");
+        $$("[data-folder]", foldersEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            state.folder = b.getAttribute("data-folder");
+            state.msg = null;
+            readEl.innerHTML = '<div class="mail-empty"><b>Письмо не выбрано</b>' +
+              "<p>Выберите письмо в списке.</p></div>";
+            drawFolders(names);
+            load();
+          });
+        });
+      }
+
+      function loadFolders() {
+        if (!Store.mailFolders) { drawFolders([]); return; }
+        drawFolders([]);
+        Store.mailFolders(state.box).then(function (res) {
+          drawFolders((res && res.folders) || []);
+        }, function () { drawFolders([]); });
       }
 
       function fmtMailDate(value) {
@@ -2899,10 +2955,22 @@
           return;
         }
         listEl.innerHTML = state.letters.map(function (m) {
-          return '<button type="button" class="mail-row' + (m.seen ? "" : " is-unread") + '" data-uid="' + m.uid + '">' +
-            '<span class="mail-row__from">' + esc(m.from || "неизвестный") + "</span>" +
-            '<span class="mail-row__subj">' + esc(m.subject || "(без темы)") + "</span>" +
-            '<span class="mail-row__date">' + esc(fmtMailDate(m.date)) + "</span></button>";
+          var from = String(m.from || "неизвестный");
+          var name = from.replace(/<[^>]*>/g, "").replace(/"/g, "").trim();
+          var addr = (from.match(/[^\s<>"]+@[^\s<>"]+/) || [""])[0];
+          var letter = String(name || addr || "?").replace(/^\s+/, "").charAt(0).toUpperCase();
+          return '<button type="button" class="mail-row' + (m.seen ? "" : " is-unread") +
+            (state.msg && state.msg.uid === m.uid ? " is-open" : "") + '" data-uid="' + m.uid + '">' +
+            '<span class="mail-row__ava">' + esc(letter) + "</span>" +
+            '<span class="mail-row__main">' +
+              '<span class="mail-row__top"><span class="mail-row__from">' + esc(name || addr) + "</span>" +
+              '<span class="mail-row__date">' + esc(fmtMailDate(m.date)) + "</span></span>" +
+              '<span class="mail-row__subj">' + esc(m.subject || "(без темы)") + "</span>" +
+              '<span class="mail-row__prev">' + esc(addr) + "</span>" +
+            "</span>" +
+            (m.flagged ? '<span class="mail-row__star" title="Избранное">★</span>' : "") +
+            (m.seen ? "" : '<span class="mail-row__dot" title="Не прочитано"></span>') +
+            "</button>";
         }).join("");
         $$("[data-uid]", listEl).forEach(function (btn) {
           btn.addEventListener("click", function () { openLetter(Number(btn.getAttribute("data-uid"))); });
@@ -3223,11 +3291,13 @@
         }, function (err) { note(err.message, true); });
       }
 
-      $("[data-mail-refresh]", section).addEventListener("click", load);
+      readEl.innerHTML = '<div class="mail-empty"><b>Письмо не выбрано</b>' +
+        "<p>Выберите ящик и папку слева, затем письмо в списке — оно откроется здесь.</p></div>";
+      drawFolders([]);
+      $("[data-mail-refresh]", section).addEventListener("click", function () { loadFolders(); load(); });
       $("[data-mail-write]", section).addEventListener("click", function () { openCompose({}); });
       $("[data-mail-drafts]", section).addEventListener("click", openDrafts);
       $("[data-mail-templates]", section).addEventListener("click", openTemplates);
-      folderEl.addEventListener("change", function () { state.folder = folderEl.value; load(); });
       var searchTimer = null;
       qEl.addEventListener("input", function () {
         clearTimeout(searchTimer);
@@ -3240,11 +3310,11 @@
         if (firstReady) state.box = firstReady.key;
         drawBoxes();
         if (!firstReady) {
-          note("Ящики ещё не подключены: впишите пароли в блоке «Отправка писем» ниже. " +
-            "Пока пароля нет, письма читать и отправлять нельзя.", true);
+          note("Ящики ещё не подключены. Раздел «Ящики проекта» ниже — там кнопки проверки.", true);
           listEl.innerHTML = '<p class="form__note" style="padding:18px">Нет ни одного подключённого ящика.</p>';
           return;
         }
+        loadFolders();
         load();
       }, function (err) {
         note((err && err.message) || "Почта недоступна.", true);

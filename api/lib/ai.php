@@ -144,6 +144,13 @@ function ai_request_one($cfg, $system, $userText) {
                 : (string) $decoded['error'];
         }
         $label = ai_provider_label($provider);
+        /* 402 — не сбой связи, а пустой баланс. Говорим это прямо, чтобы
+           человек не искал ошибку в сайте. */
+        if ($status === 402) {
+            return array('ok' => false, 'provider' => $provider, 'status' => $status,
+                'error' => 'На счету DeepSeek закончился баланс. Пополните его на platform.deepseek.com '
+                    . '(раздел «Top up»), и помощник заработает снова. Одна генерация письма стоит доли копейки.');
+        }
         return array('ok' => false, 'provider' => $provider, 'status' => $status,
             'error' => $error !== '' ? ($label . ': ' . $error)
             : ($label . ' ответил ошибкой ' . $status . ($short !== '' ? ': ' . substr($short, 0, 200) : '')));
