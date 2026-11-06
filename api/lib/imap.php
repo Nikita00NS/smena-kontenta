@@ -50,12 +50,14 @@ function imapc_step($fp, $tag, $command, &$error) {
         }
         if (strpos($line, $tag . ' ') === 0) break;
     }
-    if (!preg_match('/' . preg_quote($tag, '/') . ' (OK|NO|BAD)/i', $out, $m)) {
+    if (!preg_match('/' . preg_quote($tag, '/') . ' (OK|NO|BAD)([^\r\n]*)/i', $out, $m)) {
         $error = 'Сервер почты не ответил на команду.';
         return null;
     }
     if (strtoupper($m[1]) !== 'OK') {
-        $error = 'Сервер почты ответил: ' . $m[1] . '.';
+        /* Точный ответ сервера: по нему видно, это неверный пароль, отключённый
+           ящик или запрет входа. Общими словами тут не помочь. */
+        $error = trim(strtoupper($m[1]) . ' ' . trim($m[2]));
         return null;
     }
     return $out;
@@ -238,6 +240,42 @@ function imapc_folders($box, &$error) {
 /* Полная проверка ящика по шагам: соединение → приветствие → вход →
    список папок → создание недостающих. Возвращает шаги для админки,
    чтобы было видно, где именно споткнулись, а не «не получилось». */
+/* Одно соединение с сервером: SSL сразу или STARTTLS на 143. */
+function imapc_connect($host, $port, $mode, &$error) {
+    $error = '';
+    $target = ($mode === 'ssl' ? 'ssl' : 'tcp') . '://' . $host . ':' . $port;
+    $ctx = stream_context_create(array('ssl' => array(
+        'verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true, 'peer_name' => $host,
+    )));
+    $errno = 0; $errstr = '';
+    $fp = @stream_socket_client($target, $errno, $errstr, IMAP_TIMEOUT, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) {
+        $error = $errstr !== '' ? $errstr : 'нет соединения';
+        return null;
+    }
+    stream_set_timeout($fp, IMAP_TIMEOUT);
+    $greeting = fgets($fp, 4096);
+    if ($greeting === false || (stripos($greeting, 'OK') === false && stripos($greeting, 'PREAUTH') === false)) {
+        @fclose($fp);
+        $error = 'сервер не поздоровался';
+        return null;
+    }
+    if ($mode === 'starttls') {
+        $probe = '';
+        if (imapc_step($fp, 'a0', 'STARTTLS', $probe) === null) {
+            @fclose($fp);
+            $error = $probe;
+            return null;
+        }
+        if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+            @fclose($fp);
+            $error = 'шифрование не включилось';
+            return null;
+        }
+    }
+    return $fp;
+}
+
 function imapc_diagnose($box, $create = true) {
     $steps = array();
     $folders = array();
@@ -247,8 +285,12 @@ function imapc_diagnose($box, $create = true) {
     $user = isset($box['user']) ? trim((string) $box['user']) : '';
     $pass = isset($box['pass']) ? (string) $box['pass'] : '';
 
-    $done = function ($ok, $msg) use (&$steps, &$folders, &$created) {
-        return array('ok' => $ok, 'error' => $msg, 'folders' => $folders, 'created' => $created, 'steps' => $steps);
+    $usedLogin = $user;
+    $done = function ($ok, $msg) use (&$steps, &$folders, &$created, &$usedLogin) {
+        /* подобранная форма логина нужна вызывающему: сохраняем её, чтобы
+           в следующий раз вход сработал сразу */
+        return array('ok' => $ok, 'error' => $msg, 'folders' => $folders, 'created' => $created,
+            'steps' => $steps, 'login' => $usedLogin);
     };
 
     if ($host === '' || $user === '' || $pass === '') {
@@ -258,56 +300,57 @@ function imapc_diagnose($box, $create = true) {
 
     /* Хостинг принимает шифрование и на 993 (сразу SSL), и на 143 (STARTTLS).
        Если 993 не отвечает, пробуем 143 — так чаще всего и бывает. */
-    $tries = $port === 143 ? array(array($host, 143, 'starttls')) : array(array($host, $port, 'ssl'), array($host, 143, 'starttls'));
+    /* Перебор вариантов входа. Хостинги принимают то полный адрес, то короткий
+       логин, и порт 993 не всегда открыт. Перебираем сами и запоминаем, что
+       подошло, — человеку не нужно угадывать форму логина. */
+    $logins = array($user);
+    $short = strpos($user, '@') !== false ? substr($user, 0, strpos($user, '@')) : '';
+    if ($short !== '' && strcasecmp($short, $user) !== 0) $logins[] = $short;
+
+    $ports = $port === 143
+        ? array(array($host, 143, 'starttls'), array($host, 993, 'ssl'))
+        : array(array($host, $port, 'ssl'), array($host, 143, 'starttls'));
+
     $fp = null;
-    $lastErr = '';
-    foreach ($tries as $try) {
+    $usedLogin = $user;
+    $connErr = array();
+
+    foreach ($ports as $try) {
         $h = $try[0]; $p = $try[1]; $mode = $try[2];
-        $target = ($mode === 'ssl' ? 'ssl' : 'tcp') . '://' . $h . ':' . $p;
-        $ctx = stream_context_create(array('ssl' => array(
-            'verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true, 'peer_name' => $h,
-        )));
-        $errno = 0; $errstr = '';
-        $test = @stream_socket_client($target, $errno, $errstr, IMAP_TIMEOUT, STREAM_CLIENT_CONNECT, $ctx);
-        if (!$test) {
-            $lastErr = 'порт ' . $p . ': ' . ($errstr !== '' ? $errstr : 'нет соединения');
+        $conn = imapc_connect($h, $p, $mode, $connectError);
+        if (!$conn) {
+            $connErr[] = 'порт ' . $p . ': ' . $connectError;
+            $steps[] = array('name' => 'Соединение ' . $p, 'ok' => false, 'details' => $connectError);
             continue;
         }
-        $greeting = fgets($test, 4096);
-        if ($greeting === false || (stripos($greeting, 'OK') === false && stripos($greeting, 'PREAUTH') === false)) {
-            @fclose($test);
-            $lastErr = 'порт ' . $p . ': сервер не поздоровался';
-            continue;
-        }
-        if ($mode === 'starttls') {
-            $probe = '';
-            if (imapc_step($test, 'a0', 'STARTTLS', $probe) === null) {
-                @fclose($test);
-                $lastErr = 'порт ' . $p . ': ' . $probe;
-                continue;
+        $steps[] = array('name' => 'Соединение ' . $p, 'ok' => true,
+            'details' => $h . ':' . $p . ($mode === 'starttls' ? ' (STARTTLS)' : ' (SSL)'));
+
+        foreach ($logins as $loginTry) {
+            $err = '';
+            $res = imapc_step($conn, 'a1', 'LOGIN ' . imapc_quote($loginTry) . ' ' . imapc_quote($pass), $err);
+            if ($res !== null) {
+                $fp = $conn;
+                $usedLogin = $loginTry;
+                break 2;
             }
-            if (!@stream_socket_enable_crypto($test, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
-                @fclose($test);
-                $lastErr = 'порт ' . $p . ': шифрование не включилось';
-                continue;
-            }
+            $steps[] = array('name' => 'Вход «' . $loginTry . '»', 'ok' => false, 'details' => $err);
+            /* сервер счёл попытку неудачной — соединение ещё живо, пробуем
+               другой вид логина на том же соединении */
         }
-        $fp = $test;
-        $steps[] = array('name' => 'Соединение', 'ok' => true, 'details' => $h . ':' . $p . ($mode === 'starttls' ? ' (STARTTLS)' : ' (SSL)'));
-        break;
-    }
-    if (!$fp) {
-        $steps[] = array('name' => 'Соединение', 'ok' => false, 'details' => $lastErr);
-        return $done(false, 'Сервер почты не отвечает: ' . $lastErr . '. Проверьте адрес и порт — обычно mail.smenakontenta.ru и 993.');
+        imapc_close_box($conn);
     }
 
-    $err = '';
-    if (imapc_step($fp, 'a1', 'LOGIN ' . imapc_quote($user) . ' ' . imapc_quote($pass), $err) === null) {
-        imapc_close_box($fp);
-        $steps[] = array('name' => 'Вход', 'ok' => false, 'details' => $err);
-        return $done(false, 'Сервер не пустил по логину и паролю: ' . $err . ' Логин — это полный адрес ящика. Пароль — тот, что задан в панели хостинга.');
+    if (!$fp) {
+        $last = '';
+        foreach ($steps as $st) {
+            if (!$st['ok'] && strpos($st['name'], 'Вход') === 0) { $last = $st['details']; }
+        }
+        $hint = 'Пароль — тот, что задан в панели хостинга; если его меняли, впишите новый. '
+            . 'Ответ сервера: ' . ($last !== '' ? $last : implode('; ', $connErr)) . '.';
+        return $done(false, 'Сервер не пустил по логину и паролю. ' . $hint);
     }
-    $steps[] = array('name' => 'Вход', 'ok' => true, 'details' => $user);
+    $steps[] = array('name' => 'Вход', 'ok' => true, 'details' => $usedLogin);
 
     $raw = imapc_step($fp, 'a2', 'LIST "" "*"', $err);
     $delimiter = '/';

@@ -73,6 +73,33 @@ function ai_tasks() {
 }
 
 /* Один запрос к выбранному бесплатному провайдеру. Возвращает текст или ошибку. */
+/* Ключи бесплатных сервисов узнаются по началу строки. Если человек вставил
+   ключ Groq, а в списке стоял Gemini, запрос уходил не туда и возвращал 403. */
+function ai_provider_from_key($key) {
+    $key = trim((string) $key);
+    if ($key === '') return '';
+    if (strpos($key, 'gsk_') === 0) return 'groq';
+    if (strpos($key, 'sk-or-') === 0) return 'openrouter';
+    if (strpos($key, 'AIza') === 0) return 'gemini';
+    return '';
+}
+
+function ai_provider_label($provider) {
+    if ($provider === 'groq') return 'Groq';
+    if ($provider === 'openrouter') return 'OpenRouter';
+    return 'Google Gemini';
+}
+
+/* Модель принадлежит своему сервису: llama — Groq, «что-то/что-то» —
+   OpenRouter, gemini — Google. Разные модели в чужом сервисе не работают. */
+function ai_model_fits($model, $provider) {
+    $model = trim((string) $model);
+    if ($model === '') return true;
+    if ($provider === 'gemini') return stripos($model, 'gemini') !== false;
+    if ($provider === 'openrouter') return strpos($model, '/') !== false;
+    return stripos($model, 'gemini') === false && strpos($model, '/') === false;
+}
+
 function ai_request($cfg, $system, $userText) {
     $provider = $cfg['provider'];
     $key = $cfg['key'];
@@ -160,8 +187,21 @@ function ai_request($cfg, $system, $userText) {
                 ? (isset($decoded['error']['message']) ? (string) $decoded['error']['message'] : '')
                 : (string) $decoded['error'];
         }
-        return array('ok' => false, 'error' => $error !== '' ? $error
-            : ('Помощник ответил ошибкой ' . $status . ($short !== '' ? ': ' . substr($short, 0, 200) : '')));
+        /* Ключ может быть от другого бесплатного сервиса — тогда пробуем
+           один раз именно его, прежде чем показывать ошибку человеку. */
+        $detected = ai_provider_from_key($key);
+        if (empty($cfg['_retry']) && in_array($status, array(401, 403, 404), true)
+            && $detected !== '' && $detected !== $provider) {
+            $second = $cfg;
+            $second['provider'] = $detected;
+            $second['model'] = '';
+            $second['_retry'] = true;
+            return ai_request($second, $system, $userText);
+        }
+        $label = ai_provider_label($provider);
+        return array('ok' => false, 'provider' => $provider,
+            'error' => $error !== '' ? ($label . ': ' . $error)
+            : ($label . ' ответил ошибкой ' . $status . ($short !== '' ? ': ' . substr($short, 0, 200) : '')));
     }
 
     $decoded = json_decode($answer, true);
@@ -181,7 +221,7 @@ function ai_request($cfg, $system, $userText) {
     if ($text === '') {
         return array('ok' => false, 'error' => 'Помощник вернул пустой ответ. Попробуйте другую модель или повторите.');
     }
-    return array('ok' => true, 'text' => $text, 'model' => $model);
+    return array('ok' => true, 'text' => $text, 'model' => $model, 'provider' => $provider);
 }
 
 function ai_routes($act, $dir) {
@@ -205,12 +245,30 @@ function ai_routes($act, $dir) {
             $cfg['provider'] = $provider;
         }
         if (isset($in['model'])) $cfg['model'] = text((string) $in['model'], 120);
-        if (isset($in['key']) && trim((string) $in['key']) !== '') $cfg['key'] = trim((string) $in['key']);
+        $note = '';
+        if (isset($in['key']) && trim((string) $in['key']) !== '') {
+            $key = trim((string) $in['key']);
+            $cfg['key'] = $key;
+            /* ключ сам рассказывает, от какого он сервиса — верим ключу */
+            $detected = ai_provider_from_key($key);
+            if ($detected !== '' && $detected !== $cfg['provider']) {
+                $cfg['provider'] = $detected;
+                $cfg['model'] = '';
+                $note = 'Ключ от сервиса ' . ai_provider_label($detected)
+                    . ' — переключил на него и взял модель по умолчанию.';
+            }
+        }
         if (!empty($in['clearKey'])) $cfg['key'] = '';
+        /* модель чужого сервиса не заработает: меняем на родную */
+        if ($cfg['model'] !== '' && !ai_model_fits($cfg['model'], $cfg['provider'])) {
+            $note .= ($note !== '' ? ' ' : '') . 'Модель «' . $cfg['model'] . '» не подходит сервису '
+                . ai_provider_label($cfg['provider']) . ' — поставил его модель по умолчанию.';
+            $cfg['model'] = '';
+        }
         $cfg['updatedAt'] = date('c');
         if (!write_json(ai_file($dir), $cfg)) fail('Настройки помощника не сохранились.', 500);
         audit_log($dir, $me['email'], 'ИИ-помощник', 'провайдер ' . $cfg['provider'] . ($cfg['key'] !== '' ? ', ключ задан' : ', ключ пуст'));
-        respond(array('ok' => true, 'ai' => ai_public($dir)));
+        respond(array('ok' => true, 'note' => $note, 'ai' => ai_public($dir)));
     }
 
     if ($act === 'ai-test') {
