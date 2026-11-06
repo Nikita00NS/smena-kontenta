@@ -351,8 +351,8 @@ window.Store = (function () {
     if (name.length < 2) return { ok: false, error: "Напишите имя — хотя бы два символа." };
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))
       return { ok: false, error: "Проверьте адрес почты — кажется, там опечатка." };
-    if (pass.length < 6)
-      return { ok: false, error: "Пароль должен быть не короче 6 символов." };
+    if (pass.length < 8)
+      return { ok: false, error: "Пароль должен быть не короче 8 символов." };
     if (
       data.users.some(function (u) {
         return u.email === email;
@@ -367,7 +367,7 @@ window.Store = (function () {
       pass: hash(pass),
       region: input.region || "",
       role: input.role || ROLES[0],
-      access: data.users.length === 0 ? "Директор" : "Пользователь",
+      access: "Пользователь",
       teamId: null,
       bio: "",
       createdAt: new Date().toISOString(),
@@ -1540,10 +1540,14 @@ window.Store = (function () {
     });
   }
 
-  function claimDirector() {
+  function claimDirector(password) {
     var token = readToken();
     if (!token) return Promise.reject(new Error("Сначала войдите в аккаунт."));
-    return api("claim-director", { token: token }).then(function (res) {
+    if (String(password || "").length < 6) {
+      return Promise.reject(new Error("Нужен пароль редакции — его выдаёт владелец проекта."));
+    }
+    return api("claim-director", { token: token, password: String(password || "") })
+      .then(function (res) {
       if (res && res.ok) {
         cacheUser(res.user);
         mirrorUser(res.user);
@@ -1640,8 +1644,20 @@ window.Store = (function () {
 
   /* ------------------------------------------- участники, роли, основатели */
 
+  function adminLog() {
+    var token = readToken();
+    if (!token) return Promise.resolve({ entries: [] });
+    return api("admin-log", { token: token }).then(function (res) {
+      if (res && res.ok) return { entries: res.entries || [] };
+      return { entries: [], error: (res && res.error) || "" };
+    }, function () {
+      return { entries: [], error: "Сервер недоступен." };
+    });
+  }
+
   function diag() {
-    return api("diag", {}).then(function (res) {
+    var token = readToken();
+    return api("diag", token ? { token: token } : {}).then(function (res) {
       return res && res.ok ? res : null;
     }, function () {
       return null;
@@ -2030,6 +2046,7 @@ window.Store = (function () {
     siteStatus: siteStatus,
     siteSave: siteSave,
     diag: diag,
+    adminLog: adminLog,
     usersList: usersList,
     userAccess: userAccess,
     founders: founders,

@@ -26,7 +26,13 @@ header('Referrer-Policy: same-origin');
 const MAX_BODY_CHARS = 200000;   // потолок на текст одного материала
 const MAX_POSTS = 2000;          // сколько материалов храним
 const RATE_LIMIT = 25;           // отправок с одного адреса в час
-const DEFAULT_EDITOR_PASSWORD = 'Redakcia-Smena-2026';
+
+/* Пароль редакции в коде НЕ хранится. При первом запуске на сервере
+   генерируется случайный, а его значение один раз записывается в
+   smena-data/BOOTSTRAP-PAROL.txt — папка лежит вне public_html, из браузера
+   файл недоступен. Константа ниже нужна только для предупреждения
+   «вы всё ещё на стандартном пароле» и в проверке доступа не участвует. */
+const KNOWN_DEFAULT_EDITOR_PASSWORD = 'Redakcia-Smena-2026';
 
 /* ---------------------------------------------------------------------------
    Где лежат данные: users.json, mail.json, cards.json и остальное.
@@ -138,12 +144,18 @@ function slen($value) {
     return strlen($s);
 }
 
+/* Адрес клиента для лимитов. X-Forwarded-For подставляется кем угодно,
+   поэтому верим ему только когда запрос пришёл от локального прокси
+   хостинга: иначе лимит обходится одной строкой в заголовке. */
 function client_ip() {
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        return trim($parts[0]);
+    $remote = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '0.0.0.0';
+    $from_proxy = (bool) preg_match('/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$)/', $remote);
+    if ($from_proxy && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $parts = explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR']);
+        $candidate = trim($parts[0]);
+        if (filter_var($candidate, FILTER_VALIDATE_IP)) return $candidate;
     }
-    return isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '0.0.0.0';
+    return $remote;
 }
 
 function check_rate($dir) {
@@ -172,9 +184,17 @@ function editor_hash($dir) {
     $file = $dir . '/config.json';
     $cfg = read_json($file, array());
     if (empty($cfg['editor'])) {
-        $cfg['editor'] = password_hash(DEFAULT_EDITOR_PASSWORD, PASSWORD_DEFAULT);
+        /* случайный пароль вместо стандартного: утёкший из репозитория
+           «пароль по умолчанию» больше не открывает админские действия */
+        $plain = 'red-' . bin2hex(random_bytes(7));
+        $cfg['editor'] = password_hash($plain, PASSWORD_DEFAULT);
         $cfg['createdAt'] = date('c');
-        write_json($file, $cfg);
+        if (write_json($file, $cfg)) {
+            @file_put_contents($dir . '/BOOTSTRAP-PAROL.txt',
+                "Пароль редакции, создан автоматически " . date('c') . "\n\n" . $plain .
+                "\n\nСмените его в /admin → вкладка «Сервер» и удалите этот файл.\n");
+            @chmod($dir . '/BOOTSTRAP-PAROL.txt', 0600);
+        }
     }
     return (string) $cfg['editor'];
 }
@@ -183,6 +203,62 @@ function is_editor($dir, $password) {
     $hash = editor_hash($dir);
     if ($password === '' || $password === null) return false;
     return password_verify((string) $password, $hash);
+}
+
+/* Предупреждение в админке: пароль редакции всё ещё тот, что лежал
+   в открытом коде. На доступ это не влияет, только на подсказку. */
+function editor_uses_known_default($dir) {
+    $cfg = read_json($dir . '/config.json', array());
+    if (empty($cfg['editor'])) return false;
+    return password_verify(KNOWN_DEFAULT_EDITOR_PASSWORD, (string) $cfg['editor']);
+}
+
+/* Служебные проверки (selftest, diag) пишут и удаляют данные, поэтому
+   открываются только паролем редакции или входом директора. */
+function require_diagnostics($dir, $params) {
+    $pass = isset($params['pass']) ? (string) $params['pass'] : '';
+    if ($pass !== '' && is_editor($dir, $pass)) return;
+    $token = isset($params['token']) ? (string) $params['token'] : '';
+    if ($token !== '' && is_top_admin(user_by_token($dir, $token))) return;
+    respond(array('ok' => false, 'error' => 'Неизвестное действие.', 'code' => 404), 404);
+}
+
+/* Журнал действий редакции: кто, что и когда. Без него разбирать
+   «кто снял роль» или «кто закрыл обращение» приходится по памяти. */
+function audit_file($dir) { return $dir . '/admin-log.json'; }
+
+function audit_log($dir, $who, $action, $details = '') {
+    $list = read_json(audit_file($dir), array());
+    if (!is_array($list)) $list = array();
+    $list[] = array(
+        'at' => date('c'),
+        'ip' => client_ip(),
+        'who' => text($who, 120),
+        'action' => text($action, 60),
+        'details' => text($details, 300),
+    );
+    if (count($list) > 2000) $list = array_slice($list, -2000);
+    write_json(audit_file($dir), $list);
+}
+
+function public_audit($row) {
+    return array(
+        'at' => isset($row['at']) ? $row['at'] : '',
+        'ip' => isset($row['ip']) ? $row['ip'] : '',
+        'who' => isset($row['who']) ? $row['who'] : '',
+        'action' => isset($row['action']) ? $row['action'] : '',
+        'details' => isset($row['details']) ? $row['details'] : '',
+    );
+}
+
+/* Ссылки на картинки приходят из формы: пускаем только свой медиа-адрес
+   или обычный http(s), чтобы в профиль не попал javascript:-адрес. */
+function safe_media_url($value) {
+    $v = trim((string) $value);
+    if ($v === '') return '';
+    if (preg_match('#^/api/index\.php\?action=media&id=[A-Za-z0-9_.-]+$#', $v)) return $v;
+    if (preg_match('#^https?://[^\s"\'<>]+$#i', $v)) return $v;
+    return '';
 }
 
 function new_id($prefix) {
@@ -357,15 +433,45 @@ function public_user($u) {
     );
 }
 
+const MAX_TOKENS_PER_USER = 12;
+
+function revoke_user_tokens($dir, $userId, $except = '') {
+    $tokens = read_json(tokens_file($dir), array());
+    if (!is_array($tokens)) return;
+    foreach ($tokens as $t => $info) {
+        if (!is_array($info) || (string) $info['id'] !== (string) $userId) continue;
+        if ($except !== '' && $t === $except) continue;
+        unset($tokens[$t]);
+    }
+    write_json(tokens_file($dir), $tokens);
+}
+
 function new_token($dir, $userId) {
     $tokens = read_json(tokens_file($dir), array());
     if (!is_array($tokens)) $tokens = array();
     $now = time();
+    $mine = array();
     foreach ($tokens as $token => $info) {
-        if (!is_array($info) || (int) $info['exp'] < $now) unset($tokens[$token]);
+        if (!is_array($info) || (int) $info['exp'] < $now) { unset($tokens[$token]); continue; }
+        if ((string) $info['id'] === (string) $userId) $mine[$token] = (int) $info['exp'];
+    }
+    /* старые сессии того же человека не копятся бесконечно */
+    if (count($mine) >= MAX_TOKENS_PER_USER) {
+        asort($mine);
+        $drop = count($mine) - MAX_TOKENS_PER_USER + 1;
+        foreach ($mine as $token => $exp) {
+            if ($drop <= 0) break;
+            unset($tokens[$token]);
+            $drop--;
+        }
     }
     $token = bin2hex(random_bytes(24));
-    $tokens[$token] = array('id' => $userId, 'exp' => $now + TOKEN_DAYS * 86400);
+    $tokens[$token] = array(
+        'id' => $userId,
+        'exp' => $now + TOKEN_DAYS * 86400,
+        'at' => $now,
+        'ua' => substr(hash('sha256', isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : ''), 0, 16),
+    );
     write_json(tokens_file($dir), $tokens);
     return $token;
 }
@@ -389,6 +495,29 @@ function norm_email($value) {
     return $email;
 }
 
+/* Тип файла из браузера — это просто строка, её подставляет кто угодно.
+   Смотрим первые байты: картинка должна начинаться как картинка. */
+function file_signature_ok($mime, $bin) {
+    if (strlen($bin) < 12) return false;
+    switch ($mime) {
+        case 'image/jpeg': return substr($bin, 0, 3) === "\xFF\xD8\xFF";
+        case 'image/png':  return substr($bin, 0, 8) === "\x89PNG\r\n\x1A\n";
+        case 'image/gif':  return substr($bin, 0, 6) === 'GIF87a' || substr($bin, 0, 6) === 'GIF89a';
+        case 'image/webp': return substr($bin, 0, 4) === 'RIFF' && substr($bin, 8, 4) === 'WEBP';
+        case 'audio/mpeg': return substr($bin, 0, 3) === 'ID3'
+            || (ord($bin[0]) === 0xFF && (ord($bin[1]) & 0xE0) === 0xE0);
+        case 'audio/wav':
+        case 'audio/x-wav': return substr($bin, 0, 4) === 'RIFF' && substr($bin, 8, 4) === 'WAVE';
+        case 'audio/ogg':  return substr($bin, 0, 4) === 'OggS';
+        case 'audio/mp4':
+        case 'video/mp4':
+        case 'video/quicktime': return substr($bin, 4, 4) === 'ftyp';
+        case 'video/webm': return substr($bin, 0, 4) === "\x1A\x45\xDF\xA3";
+        case 'application/pdf': return substr($bin, 0, 4) === '%PDF';
+    }
+    return false;
+}
+
 function data_url_file($value, $allowed, $maxChars, &$error) {
     $error = '';
     if (!is_string($value) || $value === '') { $error = 'Файл не передан.'; return null; }
@@ -401,6 +530,10 @@ function data_url_file($value, $allowed, $maxChars, &$error) {
     if (!isset($allowed[$mime])) { $error = 'Такой формат не поддерживается.'; return null; }
     $bin = base64_decode($m[2], true);
     if ($bin === false || $bin === '') { $error = 'Файл повреждён.'; return null; }
+    if (!file_signature_ok($mime, $bin)) {
+        $error = 'Содержимое файла не совпадает с форматом. Пересохраните файл и попробуйте снова.';
+        return null;
+    }
     return array('ext' => $allowed[$mime], 'mime' => $mime, 'bin' => $bin);
 }
 
@@ -677,13 +810,20 @@ if (!ensure_dir($DATA_DIR)) {
     ), 500);
 }
 
+/* Первый запрос после установки: сразу готовим пароль редакции, иначе
+   владельцу нечего вводить — файл с паролем появлялся бы только после
+   первой неудачной попытки входа. */
+editor_hash($DATA_DIR);
+
 $act = action();
 
 if ($act === 'selftest') {
+    require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
     selftest($DATA_DIR);
 }
 
 if ($act === 'selftest_full') {
+    require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
     selftest_full($DATA_DIR);
 }
 
@@ -758,10 +898,12 @@ function selftest_recovery($dir) {
 }
 
 if ($act === 'selftest_recovery') {
+    require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
     selftest_recovery($DATA_DIR);
 }
 
 if ($act === 'selftest_auth') {
+    require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
     selftest_auth($DATA_DIR);
 }
 
@@ -769,6 +911,7 @@ if ($act === 'selftest_auth') {
    проверяется вход по паролю и токену, потом аккаунт удаляется.
    Ответ показывает, на каком шаге что-то не так. */
 if ($act === 'selftest_reg') {
+    require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
     ensure_dir($DATA_DIR);
     $steps = array();
     $testEmail = 'proverka+' . bin2hex(random_bytes(3)) . '@smenakontenta.test';
@@ -824,6 +967,7 @@ if ($act === 'selftest_reg') {
    Отвечает на вопрос «почему не пускает»: сколько аккаунтов на сервере,
    можно ли писать файлы, настроена ли почта. Секретов здесь нет. */
 if ($act === 'diag') {
+    require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
     ensure_dir($DATA_DIR);
     $users = read_users($DATA_DIR);
     $posts = read_json($DATA_DIR . '/posts.json', array());
@@ -833,9 +977,9 @@ if ($act === 'diag') {
         'ok' => true,
         'php' => PHP_VERSION,
         'data_mode' => $DATA_DIR === $DATA_DIR_INSIDE ? 'inside_public' : 'outside_public',
-        'data_writable' => is_writable($DATA_DIR),
         'accounts' => count($users),
-        'first_will_be_director' => count($users) === 0,
+        'first_will_be_director' => false,
+        'editor_default_password' => editor_uses_known_default($DATA_DIR),
         'posts' => is_array($posts) ? count($posts) : 0,
         'data_writable' => is_writable($DATA_DIR),
         'uploads_writable' => is_dir($uploads) ? is_writable($uploads) : ensure_dir($uploads),
@@ -1185,6 +1329,8 @@ if ($act === 'card-review') {
     $cards[$id]['note'] = $note;
     $cards[$id]['decidedAt'] = $now;
     if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить решение.', 500);
+    audit_log($DATA_DIR, 'пароль редакции', 'card-review',
+        ($decision === 'approve' ? 'карта выдана ' : 'в заявке отказано ') . $cards[$id]['authorName']);
     respond(array(
         'ok' => true,
         'request' => array(
@@ -1244,6 +1390,8 @@ if ($act === 'review') {
     if ($decision === 'approve') $posts[$id]['date'] = date('c');
 
     if (!write_json($DATA_DIR . '/posts.json', $posts)) fail('Не удалось сохранить решение.', 500);
+    audit_log($DATA_DIR, 'пароль редакции', 'review',
+        ($decision === 'approve' ? 'опубликован' : 'отклонён') . ' материал ' . $id . ' — ' . $posts[$id]['title']);
     respond(array('ok' => true, 'post' => public_post($posts[$id])));
 }
 
@@ -1257,6 +1405,7 @@ if ($act === 'setpass') {
     $cfg['editor'] = password_hash($new, PASSWORD_DEFAULT);
     $cfg['changedAt'] = date('c');
     if (!write_json($DATA_DIR . '/config.json', $cfg)) fail('Не удалось сохранить пароль.', 500);
+    audit_log($DATA_DIR, 'пароль редакции', 'setpass', 'пароль редакции изменён');
     respond(array('ok' => true));
 }
 
@@ -1269,6 +1418,7 @@ if ($act === 'remove') {
     if (!isset($posts[$id])) fail('Материал не найден.', 404);
     unset($posts[$id]);
     write_json($DATA_DIR . '/posts.json', $posts);
+    audit_log($DATA_DIR, 'пароль редакции', 'remove', 'материал удалён: ' . $id);
     respond(array('ok' => true));
 }
 
@@ -1638,13 +1788,18 @@ if ($act === 'change-password') {
     $old = isset($in['old']) ? (string) $in['old'] : '';
     $new = isset($in['new']) ? (string) $in['new'] : '';
     if (!password_verify($old, (string) $user['pass'])) fail('Текущий пароль неверный.', 403);
-    if (slen($new) < 6) fail('Новый пароль короче шести символов.');
+    if (slen($new) < 8) fail('Новый пароль короче восьми символов.');
 
     $users = read_users($DATA_DIR);
     foreach ($users as $i => $u) {
         if ($u['id'] !== $user['id']) continue;
         $users[$i]['pass'] = password_hash($new, PASSWORD_DEFAULT);
         if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить пароль.', 500);
+        /* остальные сессии закрываются: если пароль меняют из-за утечки,
+           старые устройства не должны остаться в аккаунте */
+        revoke_user_tokens($DATA_DIR, $user['id'],
+            isset($in['token']) ? (string) $in['token'] : '');
+        audit_log($DATA_DIR, $user['name'], 'change-password', 'пароль изменён, прочие сессии закрыты');
         respond(array('ok' => true));
     }
     fail('Аккаунт не найден.', 404);
@@ -1760,7 +1915,7 @@ if ($act === 'reg') {
 
     if (slen($name) < 2) fail('Напишите имя — хотя бы два символа.');
     if (!$email) fail('Проверьте адрес почты — кажется, там опечатка.');
-    if (slen($pass) < 6) fail('Пароль должен быть не короче шести символов.');
+    if (slen($pass) < 8) fail('Пароль должен быть не короче восьми символов.');
     if ($craft === '' || !in_array($craft, CRAFT, true)) $craft = 'Автор текстов';
 
     $users = read_users($DATA_DIR);
@@ -1779,7 +1934,11 @@ if ($act === 'reg') {
         'pass' => password_hash($pass, PASSWORD_DEFAULT),
         'region' => $region,
         'role' => $craft,
-        'access' => count($users) === 0 ? 'Директор' : 'Пользователь',
+        /* первый зарегистрировавшийся больше НЕ становится директором
+           автоматически: иначе любой, кто успел завести аккаунт после сброса
+           данных, получал полный доступ. Права выдаёт пароль редакции
+           на служебной странице /admin. */
+        'access' => 'Пользователь',
         'bio' => '',
         'avatar' => '',
         'createdAt' => date('c'),
@@ -1842,7 +2001,7 @@ if ($act === 'recovery-reset') {
     $new = isset($in['pass']) ? (string) $in['pass'] : '';
     if (!$email) fail('Введите почту аккаунта.');
     if (recovery_normalize($code) === '') fail('Введите код восстановления.');
-    if (slen($new) < 6) fail('Новый пароль — не короче шести символов.');
+    if (slen($new) < 8) fail('Новый пароль — не короче восьми символов.');
 
     $users = read_users($DATA_DIR);
     $found = false;
@@ -1931,7 +2090,13 @@ if ($act === 'recovery-request') {
             break;
         }
     }
-    respond(array('ok' => true, 'mailSent' => $mailSent, 'request' => public_recovery_request($req)));
+    /* В ответ анонимному посетителю не отдаём ни имя, ни заметку: иначе
+       по любому адресу можно проверить, есть ли тут аккаунт и как зовут человека. */
+    respond(array('ok' => true, 'mailSent' => $mailSent, 'request' => array(
+        'id' => $req['id'],
+        'status' => $req['status'],
+        'createdAt' => $req['createdAt'],
+    )));
 }
 
 if ($act === 'recovery-queue') {
@@ -2058,6 +2223,8 @@ if ($act === 'site-save') {
         'updatedBy' => $me['name'],
     );
     if (!write_json(site_file($DATA_DIR), $state)) fail('Не удалось сохранить состояние сайта.', 500);
+    audit_log($DATA_DIR, $me['name'], 'site-save',
+        $state['maintenance'] ? 'включены техработы' : 'сайт открыт');
     respond(array('ok' => true, 'site' => $state));
 }
 
@@ -2113,6 +2280,7 @@ if ($act === 'founders-save') {
         );
     }
     if (!write_json(founders_file($DATA_DIR), $clean)) fail('Не удалось сохранить основателей.', 500);
+    audit_log($DATA_DIR, $me['name'], 'founders-save', 'карточек: ' . count($clean));
     $out = array();
     foreach ($clean as $f) $out[] = public_founder($f);
     respond(array('ok' => true, 'founders' => $out));
@@ -2163,7 +2331,15 @@ if ($act === 'claim-director') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Сначала войдите в аккаунт.', 401);
+    /* без пароля редакции роль не выдаётся: иначе первый вошедший
+       на пустом сервере забирал бы панель проекта */
+    if (!is_editor($DATA_DIR, isset($in['password']) ? (string) $in['password'] : '')) {
+        fail('Нужен пароль редакции: он выдаётся владельцу проекта.', 403);
+    }
     $users = read_users($DATA_DIR);
+    if (count($users) > 1 && !isset($in['force'])) {
+        fail('На сервере уже есть аккаунты — роль назначается в панели участников.', 409);
+    }
     foreach ($users as $u) {
         if ((isset($u['access']) ? $u['access'] : '') === 'Директор') {
             fail('Директор уже есть: ' . $u['name'] . '. Роль меняет он.', 409);
@@ -2178,6 +2354,7 @@ if ($act === 'claim-director') {
     }
     if (!$updated) fail('Аккаунт не найден.', 404);
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить роль.', 500);
+    audit_log($DATA_DIR, $updated['name'], 'claim-director', 'роль директора выдана по паролю редакции');
     respond(array('ok' => true, 'user' => public_user($updated)));
 }
 
@@ -2329,7 +2506,7 @@ if ($act === 'user-update') {
         if (isset($in['region'])) $users[$i]['region'] = text($in['region'], 60);
         if (isset($in['role'])) $users[$i]['role'] = text($in['role'], 60);
         if (isset($in['bio'])) $users[$i]['bio'] = text($in['bio'], 600);
-        if (isset($in['avatar'])) $users[$i]['avatar'] = text($in['avatar'], 400);
+        if (isset($in['avatar'])) $users[$i]['avatar'] = safe_media_url($in['avatar']);
         if (isset($in['emailVerified'])) $users[$i]['emailVerified'] = !empty($in['emailVerified']);
         if (isset($in['access'])) {
             $access = text($in['access'], 60);
@@ -2342,6 +2519,7 @@ if ($act === 'user-update') {
     }
     if (!$found) fail('Участник не найден.', 404);
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить профиль.', 500);
+    audit_log($DATA_DIR, $me['name'], 'user-update', 'профиль: ' . $updated['name']);
     respond(array('ok' => true, 'user' => public_user($updated)));
 }
 
@@ -2387,6 +2565,7 @@ if ($act === 'card-grant') {
         'decidedAt' => date('c'),
     );
     if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось выдать карту.', 500);
+    audit_log($DATA_DIR, $me['name'], 'card-grant', 'карта ' . $number . ' — ' . $target['name']);
 
     $editorial = null;
     if (!empty($target['editorialId'])) {
@@ -2487,6 +2666,7 @@ if ($act === 'consent-decide') {
     }
     if (!$found) fail('Согласие не найдено.', 404);
     write_json(consents_file($DATA_DIR), $list);
+    audit_log($DATA_DIR, $me['name'], 'consent-decide', $decision . ': ' . $userId);
     respond(array('ok' => true));
 }
 
@@ -2515,6 +2695,7 @@ if ($act === 'portfolio-decide') {
     }
     if (!$found) fail('Работа не найдена.', 404);
     write_json(portfolio_file($DATA_DIR), $list);
+    audit_log($DATA_DIR, $me['name'], 'portfolio-decide', $decision . ': ' . $id);
     respond(array('ok' => true));
 }
 
@@ -2547,6 +2728,19 @@ if ($act === 'users') {
     respond(array('ok' => true, 'users' => $out, 'roles' => access_list()));
 }
 
+if ($act === 'admin-log') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!is_top_admin($me)) fail('Журнал действий видит только директор и администрация.', 403);
+    $rows = read_json(audit_file($DATA_DIR), array());
+    if (!is_array($rows)) $rows = array();
+    $rows = array_reverse($rows);
+    $out = array();
+    foreach (array_slice($rows, 0, 120) as $row) $out[] = public_audit($row);
+    respond(array('ok' => true, 'entries' => $out));
+}
+
 if ($act === 'user-access') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
@@ -2574,6 +2768,7 @@ if ($act === 'user-access') {
         break;
     }
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить права.', 500);
+    audit_log($DATA_DIR, $me['name'], 'user-access', $target['name'] . ' → ' . $access);
     respond(array('ok' => true, 'id' => $id, 'access' => $access));
 }
 
@@ -2620,6 +2815,7 @@ if ($act === 'mail-save') {
     $cfg['updatedAt'] = date('c');
 
     if (!write_json(smtp_config_file($DATA_DIR), $cfg)) fail('Не удалось сохранить настройки почты.', 500);
+    audit_log($DATA_DIR, $user['name'], 'mail-save', 'SMTP и отправитель обновлены');
     respond(array('ok' => true, 'mail' => smtp_public_config($DATA_DIR)));
 }
 
@@ -2628,15 +2824,13 @@ if ($act === 'mail-save') {
    Зачем: без входа в админку почту некуда вписать, а именно из-за её отсутствия
    не уходили коды. Работает ровно один раз: пока почта не настроена.
    Ключ ниже меняется в следующей сборке, повторно им воспользоваться нельзя. */
+/* Разовая настройка почты. Раньше здесь лежал ключ прямо в коде, и им мог
+   воспользоваться кто угодно: подменить SMTP и уводить коды подтверждения.
+   Теперь нужен пароль редакции — он есть только у владельца проекта. */
 if ($act === 'mail-setup') {
     $params = array_merge(body(), $_GET);
-    $cfg_now = smtp_config($DATA_DIR);
-    $locked = smtp_configured($DATA_DIR) || !empty($cfg_now['setupDone']);
-    if ($locked && (isset($params['key']) ? (string) $params['key'] : '') !== 'smena-setup-2026-again') {
-        fail('Почта уже настроена. Меняйте её из админки: /admin → Почта.', 403);
-    }
-    if ((isset($params['key']) ? (string) $params['key'] : '') !== 'smena-setup-2026') {
-        fail('Нет доступа.', 403);
+    if (!is_editor($DATA_DIR, isset($params['pass']) ? (string) $params['pass'] : '')) {
+        fail('Нужен пароль редакции. Меняйте почту в /admin → «Почта».', 403);
     }
 
     $host = text(isset($params['host']) ? $params['host'] : '', 120);
@@ -2644,7 +2838,7 @@ if ($act === 'mail-setup') {
     $secure_in = isset($params['secure']) ? (string) $params['secure'] : 'ssl';
     $secure = in_array($secure_in, array('ssl', 'tls', 'none'), true) ? $secure_in : 'ssl';
     $login = text(isset($params['user']) ? $params['user'] : '', 160);
-    $pass = isset($params['pass']) ? (string) $params['pass'] : '';
+    $pass = isset($params['pass_smtp']) ? (string) $params['pass_smtp'] : '';
     $from = norm_email(isset($params['from']) ? $params['from'] : '');
     $fromName = text(isset($params['fromName']) ? $params['fromName'] : '', 80);
     $notify = norm_email(isset($params['notify']) ? $params['notify'] : '');
@@ -2668,6 +2862,7 @@ if ($act === 'mail-setup') {
         'setupDone' => true,
     );
     if (!write_json(smtp_config_file($DATA_DIR), $cfg_save)) fail('Не удалось сохранить настройки почты.', 500);
+    audit_log($DATA_DIR, 'пароль редакции', 'mail-setup', 'настройки SMTP обновлены');
 
     $test_to = norm_email(isset($params['test']) ? $params['test'] : '');
     $result = null;
@@ -2677,10 +2872,7 @@ if ($act === 'mail-setup') {
             $test_to,
             'Проверка почты — Смена контента',
             "Это проверочное письмо с сайта smenakontenta.ru.\n" .
-            "Если вы его видите, коды подтверждения и восстановления будут доходить.\n",
-            '<div style="font-family:Arial,sans-serif;font-size:16px">' .
-            '<p>Это проверочное письмо с сайта <b>smenakontenta.ru</b>.</p>' .
-            '<p>Если вы его видите — коды будут доходить.</p></div>'
+            "Если вы его видите, коды подтверждения и восстановления будут доходить.\n"
         );
         $result = array(
             'ok' => !empty($sent['ok']),
@@ -2745,6 +2937,7 @@ if ($act === 'mail-from') {
         $saved['setupDone'] = true;
         $saved['lastTest'] = array('ok' => true, 'error' => '', 'to' => $to, 'at' => date('c'));
         if (!write_json(smtp_config_file($DATA_DIR), $saved)) fail('Не удалось сохранить настройки.', 500);
+        audit_log($DATA_DIR, 'пароль редакции', 'mail-from', 'отправитель: ' . $from);
         respond(array('ok' => true, 'switched' => true, 'from' => $from,
                       'mail' => smtp_public_config($DATA_DIR)));
     }
@@ -2754,6 +2947,7 @@ if ($act === 'mail-from') {
     $cfg['updatedAt'] = date('c');
     $cfg['setupDone'] = true;
     if (!write_json(smtp_config_file($DATA_DIR), $cfg)) fail('Не удалось сохранить настройки.', 500);
+    audit_log($DATA_DIR, 'пароль редакции', 'mail-from', 'отправитель: ' . $from);
     respond(array('ok' => true, 'switched' => true, 'mail' => smtp_public_config($DATA_DIR)));
 }
 
@@ -2974,6 +3168,7 @@ if ($act === 'support-close') {
     }
     if (!$done) fail('Обращение не найдено или уже закрыто.', 404);
     write_json(support_file($DATA_DIR), $tickets);
+    audit_log($DATA_DIR, $user['name'], 'support-close', 'обращение ' . $id . ' закрыто');
 
     $mailed = false;
     if (smtp_configured($DATA_DIR)) {
@@ -3108,7 +3303,15 @@ if ($act === 'media') {
         'mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'ogg' => 'audio/ogg', 'wav' => 'audio/wav',
         'mp4' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime',
     );
-    header('Content-Type: ' . (isset($types[$ext]) ? $types[$ext] : 'application/octet-stream'));
+    /* файлы неизвестного типа не отдаём вовсе: иначе через приёмную можно
+       раздавать что угодно со своего домена */
+    if (!isset($types[$ext])) {
+        http_response_code(404);
+        exit;
+    }
+    header('Content-Type: ' . $types[$ext]);
+    header('Content-Disposition: inline; filename="' . $id . '"');
+    header('X-Frame-Options: SAMEORIGIN');
     header('Content-Length: ' . filesize($path));
     header('Cache-Control: public, max-age=31536000, immutable');
     header('Accept-Ranges: bytes');
