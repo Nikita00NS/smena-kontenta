@@ -306,7 +306,7 @@ function mailbox_routes($act, $dir) {
         if (empty($box['pass'])) fail('Сначала впишите пароль ящика.', 409);
 
         $error = '';
-        $folders = imap_folders(mailbox_imap($box), $error);
+        $folders = imapc_folders(mailbox_imap($box), $error);
         $ok = is_array($folders) && $folders;
         $boxes[$key]['lastTest'] = array('ok' => $ok, 'error' => $ok ? '' : $error, 'at' => date('c'));
         mailboxes_save($dir, $boxes);
@@ -317,7 +317,7 @@ function mailbox_routes($act, $dir) {
     if ($act === 'mail-folders') {
         $box = mailbox_or_fail($dir, isset($in['key']) ? (string) $in['key'] : 'editorial');
         $error = '';
-        $folders = imap_folders(mailbox_imap($box), $error);
+        $folders = imapc_folders(mailbox_imap($box), $error);
         if (!is_array($folders)) fail('Не удалось получить папки ящика: ' . $error, 502);
         respond(array('ok' => true, 'folders' => $folders));
     }
@@ -330,7 +330,7 @@ function mailbox_routes($act, $dir) {
         $offset = max(0, (int) (isset($in['offset']) ? $in['offset'] : 0));
         $search = isset($in['q']) ? trim((string) $in['q']) : '';
         $error = '';
-        $res = imap_list(mailbox_imap($box), $folder, $limit, $offset, $search, $error);
+        $res = imapc_list(mailbox_imap($box), $folder, $limit, $offset, $search, $error);
         if ($res === null) fail('Не удалось прочитать ящик: ' . $error, 502);
         $res['ok'] = true;
         $res['box'] = $key;
@@ -342,7 +342,7 @@ function mailbox_routes($act, $dir) {
     if ($act === 'mail-get') {
         $box = mailbox_or_fail($dir, isset($in['key']) ? (string) $in['key'] : 'editorial');
         $error = '';
-        $msg = imap_message(mailbox_imap($box), (string) (isset($in['folder']) ? $in['folder'] : 'INBOX'), (int) (isset($in['uid']) ? $in['uid'] : 0), $error);
+        $msg = imapc_message(mailbox_imap($box), (string) (isset($in['folder']) ? $in['folder'] : 'INBOX'), (int) (isset($in['uid']) ? $in['uid'] : 0), $error);
         if ($msg === null) fail('Не удалось открыть письмо: ' . $error, 502);
         $msg['ok'] = true;
         $msg['address'] = $box['address'];
@@ -352,7 +352,7 @@ function mailbox_routes($act, $dir) {
     if ($act === 'mail-attachment') {
         $box = mailbox_or_fail($dir, isset($in['key']) ? (string) $in['key'] : 'editorial');
         $error = '';
-        $file = imap_attachment(mailbox_imap($box), (string) (isset($in['folder']) ? $in['folder'] : 'INBOX'), (int) (isset($in['uid']) ? $in['uid'] : 0), (int) (isset($in['index']) ? $in['index'] : -1), $error);
+        $file = imapc_attachment(mailbox_imap($box), (string) (isset($in['folder']) ? $in['folder'] : 'INBOX'), (int) (isset($in['uid']) ? $in['uid'] : 0), (int) (isset($in['index']) ? $in['index'] : -1), $error);
         if ($file === null) fail('Вложение не получено: ' . $error, 502);
         respond(array(
             'ok' => true,
@@ -369,7 +369,7 @@ function mailbox_routes($act, $dir) {
         $folder = (string) (isset($in['folder']) ? $in['folder'] : 'INBOX');
         $uid = (int) (isset($in['uid']) ? $in['uid'] : 0);
         $error = '';
-        $ok = imap_flag(mailbox_imap($box), $folder, $uid, $flag, !empty($in['value']), $error);
+        $ok = imapc_flag(mailbox_imap($box), $folder, $uid, $flag, !empty($in['value']), $error);
         if (!$ok) fail('Не удалось изменить метку: ' . $error, 502);
         respond(array('ok' => true, 'uid' => $uid, 'flag' => $flag, 'value' => !empty($in['value'])));
     }
@@ -377,7 +377,7 @@ function mailbox_routes($act, $dir) {
     if ($act === 'mail-move') {
         $box = mailbox_or_fail($dir, isset($in['key']) ? (string) $in['key'] : 'editorial');
         $error = '';
-        $ok = imap_move(mailbox_imap($box), (string) (isset($in['folder']) ? $in['folder'] : 'INBOX'), (int) (isset($in['uid']) ? $in['uid'] : 0), (string) (isset($in['to']) ? $in['to'] : 'Trash'), $error);
+        $ok = imapc_move(mailbox_imap($box), (string) (isset($in['folder']) ? $in['folder'] : 'INBOX'), (int) (isset($in['uid']) ? $in['uid'] : 0), (string) (isset($in['to']) ? $in['to'] : 'Trash'), $error);
         if (!$ok) fail('Не удалось переместить письмо: ' . $error, 502);
         respond(array('ok' => true));
     }
@@ -503,8 +503,8 @@ function mailbox_routes($act, $dir) {
 
         $savedToSent = false;
         if (!empty($box['pass'])) {
-            $savedToSent = imap_append(mailbox_imap($box), 'Sent', $mime, $e);
-            if (!$savedToSent) $savedToSent = imap_append(mailbox_imap($box), 'Отправленные', $mime, $e);
+            $savedToSent = imapc_append(mailbox_imap($box), 'Sent', $mime, $e);
+            if (!$savedToSent) $savedToSent = imapc_append(mailbox_imap($box), 'Отправленные', $mime, $e);
         }
 
         if ($check !== '') {
