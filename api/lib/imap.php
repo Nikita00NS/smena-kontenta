@@ -18,12 +18,12 @@ if (!defined('SMENA_API')) {
 
 const IMAP_TIMEOUT = 20;
 
-function imap_quote($value) {
+function imapc_quote($value) {
     return '"' . str_replace(array('\\', '"'), array('\\\\', '\\"'), (string) $value) . '"';
 }
 
 /* Один шаг протокола: отправить команду и собрать ответ до строки с тегом. */
-function imap_step($fp, $tag, $command, &$error) {
+function imapc_step($fp, $tag, $command, &$error) {
     if (fwrite($fp, $tag . ' ' . $command . "\r\n") === false) {
         $error = 'Соединение прервалось.';
         return null;
@@ -61,7 +61,7 @@ function imap_step($fp, $tag, $command, &$error) {
     return $out;
 }
 
-function imap_open_box($box, &$error) {
+function imapc_open_box($box, &$error) {
     $error = '';
     $host = isset($box['host']) ? (string) $box['host'] : '';
     $port = isset($box['port']) ? (int) $box['port'] : 993;
@@ -89,23 +89,23 @@ function imap_open_box($box, &$error) {
         return null;
     }
     if ($port === 143) {
-        if (imap_step($fp, 'a0', 'STARTTLS', $error) === null) { @fclose($fp); return null; }
+        if (imapc_step($fp, 'a0', 'STARTTLS', $error) === null) { @fclose($fp); return null; }
         if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             @fclose($fp);
             $error = 'Не удалось включить шифрование на порту 143.';
             return null;
         }
     }
-    if (imap_step($fp, 'a1', 'LOGIN ' . imap_quote($user) . ' ' . imap_quote($pass), $error) === null) {
+    if (imapc_step($fp, 'a1', 'LOGIN ' . imapc_quote($user) . ' ' . imapc_quote($pass), $error) === null) {
         @fclose($fp);
         return null;
     }
     return $fp;
 }
 
-function imap_close_box($fp) {
+function imapc_close_box($fp) {
     if (!$fp) return;
-    @imap_step($fp, 'zz', 'LOGOUT', $e);
+    @imapc_step($fp, 'zz', 'LOGOUT', $e);
     @fclose($fp);
 }
 
@@ -211,11 +211,11 @@ function mail_mime_parts($raw, $depth = 0) {
 
 /* ---------------------------------------------------------------- операции */
 
-function imap_folders($box, &$error) {
-    $fp = imap_open_box($box, $error);
+function imapc_folders($box, &$error) {
+    $fp = imapc_open_box($box, $error);
     if (!$fp) return null;
-    $raw = imap_step($fp, 'a2', 'LIST "" "*"', $error);
-    imap_close_box($fp);
+    $raw = imapc_step($fp, 'a2', 'LIST "" "*"', $error);
+    imapc_close_box($fp);
     if ($raw === null) return null;
     $out = array();
     foreach (explode("\n", $raw) as $line) {
@@ -228,8 +228,8 @@ function imap_folders($box, &$error) {
     return $out;
 }
 
-function imap_select($fp, $folder, &$error) {
-    $raw = imap_step($fp, 'a3', 'SELECT ' . imap_quote($folder), $error);
+function imapc_select($fp, $folder, &$error) {
+    $raw = imapc_step($fp, 'a3', 'SELECT ' . imapc_quote($folder), $error);
     if ($raw === null) return 0;
     $count = 0;
     if (preg_match('/\* (\d+) EXISTS/', $raw, $m)) $count = (int) $m[1];
@@ -237,18 +237,18 @@ function imap_select($fp, $folder, &$error) {
 }
 
 /* Список писем: последние $limit штук, без скачивания тела. */
-function imap_list($box, $folder, $limit, $offset, $search, &$error) {
-    $fp = imap_open_box($box, $error);
+function imapc_list($box, $folder, $limit, $offset, $search, &$error) {
+    $fp = imapc_open_box($box, $error);
     if (!$fp) return null;
-    $total = imap_select($fp, $folder, $error);
+    $total = imapc_select($fp, $folder, $error);
 
     $criteria = 'ALL';
     if ($search !== '') {
         $safe = str_replace(array('"', '\\'), ' ', $search);
         $criteria = 'OR OR OR SUBJECT "' . $safe . '" FROM "' . $safe . '" TO "' . $safe . '" BODY "' . $safe . '"';
     }
-    $raw = imap_step($fp, 'a4', 'UID SEARCH ' . $criteria, $error);
-    if ($raw === null) { imap_close_box($fp); return null; }
+    $raw = imapc_step($fp, 'a4', 'UID SEARCH ' . $criteria, $error);
+    if ($raw === null) { imapc_close_box($fp); return null; }
 
     $uids = array();
     if (preg_match('/\* SEARCH([0-9 ]*)/', $raw, $m)) {
@@ -259,14 +259,14 @@ function imap_list($box, $folder, $limit, $offset, $search, &$error) {
     $uids = array_reverse($uids);
     $slice = array_slice($uids, max(0, (int) $offset), max(1, (int) $limit));
     if (!$slice) {
-        imap_close_box($fp);
+        imapc_close_box($fp);
         return array('total' => $total, 'messages' => array(), 'matched' => count($uids));
     }
 
     $set = implode(',', $slice);
     $fetch = 'UID FETCH ' . $set . ' (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])';
-    $rawFetch = imap_step($fp, 'a5', $fetch, $error);
-    imap_close_box($fp);
+    $rawFetch = imapc_step($fp, 'a5', $fetch, $error);
+    imapc_close_box($fp);
     if ($rawFetch === null) return null;
 
     $messages = array();
@@ -303,15 +303,15 @@ function imap_list($box, $folder, $limit, $offset, $search, &$error) {
 }
 
 /* Полное письмо: заголовки, текст, HTML и вложения. */
-function imap_message($box, $folder, $uid, &$error) {
-    $fp = imap_open_box($box, $error);
+function imapc_message($box, $folder, $uid, &$error) {
+    $fp = imapc_open_box($box, $error);
     if (!$fp) return null;
-    imap_select($fp, $folder, $error);
-    $raw = imap_step($fp, 'a6', 'UID FETCH ' . (int) $uid . ' (UID FLAGS BODY.PEEK[])', $error);
-    if ($raw === null) { imap_close_box($fp); return null; }
+    imapc_select($fp, $folder, $error);
+    $raw = imapc_step($fp, 'a6', 'UID FETCH ' . (int) $uid . ' (UID FLAGS BODY.PEEK[])', $error);
+    if ($raw === null) { imapc_close_box($fp); return null; }
     /* помечаем прочитанным */
-    imap_step($fp, 'a7', 'UID STORE ' . (int) $uid . ' +FLAGS (\\Seen)', $e);
-    imap_close_box($fp);
+    imapc_step($fp, 'a7', 'UID STORE ' . (int) $uid . ' +FLAGS (\\Seen)', $e);
+    imapc_close_box($fp);
 
     $pos = strpos($raw, 'BODY[]');
     if ($pos === false) { $error = 'Письмо не найдено.'; return null; }
@@ -362,12 +362,12 @@ function imap_message($box, $folder, $uid, &$error) {
     );
 }
 
-function imap_attachment($box, $folder, $uid, $index, &$error) {
-    $fp = imap_open_box($box, $error);
+function imapc_attachment($box, $folder, $uid, $index, &$error) {
+    $fp = imapc_open_box($box, $error);
     if (!$fp) return null;
-    imap_select($fp, $folder, $error);
-    $raw = imap_step($fp, 'a8', 'UID FETCH ' . (int) $uid . ' (BODY.PEEK[])', $error);
-    imap_close_box($fp);
+    imapc_select($fp, $folder, $error);
+    $raw = imapc_step($fp, 'a8', 'UID FETCH ' . (int) $uid . ' (BODY.PEEK[])', $error);
+    imapc_close_box($fp);
     if ($raw === null) return null;
     if (!preg_match('/\{(\d+)\}/', $raw, $m)) { $error = 'Письмо повреждено.'; return null; }
     $start = strpos($raw, '{' . $m[1] . '}');
@@ -382,41 +382,41 @@ function imap_attachment($box, $folder, $uid, $index, &$error) {
     );
 }
 
-function imap_flag($box, $folder, $uid, $flag, $set, &$error) {
-    $fp = imap_open_box($box, $error);
+function imapc_flag($box, $folder, $uid, $flag, $set, &$error) {
+    $fp = imapc_open_box($box, $error);
     if (!$fp) return false;
-    imap_select($fp, $folder, $error);
+    imapc_select($fp, $folder, $error);
     $allowed = array('\\Seen', '\\Flagged');
-    if (!in_array($flag, $allowed, true)) { $error = 'Такой флаг не поддерживается.'; imap_close_box($fp); return false; }
-    $raw = imap_step($fp, 'a9', 'UID STORE ' . (int) $uid . ' ' . ($set ? '+' : '-') . 'FLAGS (' . $flag . ')', $error);
-    imap_close_box($fp);
+    if (!in_array($flag, $allowed, true)) { $error = 'Такой флаг не поддерживается.'; imapc_close_box($fp); return false; }
+    $raw = imapc_step($fp, 'a9', 'UID STORE ' . (int) $uid . ' ' . ($set ? '+' : '-') . 'FLAGS (' . $flag . ')', $error);
+    imapc_close_box($fp);
     return $raw !== null;
 }
 
-function imap_move($box, $folder, $uid, $target, &$error) {
-    $fp = imap_open_box($box, $error);
+function imapc_move($box, $folder, $uid, $target, &$error) {
+    $fp = imapc_open_box($box, $error);
     if (!$fp) return false;
-    imap_select($fp, $folder, $error);
-    $ok = imap_step($fp, 'b1', 'UID COPY ' . (int) $uid . ' ' . imap_quote($target), $error) !== null;
+    imapc_select($fp, $folder, $error);
+    $ok = imapc_step($fp, 'b1', 'UID COPY ' . (int) $uid . ' ' . imapc_quote($target), $error) !== null;
     if ($ok) {
-        imap_step($fp, 'b2', 'UID STORE ' . (int) $uid . ' +FLAGS (\\Deleted)', $e);
-        imap_step($fp, 'b3', 'EXPUNGE', $e);
+        imapc_step($fp, 'b2', 'UID STORE ' . (int) $uid . ' +FLAGS (\\Deleted)', $e);
+        imapc_step($fp, 'b3', 'EXPUNGE', $e);
     }
-    imap_close_box($fp);
+    imapc_close_box($fp);
     return $ok;
 }
 
 /* Складываем отправленное письмо в папку «Отправленные» этого ящика. */
-function imap_append($box, $folder, $raw, &$error) {
-    $fp = imap_open_box($box, $error);
+function imapc_append($box, $folder, $raw, &$error) {
+    $fp = imapc_open_box($box, $error);
     if (!$fp) return false;
     $size = strlen($raw);
     $tag = 'c1';
-    fwrite($fp, $tag . ' APPEND ' . imap_quote($folder) . ' (\\Seen) {' . $size . "}\r\n");
+    fwrite($fp, $tag . ' APPEND ' . imapc_quote($folder) . ' (\\Seen) {' . $size . "}\r\n");
     $reply = fgets($fp, 4096);
     if ($reply === false || strpos($reply, '+') !== 0) {
         $error = 'Сервер не принял письмо в папку «Отправленные».';
-        imap_close_box($fp);
+        imapc_close_box($fp);
         return false;
     }
     fwrite($fp, $raw . "\r\n");
@@ -428,7 +428,7 @@ function imap_append($box, $folder, $raw, &$error) {
         if (strpos($line, $tag . ' OK') === 0) { $ok = true; break; }
         if (strpos($line, $tag . ' NO') === 0 || strpos($line, $tag . ' BAD') === 0) break;
     }
-    imap_close_box($fp);
+    imapc_close_box($fp);
     if (!$ok) $error = 'Папка «Отправленные» не приняла копию письма.';
     return $ok;
 }
