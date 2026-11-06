@@ -364,11 +364,50 @@ const results = [];
   check("в журнале есть приём в команду",
     r.ok === true && r.entries.some((e) => /приём в команду/.test(e.action || "")), r && r.entries && r.entries[0]);
 
+  // 19. ЗАДАЧИ: сотрудник видит свои, ставит только руководство
+  r = await call("tasks-mine", { token: token2b });
+  check("свои задачи открываются", r.ok === true && Array.isArray(r.tasks) && r.tasks.length === 0, r);
+  r = await call("tasks-create", { token: token2b, title: "Сделать подборку", assignee: second.id });
+  check("поставить задачу может только руководство", r.ok === false && r.code === 403, r);
+  r = await call("tasks-create", { token: token3, title: "Подготовить подборку про театры", assignee: second.id, due: "2026-12-01", priority: "high" });
+  check("руководство ставит задачу человеку", r.ok === true && r.task.status === "new", r);
+  const taskId = r.ok ? r.task.id : "";
+  r = await call("tasks-create", { token: token3, title: "Коротко" });
+  check("задача без названия не создаётся", r.ok === false, r);
+  r = await call("tasks-mine", { token: token2b });
+  check("исполнитель видит свою задачу", r.ok === true && r.tasks.length === 1 && r.tasks[0].id === taskId, r);
+  r = await call("tasks-update", { token: token2b, id: taskId, status: "in_work" });
+  check("исполнитель меняет статус", r.ok === true && r.task.status === "in_work", r);
+  r = await call("tasks-comment", { token: token2b, id: taskId, text: "Взял в работу, сроки понятны" });
+  check("комментарий к задаче сохраняется", r.ok === true && r.task.comments.length === 1, r);
+  r = await call("tasks-update", { token: token2b, id: taskId, title: "Переименовать" });
+  check("исполнитель не переименовывает задачу", r.ok === true && r.task.title !== "Переименовать", r);
+  r = await call("tasks-list", { token: token3 });
+  check("редакция видит все задачи", r.ok === true && r.tasks.some((t) => t.id === taskId), r);
+
+  // 20. УДАЛЕНИЕ АККАУНТА из кабинета
+  r = await call("account-delete", { token: token2b, pass: "неверный", confirm: "УДАЛИТЬ" });
+  check("удаление без пароля не проходит", r.ok === false && r.code === 403, r);
+  r = await call("account-delete", { token: token2b, pass: "parol1234", confirm: "нет" });
+  check("удаление без слова-подтверждения не проходит", r.ok === false && r.code === 400, r);
+  r = await call("account-delete", { token: token2b, pass: "parol1234", confirm: "УДАЛИТЬ" });
+  check("аккаунт удаляется по паролю и слову", r.ok === true && r.deleted === true, r);
+  r = await call("login", { email: "second@example.ru", pass: "parol1234" });
+  check("после удаления войти нельзя", r.ok === false, r);
+  r = await call("me", { token: token2b });
+  check("после удаления токен не работает", r.ok === false && (r.code === 401 || r.code === 403), r);
+  let rawUsers = [];
+  try { rawUsers = JSON.parse(await readText("/smena-data/users.json")); } catch (e) {}
+  const ghost = rawUsers.find((u) => u.id === second.id);
+  check("в системе осталась обезличенная запись",
+    !!ghost && ghost.email === "" && /Удал/.test(ghost.name) && ghost.status === "deleted", ghost);
+
+
   console.log("\n=== ИТОГ ===");
   let bad = 0;
   results.forEach((x) => {
     if (!x.ok) bad++;
-    console.log((x.ok ? "  ok   " : "  FAIL ") + x.name + (x.ok ? "" : " → " + x.extra));
+    console.log((x.ok ? "  ok   " : "  FAIL ") + x.name + (x.ok ? "" : " → " + String(x.extra || "")));
   });
   console.log(bad === 0 ? "\nвсе проверки пройдены" : "\nпровалено: " + bad);
   process.exit(bad === 0 ? 0 : 1);

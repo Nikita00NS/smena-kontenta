@@ -1794,6 +1794,22 @@ window.Store = (function () {
   function mailTemplateTest(key, to) { return withToken("mail-template-test", { key: key, to: to }); }
   function mailLog() { return withToken("mail-log"); }
 
+  /* ---------- задачи команды ---------- */
+  function tasksMine() { return withToken("tasks-mine"); }
+  function tasksList() { return withToken("tasks-list"); }
+  function tasksCreate(task) { return withToken("tasks-create", task); }
+  function tasksUpdate(task) { return withToken("tasks-update", task); }
+  function tasksComment(id, text) { return withToken("tasks-comment", { id: id, text: text }); }
+
+  /* ---------- удаление своего аккаунта ---------- */
+  function accountDelete(pass, confirm) {
+    return withToken("account-delete", { pass: pass, confirm: confirm }).then(function (res) {
+      saveToken("");
+      cacheUser(null);
+      return res;
+    });
+  }
+
   /* ---------- приём в команду ---------- */
   function hiringMine() { return withToken("hiring-mine"); }
   function hiringApply(payload) { return withToken("hiring-apply", payload); }
@@ -2131,6 +2147,12 @@ window.Store = (function () {
     hiringCheck: hiringCheck,
     hiringDecide: hiringDecide,
     grantAdmin: grantAdmin,
+    tasksMine: tasksMine,
+    tasksList: tasksList,
+    tasksCreate: tasksCreate,
+    tasksUpdate: tasksUpdate,
+    tasksComment: tasksComment,
+    accountDelete: accountDelete,
     mailTest: mailTest,
     confirmSend: confirmSend,
     confirmCheck: confirmCheck,

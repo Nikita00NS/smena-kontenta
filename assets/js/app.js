@@ -506,6 +506,21 @@
   ];
 
   function mountHeader() {
+    /* Языки интерфейса: переводятся меню, кнопки и подписи полей.
+       Тексты материалов остаются на языке автора — машинный перевод
+       выдумывал бы цитаты, а это недопустимо. */
+    function langSwitcherHtml() {
+      var i18n = window.SmenaI18n;
+      if (!i18n) return "";
+      var current = i18n.lang;
+      var label = "Язык";
+      var items = i18n.langs.map(function (l) {
+        return '<option value="' + l.code + '"' + (l.code === current ? " selected" : "") + ">" + esc(l.name) + "</option>";
+      }).join("");
+      return '<label class="lang-switch" title="' + label + '"><span class="visually-hidden">' + label + "</span>" +
+        '<select data-lang-select aria-label="' + label + '">' + items + "</select></label>";
+    }
+
     var host = $("[data-header]");
     if (!host) return;
     var active = document.body.getAttribute("data-page") || "";
@@ -540,6 +555,7 @@
       '<div class="topbar__right">' +
       '<a href="/write">Опубликовать материал</a>' +
       '<a href="/docs">Документы</a>' +
+      langSwitcherHtml() +
       "</div></div></div>" +
       '<div class="wrap"><div class="masthead">' +
       '<a class="logo" href="/" aria-label="Смена контента — на главную">' +
@@ -560,6 +576,15 @@
       '<button class="icon-btn burger" type="button" data-menu-open aria-label="Открыть меню">' +
       ICONS.menu + "</button>" +
       "</div></div></div>";
+
+    var langSelect = $("[data-lang-select]", host);
+    if (langSelect) {
+      langSelect.addEventListener("change", function () {
+        if (window.SmenaI18n) window.SmenaI18n.setLang(langSelect.value);
+        window.location.reload();
+      });
+    }
+    if (window.SmenaI18n) window.SmenaI18n.refresh();
 
     var menu = document.createElement("div");
     menu.className = "mobile-menu";
@@ -1690,6 +1715,7 @@
       mountMailClient(panel("mail"));
       mountMailSettings(panel("mail"));
       mountHiringAdmin(panel("people"));
+      mountTasksAdmin(panel("people"));
       mountGrantAccess(panel("server"));
       mountSite(panel("site"));
       mountFoundersEditor(panel("site"));
@@ -2607,6 +2633,191 @@
     }
 
     /* Почта: настройки SMTP и проверка письмом. Пароль наружу не отдаём. */
+    /* --- Задачи команды: у сотрудника — свои, у редакции — все --------- */
+    function taskBadge(t) {
+      var cls = t.priority === "urgent" ? " task-badge--urgent" : t.priority === "high" ? " task-badge--high" : "";
+      return '<span class="task-badge' + cls + '">' + esc(t.priorityLabel || "Обычная") + "</span>";
+    }
+
+    function taskCard(t, statuses) {
+      var who = t.assignee ? esc(t.assignee.name) : esc(t.groupLabel || "—");
+      var due = t.due ? "срок " + esc(t.due) : "без срока";
+      var options = Object.keys(statuses || {}).map(function (k) {
+        return '<option value="' + esc(k) + '"' + (k === t.status ? " selected" : "") + ">" + esc(statuses[k]) + "</option>";
+      }).join("");
+      return '<div class="task-card' + (t.status === "done" ? " is-done" : "") + '" data-task="' + esc(t.id) + '">' +
+        '<div class="task-card__head"><b>' + esc(t.title) + "</b>" + taskBadge(t) + "</div>" +
+        '<div class="task-card__meta"><span>' + who + "</span><span>" + due + "</span>" +
+        "<span>" + esc(t.statusLabel || "") + "</span></div>" +
+        (t.description ? '<div class="task-card__text">' + esc(t.description) + "</div>" : "") +
+        (t.comments && t.comments.length
+          ? '<div class="task-comments">' + t.comments.map(function (c) {
+              return "<div><b>" + esc(c.by) + ":</b> " + esc(c.text) + "</div>";
+            }).join("") + "</div>"
+          : "") +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:4px">' +
+        '<select data-task-status style="max-width:170px">' + options + "</select>" +
+        '<input type="text" data-task-comment placeholder="комментарий" style="max-width:220px">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-task-send>Добавить</button>' +
+        "</div></div>";
+    }
+
+    function bindTaskCards(host, statuses, reload) {
+      $$("[data-task]", host).forEach(function (card) {
+        var id = card.getAttribute("data-task");
+        var select = $("[data-task-status]", card);
+        if (select) {
+          select.addEventListener("change", function () {
+            select.disabled = true;
+            Store.tasksUpdate({ id: id, status: select.value }).then(reload, function (err) {
+              select.disabled = false;
+              alert(err.message);
+            });
+          });
+        }
+        var btn = $("[data-task-send]", card);
+        if (btn) btn.addEventListener("click", function () {
+          var text = ($("[data-task-comment]", card) || {}).value || "";
+          if (text.trim().length < 2) return;
+          btn.disabled = true;
+          Store.tasksComment(id, text).then(reload, function (err) { btn.disabled = false; alert(err.message); });
+        });
+      });
+    }
+
+    function mountTasksCabinet(user) {
+      var host = $("[data-tasks-cabinet]");
+      if (!host || !Store.tasksMine || !user) return;
+      function draw() {
+        Store.tasksMine().then(function (res) {
+          if (!res.tasks.length) {
+            host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Работа</span>' +
+              '<h3 style="margin:6px 0 8px">Задачи</h3><p class="form__note">Задач пока нет. ' +
+              "Когда редакция поставит задачу, она появится здесь.</p></div>";
+            return;
+          }
+          host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Работа</span>' +
+            '<h3 style="margin:6px 0 10px">Задачи</h3>' +
+            res.tasks.map(function (t) { return taskCard(t, res.statuses); }).join("") +
+            "</div>";
+          bindTaskCards(host, res.statuses, draw);
+        }, function () {});
+      }
+      draw();
+    }
+
+    function mountTasksAdmin(host) {
+      if (!Store.tasksList) return;
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:8px");
+      section.setAttribute("data-tasks-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Работа</span>' +
+        "<h2>Задачи команды</h2>" +
+        '<p class="sec-head__text">Задачи для сотрудников, редакции и основателей: кому, к какому ' +
+        "сроку и на каком этапе.</p></div></div>" +
+        '<div class="panel" style="padding:20px">' +
+        '<div class="mail-grid">' +
+        '<div class="field"><label>Задача</label><input type="text" data-t-title placeholder="Что нужно сделать"></div>' +
+        '<div class="field"><label>Кому</label><select data-t-assignee><option value="">— выберите —</option></select></div>' +
+        '<div class="field"><label>Группа</label><select data-t-group><option value="">— или группа —</option>' +
+        '<option value="founders">Основатели</option><option value="editorial">Редакция</option>' +
+        '<option value="staff">Сотрудники</option></select></div>' +
+        '<div class="field"><label>Срок</label><input type="date" data-t-due></div>' +
+        '<div class="field"><label>Приоритет</label><select data-t-priority><option value="low">Обычная</option>' +
+        '<option value="high">Важная</option><option value="urgent">Срочная</option></select></div>' +
+        "</div>" +
+        '<div class="field" style="margin-top:10px"><label>Описание</label>' +
+        '<textarea data-t-desc rows="3" placeholder="Подробности, ссылки, критерии готовности"></textarea></div>' +
+        '<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn--accent btn--sm" type="button" data-t-create>Поставить задачу</button>' +
+        '<span class="form__note" data-t-note style="align-self:center"></span></div>' +
+        '<div data-t-list style="margin-top:16px"></div></div>';
+      host.appendChild(section);
+
+      var noteEl = $("[data-t-note]", section);
+      var listEl = $("[data-t-list]", section);
+      var assigneeEl = $("[data-t-assignee]", section);
+
+      function loadPeople() {
+        if (!Store.usersList) return;
+        Store.usersList().then(function (res) {
+          var users = (res && res.users) || [];
+          assigneeEl.innerHTML = '<option value="">— выберите —</option>' + users.map(function (u) {
+            return '<option value="' + esc(u.id) + '">' + esc(u.name) + " · " + esc(u.access || "") + "</option>";
+          }).join("");
+        }, function () {});
+      }
+
+      function refresh() {
+        Store.tasksList().then(function (res) {
+          listEl.innerHTML = res.tasks.length
+            ? res.tasks.map(function (t) { return taskCard(t, res.statuses); }).join("")
+            : '<p class="form__note">Задач нет.</p>';
+          bindTaskCards(listEl, res.statuses, refresh);
+        }, function (err) {
+          listEl.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>";
+        });
+      }
+
+      $("[data-t-create]", section).addEventListener("click", function () {
+        var group = $("[data-t-group]", section).value;
+        var assignee = assigneeEl.value;
+        if (!assignee) group = group || "staff";
+        noteEl.textContent = "Сохраняем…";
+        Store.tasksCreate({
+          title: $("[data-t-title]", section).value,
+          description: $("[data-t-desc]", section).value,
+          assignee: assignee,
+          group: assignee ? "" : group,
+          due: $("[data-t-due]", section).value,
+          priority: $("[data-t-priority]", section).value,
+        }).then(function () {
+          noteEl.textContent = "Задача поставлена.";
+          $("[data-t-title]", section).value = "";
+          $("[data-t-desc]", section).value = "";
+          refresh();
+        }, function (err) { noteEl.textContent = err.message; });
+      });
+
+      loadPeople();
+      refresh();
+    }
+
+    /* --- Удаление аккаунта из кабинета ---------------------------------- */
+    function mountDangerZone(user) {
+      var host = $("[data-danger-zone]");
+      if (!host || !Store.accountDelete || !user) return;
+      host.innerHTML =
+        '<div class="danger-zone"><h3>Удаление аккаунта</h3>' +
+        "<p>Аккаунт и личные данные удаляются навсегда: имя, почта, пароль и черновики. " +
+        "Опубликованные материалы остаются в проекте, но без вашего имени. " +
+        "Восстановить аккаунт после удаления нельзя.</p>" +
+        '<div class="row"><input type="password" data-del-pass placeholder="Пароль" autocomplete="current-password" style="max-width:220px">' +
+        '<input type="text" data-del-word placeholder="Напишите УДАЛИТЬ" style="max-width:200px">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-del-do>Удалить аккаунт</button></div>' +
+        '<p class="form__note" data-del-note></p></div>';
+
+      var noteEl = $("[data-del-note]", host);
+      var btn = $("[data-del-do]", host);
+      btn.addEventListener("click", function () {
+        var pass = ($("[data-del-pass]", host) || {}).value || "";
+        var word = ($("[data-del-word]", host) || {}).value || "";
+        if (!pass) { noteEl.textContent = "Введите пароль."; return; }
+        if (word.trim().toUpperCase() !== "УДАЛИТЬ") { noteEl.textContent = "Напишите слово УДАЛИТЬ."; return; }
+        if (!window.confirm("Удалить аккаунт навсегда? Восстановить его будет нельзя.")) return;
+        btn.disabled = true;
+        noteEl.textContent = "Удаляем…";
+        Store.accountDelete(pass, word.trim()).then(function () {
+          noteEl.textContent = "Аккаунт удалён. Возвращаем на главную.";
+          setTimeout(function () { window.location.href = "/"; }, 1200);
+        }, function (err) {
+          btn.disabled = false;
+          noteEl.textContent = (err && err.message) || "Не получилось удалить аккаунт.";
+        });
+      });
+    }
+
     /* --- Почта: ящики домена, чтение, отправка, шаблоны --------------------- */
     function mountMailClient(host) {
       if (!Store.mailBoxes) return;
@@ -2742,7 +2953,10 @@
             '<p class="form__note" style="margin:0 0 12px">От: ' + esc(msg.from) + " · Кому: " + esc(msg.to) +
             " · " + esc(fmtMailDate(msg.date)) + "</p>" +
             '<div class="mail-body">' +
-            (msg.html ? msg.html : "<p>" + esc(msg.text || "(пустое письмо)").replace(/\n/g, "</p><p>") + "</p>") +
+            (msg.html
+              ? '<iframe class="mail-frame" sandbox="" referrerpolicy="no-referrer" title="Письмо" ' +
+                'srcdoc="' + String(msg.html).replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '"></iframe>'
+              : "<p>" + esc(msg.text || "(пустое письмо)").replace(/\n/g, "</p><p>") + "</p>") +
             "</div>" + attachList(msg) +
             '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:16px">' +
             '<button class="btn btn--accent btn--sm" type="button" data-mail-reply>Ответить</button>' +
@@ -2928,7 +3142,7 @@
               Store.mailTemplatePreview(b.getAttribute("data-tpl-preview")).then(function (res) {
                 $("[data-tpl-preview-box]", templatesEl).innerHTML =
                   '<p class="form__note">Тема: ' + esc(res.subject) + "</p>" +
-                  '<iframe title="Предпросмотр письма" style="width:100%;height:560px;border:1px solid #ddd;border-radius:10px;background:#fff" ' +
+                  '<iframe sandbox="" title="Предпросмотр письма" style="width:100%;height:560px;border:1px solid #ddd;border-radius:10px;background:#fff" ' +
                   "srcdoc=\"" + String(res.html).replace(/"/g, "&quot;") + "\"></iframe>";
               }, function (err) { note(err.message, true); });
             });
@@ -5970,6 +6184,8 @@
         '<div data-inbox style="margin-top:18px"></div>' +
         '<div data-email-card style="margin-top:18px"></div>' +
         '<div data-hiring-cabinet style="margin-top:18px"></div>' +
+        '<div data-tasks-cabinet style="margin-top:18px"></div>' +
+        '<div data-danger-zone style="margin-top:18px"></div>' +
         '<div data-recovery-card style="margin-top:18px"></div>' +
         '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
         "Отправленный материал уходит в общую приёмную редакции: он доходит до неё с любого " +
@@ -5984,6 +6200,8 @@
       mountInbox();
       mountEmailCard(user);
       mountHiringCabinet(user);
+      mountTasksCabinet(user);
+      mountDangerZone(user);
       mountRecoveryCard();
       syncSwatches(readAccent());
       Store.refreshPortfolio();
