@@ -7161,3 +7161,48 @@ html[data-theme="light"] .founder__photo--mono {
 .danger-zone h3 { margin: 0 0 6px; }
 .danger-zone p { font-size: 0.88rem; color: var(--ink-soft, #555); margin: 0 0 10px; }
 .danger-zone .row { gap: 8px; flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------------------
+   Почта: карточки четырёх ящиков. На экране только состояние и действия —
+   пароли и адреса серверов живут на сервере, человеку их видеть незачем.
+   --------------------------------------------------------------------------- */
+.mail-boxes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.mail-box-card {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.mail-box-card--off { border-style: dashed; }
+.mail-box-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.mail-box-card__top b { font-size: 1.02rem; }
+.mail-box-card .diag { margin-top: 12px; }
+.mail-box-card .diag__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.mail-box-card .diag__row:last-child { border-bottom: 0; }
+.mail-box-card .diag__row b { text-align: right; font-weight: 600; }
+.mail-box-card .diag__row b.is-bad { color: #a11; }
+.mail-box-card .form__note { margin: 0; }
+.mail-box-card [data-note] { min-height: 1.2em; }
+@media (max-width: 760px) {
+  .mail-boxes { grid-template-columns: 1fr; }
+  .mail-box-card { padding: 16px; }
+}

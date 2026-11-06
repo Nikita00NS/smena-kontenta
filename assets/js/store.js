@@ -1842,7 +1842,6 @@ window.Store = (function () {
   function aiStatus() { return withToken("ai-status"); }
   function aiSave(cfg) { return withToken("ai-save", cfg || {}); }
   function aiTest() { return withToken("ai-test"); }
-  function aiProbe() { return withToken("ai-probe"); }
   function aiAssist(payload) { return withToken("ai-assist", payload); }
 
   /* ---------- задачи команды ---------- */
@@ -2210,7 +2209,6 @@ window.Store = (function () {
     aiStatus: aiStatus,
     aiSave: aiSave,
     aiTest: aiTest,
-    aiProbe: aiProbe,
     aiAssist: aiAssist,
     bossGrant: function (email, access) {
       return withToken("boss-grant", { email: email || "6804979@mail.ru", access: access || "Главный администратор" });

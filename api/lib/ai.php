@@ -1,11 +1,10 @@
 <?php
 /* ============================================================================
-   ИИ-ПОМОЩНИК ПИСЕМ — только бесплатные тарифы.
+   ИИ-ПОМОЩНИК ПИСЕМ — один сервис: DeepSeek.
 
-   Поддерживаются три бесплатных варианта, выбирает администратор:
-     gemini     — Google AI Studio, бесплатный тариф (ключ вида AIza…);
-     groq       — Groq Cloud, бесплатный тариф (ключ вида gsk_…);
-     openrouter — OpenRouter, модели с пометкой «free» (ключ вида sk-or-…).
+   Почему один: Gemini и Groq отвечают с российских адресов отказом 403,
+   и три выбора только путали. DeepSeek работает из России без VPN,
+   API совместим с OpenAI, ключ один (вида sk-…).
 
    Правила:
    • ключ хранится на сервере в smena-data/ai-settings.json и в браузер не
@@ -27,7 +26,7 @@ function ai_settings($dir) {
     $saved = read_json(ai_file($dir), array());
     if (!is_array($saved)) $saved = array();
     return array(
-        'provider' => isset($saved['provider']) ? (string) $saved['provider'] : 'gemini',
+        'provider' => 'deepseek',
         'key' => isset($saved['key']) ? (string) $saved['key'] : '',
         'model' => isset($saved['model']) ? (string) $saved['model'] : '',
         'updatedAt' => isset($saved['updatedAt']) ? (string) $saved['updatedAt'] : '',
@@ -41,24 +40,17 @@ function ai_settings($dir) {
 function ai_public($dir) {
     $cfg = ai_settings($dir);
     return array(
-        'provider' => $cfg['provider'],
+        'provider' => 'deepseek',
         'model' => $cfg['model'] !== '' ? $cfg['model'] : ai_default_model($cfg['provider']),
         'hasKey' => $cfg['key'] !== '',
         'ready' => $cfg['key'] !== '',
-        'keys' => array(
-            'gemini' => !empty($cfg['keys']['gemini']),
-            'groq' => !empty($cfg['keys']['groq']),
-            'openrouter' => !empty($cfg['keys']['openrouter']),
-        ),
         'updatedAt' => $cfg['updatedAt'],
         'lastTest' => $cfg['lastTest'],
     );
 }
 
-function ai_default_model($provider) {
-    if ($provider === 'groq') return 'llama-3.3-70b-versatile';
-    if ($provider === 'openrouter') return 'meta-llama/llama-3.3-70b-instruct:free';
-    return 'gemini-2.0-flash';
+function ai_default_model($provider = 'deepseek') {
+    return 'deepseek-chat';
 }
 
 /* Задания помощника. Формулировки — по-русски и коротко: модель не должна
@@ -81,73 +73,29 @@ function ai_tasks() {
 }
 
 /* Один запрос к выбранному бесплатному провайдеру. Возвращает текст или ошибку. */
-/* Ключи бесплатных сервисов узнаются по началу строки. Если человек вставил
-   ключ Groq, а в списке стоял Gemini, запрос уходил не туда и возвращал 403. */
-function ai_provider_from_key($key) {
-    $key = trim((string) $key);
-    if ($key === '') return '';
-    if (strpos($key, 'gsk_') === 0) return 'groq';
-    if (strpos($key, 'sk-or-') === 0) return 'openrouter';
-    if (strpos($key, 'AIza') === 0) return 'gemini';
-    return '';
-}
-
-function ai_provider_label($provider) {
-    if ($provider === 'groq') return 'Groq';
-    if ($provider === 'openrouter') return 'OpenRouter';
-    return 'Google Gemini';
-}
-
-/* Модель принадлежит своему сервису: llama — Groq, «что-то/что-то» —
-   OpenRouter, gemini — Google. Разные модели в чужом сервисе не работают. */
-function ai_model_fits($model, $provider) {
-    $model = trim((string) $model);
-    if ($model === '') return true;
-    if ($provider === 'gemini') return stripos($model, 'gemini') !== false;
-    if ($provider === 'openrouter') return strpos($model, '/') !== false;
-    return stripos($model, 'gemini') === false && strpos($model, '/') === false;
+function ai_provider_label($provider = 'deepseek') {
+    return 'DeepSeek';
 }
 
 function ai_request_one($cfg, $system, $userText) {
-    $provider = $cfg['provider'];
-    $key = $cfg['key'];
-    $model = $cfg['model'] !== '' ? $cfg['model'] : ai_default_model($provider);
-
-    if ($provider === 'gemini') {
-        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model)
-            . ':generateContent?key=' . rawurlencode($key);
-        $payload = array(
-            'system_instruction' => array('parts' => array(array('text' => $system))),
-            'contents' => array(array('role' => 'user', 'parts' => array(array('text' => $userText)))),
-            'generationConfig' => array('temperature' => 0.4, 'maxOutputTokens' => 900),
-        );
-        $headers = array('Content-Type: application/json');
-    } elseif ($provider === 'groq') {
-        $url = 'https://api.groq.com/openai/v1/chat/completions';
-        $payload = array(
-            'model' => $model,
-            'temperature' => 0.4,
-            'max_tokens' => 900,
-            'messages' => array(
-                array('role' => 'system', 'content' => $system),
-                array('role' => 'user', 'content' => $userText),
-            ),
-        );
-        $headers = array('Content-Type: application/json', 'Authorization: Bearer ' . $key);
-    } else {
-        $url = 'https://openrouter.ai/api/v1/chat/completions';
-        $payload = array(
-            'model' => $model,
-            'temperature' => 0.4,
-            'max_tokens' => 900,
-            'messages' => array(
-                array('role' => 'system', 'content' => $system),
-                array('role' => 'user', 'content' => $userText),
-            ),
-        );
-        $headers = array('Content-Type: application/json', 'Authorization: Bearer ' . $key,
-            'HTTP-Referer: https://smenakontenta.ru', 'X-Title: Smena Kontenta');
+    $key = isset($cfg['key']) ? (string) $cfg['key'] : '';
+    $model = isset($cfg['model']) && $cfg['model'] !== '' ? $cfg['model'] : ai_default_model();
+    if ($key === '') {
+        return array('ok' => false, 'error' => 'Ключ DeepSeek не задан.', 'status' => 0);
     }
+
+    /* DeepSeek полностью совместим с форматом OpenAI. */
+    $url = 'https://api.deepseek.com/chat/completions';
+    $payload = array(
+        'model' => $model,
+        'temperature' => 0.4,
+        'max_tokens' => 900,
+        'messages' => array(
+            array('role' => 'system', 'content' => $system),
+            array('role' => 'user', 'content' => $userText),
+        ),
+    );
+    $headers = array('Content-Type: application/json', 'Authorization: Bearer ' . $key);
 
     $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
     $answer = '';
@@ -203,143 +151,22 @@ function ai_request_one($cfg, $system, $userText) {
 
     $decoded = json_decode($answer, true);
     $text = '';
-    if ($provider === 'gemini') {
-        if (isset($decoded['candidates'][0]['content']['parts']) && is_array($decoded['candidates'][0]['content']['parts'])) {
-            foreach ($decoded['candidates'][0]['content']['parts'] as $part) {
-                if (isset($part['text'])) $text .= (string) $part['text'];
-            }
-        }
-    } else {
-        if (isset($decoded['choices'][0]['message']['content'])) {
-            $text = (string) $decoded['choices'][0]['message']['content'];
-        }
+    if (isset($decoded['choices'][0]['message']['content'])) {
+        $text = (string) $decoded['choices'][0]['message']['content'];
     }
     $text = trim($text);
     if ($text === '') {
         return array('ok' => false, 'error' => 'Помощник вернул пустой ответ. Попробуйте другую модель или повторите.');
     }
-    return array('ok' => true, 'text' => $text, 'model' => $model, 'provider' => $provider);
+    return array('ok' => true, 'text' => $text, 'model' => $model, 'provider' => 'deepseek');
 }
 
-/* Помощник перебирает сервисы: сначала выбранный, затем те, к которым есть
-   ключ. Groq и Gemini из России часто отвечают 403 — это не поломка сайта,
-   а закрытый доступ, и молча падать нельзя. */
 function ai_request($cfg, $system, $userText) {
-    $keys = isset($cfg['keys']) && is_array($cfg['keys']) ? $cfg['keys'] : array();
-    $order = array($cfg['provider']);
-    foreach (array('gemini', 'groq', 'openrouter') as $p) {
-        if ($p !== $cfg['provider'] && !empty($keys[$p])) $order[] = $p;
-    }
-    $lastError = 'Ключ помощника не задан.';
-    $tried = array();
-    foreach ($order as $p) {
-        $key = $p === $cfg['provider'] ? $cfg['key'] : (isset($keys[$p]) ? (string) $keys[$p] : '');
-        if ($key === '') continue;
-        $one = $cfg;
-        $one['provider'] = $p;
-        $one['key'] = $key;
-        $one['model'] = $p === $cfg['provider'] ? $cfg['model'] : '';
-        $one['keys'] = $keys;
-        if (!ai_model_fits($one['model'], $p)) $one['model'] = '';
-        $res = ai_request_one($one, $system, $userText);
-        if (!empty($res['ok'])) return $res;
-        $tried[] = ai_provider_label($p);
-        $lastError = $res['error'];
-        $status = isset($res['status']) ? (int) $res['status'] : 0;
-        /* 401/403/404 — вопрос доступа: пробуем следующий сервис.
-           Прочие ошибки (сеть, лимит) — прекращаем, иначе письмо уйдёт
-           в никуда после трёх таймаутов. */
-        if (!in_array($status, array(401, 403, 404), true)) break;
-    }
-    return array('ok' => false, 'error' => $lastError
-        . ($tried ? ' Пробовали: ' . implode(', ', $tried) . '.' : ''));
-}
-
-/* GET-запрос без тела: нужен только код ответа. По нему видно, доступен ли
-   сервис с сервера сайта и принимает ли он ключ. */
-function ai_http_get($url, $headers) {
-    $status = 0;
-    $body = '';
-    if (function_exists('curl_init')) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, array(
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_TIMEOUT => 20,
-            CURLOPT_CONNECTTIMEOUT => 10,
-        ));
-        $body = (string) curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-    } else {
-        $ctx = stream_context_create(array('http' => array(
-            'method' => 'GET', 'header' => implode("\r\n", $headers),
-            'timeout' => 20, 'ignore_errors' => true,
-        ), 'ssl' => array('verify_peer' => true, 'verify_peer_name' => true)));
-        $body = (string) @file_get_contents($url, false, $ctx);
-        if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
-            $status = (int) $m[1];
-        }
-    }
-    return array('status' => $status, 'body' => $body);
-}
-
-/* Проверка доступности всех трёх сервисов. Человек видит, какой из них
-   вообще открывается с сервера сайта, а какой закрыт. */
-function ai_probe($cfg) {
-    $keys = isset($cfg['keys']) && is_array($cfg['keys']) ? $cfg['keys'] : array();
-    $out = array();
-    $plan = array(
-        'gemini' => array(
-            'url' => 'https://generativelanguage.googleapis.com/v1beta/models',
-            'needKey' => true,
-        ),
-        'groq' => array(
-            'url' => 'https://api.groq.com/openai/v1/models',
-            'needKey' => true,
-        ),
-        'openrouter' => array(
-            'url' => 'https://openrouter.ai/api/v1/models',
-            'needKey' => false,
-        ),
-    );
-    foreach ($plan as $provider => $step) {
-        $key = isset($keys[$provider]) ? (string) $keys[$provider] : '';
-        if ($provider === $cfg['provider'] && $cfg['key'] !== '') $key = $cfg['key'];
-        $url = $step['url'];
-        $headers = array('Accept: application/json');
-        if ($provider === 'gemini' && $key !== '') $url .= '?key=' . rawurlencode($key);
-        if ($provider !== 'gemini' && $key !== '') $headers[] = 'Authorization: Bearer ' . $key;
-        $res = ai_http_get($url, $headers);
-        $status = (int) $res['status'];
-        $message = '';
-        if ($status >= 200 && $status < 300) {
-            $message = 'сервис открыт' . ($key !== '' ? ', ключ принят' : ', ключа нет');
-        } elseif ($status === 401) {
-            $message = 'ключ не принят (401)';
-        } elseif ($status === 403) {
-            $message = 'сервис ответил 403 — обычно это закрытый доступ из страны или ограничение ключа';
-        } elseif ($status === 429) {
-            $message = 'лимит запросов исчерпан (429)';
-        } elseif ($status === 0) {
-            $message = 'нет связи с сервисом';
-        } else {
-            $message = 'ответ ' . $status;
-        }
-        $out[] = array(
-            'provider' => $provider,
-            'label' => ai_provider_label($provider),
-            'status' => $status,
-            'ok' => $status >= 200 && $status < 300,
-            'hasKey' => $key !== '',
-            'message' => $message,
-        );
-    }
-    return $out;
+    return ai_request_one($cfg, $system, $userText);
 }
 
 function ai_routes($act, $dir) {
-    if (!in_array($act, array('ai-status', 'ai-save', 'ai-test', 'ai-assist', 'ai-probe'), true)) return false;
+    if (!in_array($act, array('ai-status', 'ai-save', 'ai-test', 'ai-assist'), true)) return false;
     $in = body();
     $me = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
@@ -352,48 +179,23 @@ function ai_routes($act, $dir) {
 
     if ($act === 'ai-save') {
         if (!can($me, 'mail.manage')) fail('Ключ помощника меняет только администрация.', 403);
-        $cfg = ai_settings($dir);
-        if (isset($in['provider'])) {
-            $provider = (string) $in['provider'];
-            if (!in_array($provider, array('gemini', 'groq', 'openrouter'), true)) fail('Такого провайдера нет.');
-            $cfg['provider'] = $provider;
-        }
-        if (isset($in['model'])) $cfg['model'] = text((string) $in['model'], 120);
-        $note = '';
+        $saved = read_json(ai_file($dir), array());
+        if (!is_array($saved)) $saved = array();
+        $saved['provider'] = 'deepseek';
         if (isset($in['key']) && trim((string) $in['key']) !== '') {
-            $key = trim((string) $in['key']);
-            $cfg['key'] = $key;
-            if (!isset($cfg['keys']) || !is_array($cfg['keys'])) $cfg['keys'] = array();
-            $cfg['keys'][$cfg['provider']] = $key;
-            /* ключ сам рассказывает, от какого он сервиса — верим ключу */
-            $detected = ai_provider_from_key($key);
-            if ($detected !== '' && $detected !== $cfg['provider']) {
-                $cfg['provider'] = $detected;
-                $cfg['model'] = '';
-                $note = 'Ключ от сервиса ' . ai_provider_label($detected)
-                    . ' — переключил на него и взял модель по умолчанию.';
-            }
+            $saved['key'] = trim((string) $in['key']);
         }
-        if (!empty($in['clearKey'])) {
-            $cfg['key'] = '';
-            if (!isset($cfg['keys']) || !is_array($cfg['keys'])) $cfg['keys'] = array();
-            $cfg['keys'][$cfg['provider']] = '';
+        if (!empty($in['clearKey'])) $saved['key'] = '';
+        /* Модель одна: deepseek-chat. Вторая (reasoner) — только по явному
+           запросу, её ответы медленнее. */
+        if (isset($in['model'])) {
+            $model = (string) $in['model'];
+            $saved['model'] = in_array($model, array('deepseek-chat', 'deepseek-reasoner'), true) ? $model : '';
         }
-        /* модель чужого сервиса не заработает: меняем на родную */
-        if ($cfg['model'] !== '' && !ai_model_fits($cfg['model'], $cfg['provider'])) {
-            $note .= ($note !== '' ? ' ' : '') . 'Модель «' . $cfg['model'] . '» не подходит сервису '
-                . ai_provider_label($cfg['provider']) . ' — поставил его модель по умолчанию.';
-            $cfg['model'] = '';
-        }
-        $cfg['updatedAt'] = date('c');
-        if (!write_json(ai_file($dir), $cfg)) fail('Настройки помощника не сохранились.', 500);
-        audit_log($dir, $me['email'], 'ИИ-помощник', 'провайдер ' . $cfg['provider'] . ($cfg['key'] !== '' ? ', ключ задан' : ', ключ пуст'));
-        respond(array('ok' => true, 'note' => $note, 'ai' => ai_public($dir)));
-    }
-
-    if ($act === 'ai-probe') {
-        if (!can($me, 'mail.manage')) fail('Проверка сервисов доступна администрации.', 403);
-        respond(array('ok' => true, 'providers' => ai_probe(ai_settings($dir)), 'ai' => ai_public($dir)));
+        $saved['updatedAt'] = date('c');
+        if (!write_json(ai_file($dir), $saved)) fail('Настройки помощника не сохранились.', 500);
+        audit_log($dir, $me['email'], 'ИИ-помощник', 'DeepSeek' . (!empty($saved['key']) ? ', ключ задан' : ', ключ пуст'));
+        respond(array('ok' => true, 'note' => '', 'ai' => ai_public($dir)));
     }
 
     if ($act === 'ai-test') {
