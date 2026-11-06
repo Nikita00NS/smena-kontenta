@@ -229,7 +229,19 @@ const results = [];
   r = await call("queue", { token: token3, confirm: confirm3 });
   check("очередь открыта по подтверждению", r.ok === true, r);
   r = await call("queue", { token: token3 });
-  check("без подтверждения очередь закрыта", r.ok === false && r.code === 428, r);
+  check("очередь материалов видна без кода", r.ok === true, r);
+  r = await call("review", { token: token3, id: "p_none", decision: "approve" });
+  check("решение по материалу без кода не проходит", r.ok === false && r.code === 428, r);
+  r = await call("card-queue", { token: token3 });
+  check("заявки на карту видны без кода", r.ok === true, r);
+  r = await call("card-review", { token: token3, id: "c_none", decision: "approve" });
+  check("решение по карте без кода не проходит", r.ok === false && r.code === 428, r);
+
+  // 9б. карта по должности: сотруднику не нужно пять опубликованных материалов
+  r = await call("card-apply", { token: token3, delivery: "personal",
+    fullName: "Никита Сирик", phone: "9000000000", agree: true });
+  check("сотрудник подаёт заявку на карту без материалов", r.ok === true, r);
+  check("заявка помечена «по должности»", r.ok && r.request && r.request.byRole === true, r.request);
 
   // 10. восстановление: нет утечки имени по чужой почте
   r = await call("recovery-request", { email: "first@example.ru", note: "не помню пароль совсем" });

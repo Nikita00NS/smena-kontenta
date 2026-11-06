@@ -1304,12 +1304,18 @@ window.Store = (function () {
 
   /* очередь редакции и решения — тоже на сервере */
   function apiQueue(password) {
-    return api("queue", { password: String(password || "") });
+    return api("queue", {
+      password: String(password || ""),
+      token: readToken(),
+      confirm: getConfirm(),
+    });
   }
 
   function apiReview(password, id, decision, note) {
     return api("review", {
       password: String(password || ""),
+      token: readToken(),
+      confirm: getConfirm(),
       id: id,
       decision: decision,
       note: note || "",
@@ -1345,13 +1351,18 @@ window.Store = (function () {
   }
 
   function apiCardQueue(password) {
-    return api("card-queue", { password: String(password || ""), token: readToken() });
+    return api("card-queue", {
+      password: String(password || ""),
+      token: readToken(),
+      confirm: getConfirm(),
+    });
   }
 
   function apiCardReview(password, id, decision, note, place, tracking) {
     return api("card-review", {
       password: String(password || ""),
       token: readToken(),
+      confirm: getConfirm(),
       id: id,
       decision: decision,
       note: note || "",

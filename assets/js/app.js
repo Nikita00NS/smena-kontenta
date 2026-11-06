@@ -1733,8 +1733,7 @@
         ["content", "Материалы"],
         ["editorials", "Редакции"],
         ["cards", "Карты"],
-        ["support", "Поддержка"],
-        ["mail", "Почта"],
+        ["support", "Поддержка и почта"],
         ["site", "Сайт"],
         ["server", "Сервер"],
       ];
@@ -1760,13 +1759,11 @@
       mountEditorialQueue(panel("editorials"));
       mountCardQueue(panel("cards"));
       mountSupportQueue(panel("support"));
-      mountMailClient(panel("mail"));
-      mountMailSettings(panel("mail"));
+      mountMailClient(panel("support"));
+      mountMailSettings(panel("support"));
       mountHiringAdmin(panel("people"));
       mountTasksAdmin(panel("people"));
-      mountGrantAccess(panel("server"));
       mountSite(panel("site"));
-      mountFoundersEditor(panel("site"));
       mountDiag(panel("server"));
 
       buildAdminTabs(host, TABS);
@@ -1790,13 +1787,14 @@
         "Комиссия решает, интересна ли работа, сколько баллов дать и показывать ли её на " +
         "странице аккаунта.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
-        confirmRowHtml() +
+        '<div data-confirm-slot style="display:none"></div>' +
         '<button class="btn btn--sm" type="button" data-pf-load>Показать работы</button></div>' +
         '<p class="form__note" data-pf-status></p></div><div data-pf-list></div>';
       host.appendChild(section);
 
             var statusEl = $("[data-pf-status]", section);
       var listEl = $("[data-pf-list]", section);
+      var slotEl = $("[data-confirm-slot]", section);
 
       function row(item) {
         var badge =
@@ -1840,7 +1838,6 @@
       }
 
       function load() {
-        if (!confirmReady(statusEl)) return;
         statusEl.textContent = "Загружаем…";
         Store.portfolioQueue().then(function (res) {
           if (!res || !res.ok) {
@@ -1866,24 +1863,28 @@
                 statusEl.textContent = "Чтобы отклонить, напишите основание.";
                 return;
               }
-              btn.disabled = true;
-              Store.portfolioReview(id, approve ? "approved" : "rejected", note,
-                pointsEl ? Number(pointsEl.value) || 0 : 5
-              ).then(function (r) {
-                btn.disabled = false;
-                if (!r || !r.ok) {
-                  statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
-                  return;
-                }
-                load();
-              });
+              function sendReview() {
+                btn.disabled = true;
+                Store.portfolioReview(id, approve ? "approved" : "rejected", note,
+                  pointsEl ? Number(pointsEl.value) || 0 : 5
+                ).then(function (r) {
+                  btn.disabled = false;
+                  if (r && r.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
+                  if (!r || !r.ok) {
+                    statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
+                    return;
+                  }
+                  load();
+                });
+              }
+              sendReview();
             });
           });
         });
       }
 
       $("[data-pf-load]", section).addEventListener("click", load);
-      if (Store.hasConfirm && Store.hasConfirm()) load();
+      load();
     }
 
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
@@ -2103,6 +2104,8 @@
 
       var saved = "";
       try { saved = window.localStorage.getItem("smena_admin_tab") || ""; } catch (e) {}
+      /* «Почта» раньше была отдельной вкладкой — теперь живёт внутри поддержки */
+      if (saved === "mail") saved = "support";
       var exists = TABS.some(function (t) { return t[0] === saved; });
       show(exists ? saved : "overview");
     }
@@ -2568,137 +2571,6 @@
       });
     }
 
-    /* Основатели: список на странице /founders берётся отсюда. */
-    function mountFoundersEditor(host) {
-      var old = $("[data-founders-admin]");
-      if (old) old.remove();
-      if (!Store.foundersSave) return;
-
-      var section = document.createElement("section");
-      section.className = "section wrap";
-      section.setAttribute("style", "padding-top:0");
-      section.setAttribute("data-founders-admin", "");
-      section.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Основатели</span>' +
-        "<h2>Кто основал проект</h2>" +
-        '<p class="sec-head__text">Эти карточки видит страница «Основатели». До четырёх человек: ' +
-        "имя, роль, город, год и пара строк о себе. Фото загружается с устройства.</p></div></div>" +
-        '<div data-founders-list></div>' +
-        '<div class="row" style="gap:10px;margin-top:14px;flex-wrap:wrap">' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-founder-add>Добавить человека</button>' +
-        '<button class="btn btn--accent btn--sm" type="button" data-founders-save>Сохранить список</button>' +
-        '<span class="form__note" data-founders-status></span></div>';
-      host.appendChild(section);
-
-      var listEl = $("[data-founders-list]", section);
-      var statusEl = $("[data-founders-status]", section);
-      var state = [];
-
-      function draw() {
-        listEl.innerHTML = '<div class="people">' + state.map(function (f, i) {
-          return '<div class="founder-edit">' +
-            '<div class="founder-edit__head"><b>' + esc(f.name || "Новый человек") + "</b>" +
-            (state.length > 1
-              ? '<button class="btn btn--ghost btn--sm" type="button" data-founder-del="' + i + '">Убрать</button>'
-              : "") + "</div>" +
-            '<div class="mail-grid">' +
-            '<div class="field"><label>Имя и фамилия</label>' +
-            '<input type="text" data-f="name" data-i="' + i + '" value="' + esc(f.name || "") + '"></div>' +
-            '<div class="field"><label>Роль</label>' +
-            '<input type="text" data-f="role" data-i="' + i + '" value="' + esc(f.role || "") + '" placeholder="Основатель, главный редактор"></div>' +
-            '<div class="field"><label>Город</label>' +
-            '<input type="text" data-f="city" data-i="' + i + '" value="' + esc(f.city || "") + '"></div>' +
-            '<div class="field"><label>На проекте с</label>' +
-            '<input type="text" data-f="since" data-i="' + i + '" value="' + esc(f.since || "") + '" placeholder="2026"></div>' +
-            "</div>" +
-            '<div class="field"><label>О себе</label>' +
-            '<textarea rows="3" data-f="bio" data-i="' + i + '">' + esc(f.bio || "") + "</textarea></div>" +
-            '<div class="row" style="gap:10px;flex-wrap:wrap">' +
-            '<input type="file" accept="image/*" data-founder-photo="' + i + '">' +
-            (f.photo ? '<span class="form__note">фото загружено</span>' : "") +
-            "</div></div>";
-        }).join("") + "</div>";
-
-        $$("[data-f]", listEl).forEach(function (el) {
-          el.addEventListener("input", function () {
-            state[Number(el.getAttribute("data-i"))][el.getAttribute("data-f")] = el.value;
-          });
-        });
-        $$("[data-founder-del]", listEl).forEach(function (b) {
-          b.addEventListener("click", function () {
-            state.splice(Number(b.getAttribute("data-founder-del")), 1);
-            draw();
-          });
-        });
-        $$("[data-founder-photo]", listEl).forEach(function (input) {
-          input.addEventListener("change", function () {
-            var file = input.files && input.files[0];
-            if (!file) return;
-            var i = Number(input.getAttribute("data-founder-photo"));
-            statusEl.textContent = "Загружаем фото…";
-            Store.uploadMedia(file).then(function (url) {
-              state[i].photo = url;
-              statusEl.textContent = "Фото загружено: " + state[i].name;
-              draw();
-            }, function () {
-              fileToDataUrl(file).then(function (url) {
-                state[i].photo = url;
-                statusEl.textContent = "Фото добавлено.";
-                draw();
-              });
-            });
-          });
-        });
-      }
-
-      Store.founders().then(function (list) {
-        state = list && list.length ? list : [];
-        if (!state.length) {
-          state = (SC.founders || []).map(function (f) {
-            return { name: f.name, role: f.role, city: f.city, since: f.since, bio: f.bio, photo: f.photo };
-          });
-        }
-        draw();
-      }, function () {
-        state = (SC.founders || []).slice();
-        draw();
-      });
-
-      var addBtn = $("[data-founder-add]", section);
-      if (addBtn) {
-        addBtn.addEventListener("click", function () {
-          if (state.length >= 4) {
-            statusEl.textContent = "Основателей не больше четырёх.";
-            return;
-          }
-          state.push({ name: "", role: "", city: "", since: "2026", bio: "", photo: "" });
-          draw();
-        });
-      }
-
-      var saveBtn = $("[data-founders-save]", section);
-      if (saveBtn) {
-        saveBtn.addEventListener("click", function () {
-          var filled = state.filter(function (f) { return (f.name || "").trim().length >= 3; });
-          if (!filled.length) {
-            statusEl.textContent = "Нужно хотя бы одно имя: минимум три символа.";
-            return;
-          }
-          saveBtn.disabled = true;
-          statusEl.textContent = "Сохраняем…";
-          Store.foundersSave(filled).then(function (saved) {
-            saveBtn.disabled = false;
-            state = saved;
-            draw();
-            statusEl.textContent = "Сохранено. Страница «Основатели» уже обновилась.";
-          }, function (err) {
-            saveBtn.disabled = false;
-            statusEl.textContent = (err && err.message) || "Не сохранилось.";
-          });
-        });
-      }
-    }
-
     /* Диагностика: почему не пускает и что с сервером. */
     function mountDiag(host) {
       var old = $("[data-diag-admin]");
@@ -2740,13 +2612,11 @@
           }
           listEl.innerHTML =
             row("PHP", d.php) +
-            row("Аккаунтов на сервере", d.accounts, d.accounts > 0) +
             row("Подтверждение действий", "код на почту") +
             row("Материалов", d.posts) +
             row("Запись данных", d.data_writable ? "разрешена" : "запрещена", !!d.data_writable) +
             row("Загрузка медиа", d.uploads_writable ? "разрешена" : "запрещена", !!d.uploads_writable) +
             row("Почта", d.mail_configured ? "настроена" : "не настроена", !!d.mail_configured) +
-            row("Отправитель", d.mail_from || "—") +
             row("Попыток входа за час", d.rate_entries) +
             row("Время сервера", fmtDate(d.server_time));
         });
@@ -3534,6 +3404,28 @@
       return false;
     }
 
+    /* Просмотр очередей кодом не запираем: он нужен только за само решение.
+       Сервер ответил «нужен код» — показываем строку подтверждения на месте
+       и повторяем действие сами, без повторного нажатия. */
+    function askConfirm(slot, noteEl, retry) {
+      if (!slot) {
+        if (noteEl) noteEl.textContent = "Подтвердите действие кодом из письма.";
+        return;
+      }
+      if (Store.hasConfirm && Store.hasConfirm()) Store.clearConfirm();
+      slot.style.display = "";
+      slot.innerHTML = confirmRowHtml();
+      bindConfirmDelegation();
+      if (noteEl) noteEl.textContent = "Подтвердите действие: пришлём шесть цифр на вашу почту.";
+      var once = function () {
+        document.removeEventListener("smena:confirmed", once);
+        slot.innerHTML = "";
+        slot.style.display = "none";
+        if (typeof retry === "function") retry();
+      };
+      document.addEventListener("smena:confirmed", once);
+    }
+
     /* Один обработчик на всю панель: кнопки подтверждения встречаются в
        нескольких разделах, дублировать код незачем. */
     function bindConfirmDelegation() {
@@ -3571,6 +3463,7 @@
               var n = $("[data-confirm-note]", r);
               if (n) n.textContent = "Подтверждено. Действуйте — код больше не спросим 30 минут.";
             });
+            try { document.dispatchEvent(new Event("smena:confirmed")); } catch (e) {}
           }, function (err) {
             if (note) note.textContent = (err && err.message) || "Код не подошёл.";
           });
@@ -3587,42 +3480,6 @@
 
     /* Выдача админки по почте. Доступно директору и администрации; пароль
        редакции больше не нужен — решение принимает сервер по правам. */
-    function mountGrantAccess(host) {
-      bindConfirmDelegation();
-      if (!Store.bossGrant) return;
-      var section = document.createElement("section");
-      section.className = "section wrap";
-      section.setAttribute("style", "padding-top:8px");
-      section.setAttribute("data-grant-access", "");
-      section.innerHTML =
-        '<div class="panel" style="padding:20px"><span class="kicker">Доступы</span>' +
-        '<h3 style="margin:6px 0 8px">Выдать админку по почте</h3>' +
-        '<p class="form__note">Если аккаунта с такой почтой ещё нет, он будет создан, а на почту ' +
-        "уйдёт временный пароль — человек сменит его при первом входе.</p>" +
-        '<div class="mail-grid" style="margin-top:10px">' +
-        '<div class="field"><label>Почта</label><input type="email" data-g-email value="6804979@mail.ru"></div>' +
-        '<div class="field"><label>Роль</label><select data-g-access>' +
-        '<option>Главный администратор</option><option>Администрация</option>' +
-        '<option>Технический администратор</option><option>Главный редактор</option>' +
-        '<option>Модератор</option><option>Сотрудник</option></select></div>' +
-        "</div>" +
-        '<div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">' +
-        '<button class="btn btn--accent btn--sm" type="button" data-g-send>Выдать доступ</button>' +
-        '<span class="form__note" data-g-note style="align-self:center"></span></div></div>';
-      host.appendChild(section);
-
-      var noteEl = $("[data-g-note]", section);
-      $("[data-g-send]", section).addEventListener("click", function () {
-        var email = ($("[data-g-email]", section).value || "").trim();
-        var access = $("[data-g-access]", section).value;
-        if (!email) { noteEl.textContent = "Нужна почта."; return; }
-        if (!window.confirm("Выдать доступ «" + access + "» для " + email + "?")) return;
-        noteEl.textContent = "Выдаём…";
-        Store.bossGrant(email, access).then(function (res) {
-          noteEl.textContent = res.note || "Готово.";
-        }, function (err) { noteEl.textContent = (err && err.message) || "Не получилось."; });
-      });
-    }
 
     /* --- Кабинет: работа в команде --------------------------------------- */
     function stepsHtml(steps) {
@@ -3926,13 +3783,14 @@
         '<p class="sec-head__text">Автор подписывает документ от руки и загружает фото. ' +
         "Пока скан не одобрен, публикация материалов закрыта. Для отказа нужно основание.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
-        confirmRowHtml() +
+        '<div data-confirm-slot style="display:none"></div>' +
         '<button class="btn btn--sm" type="button" data-consent-load>Показать согласия</button></div>' +
         '<p class="form__note" data-consent-status></p></div><div data-consent-list></div>';
       host.appendChild(section);
 
             var statusEl = $("[data-consent-status]", section);
       var listEl = $("[data-consent-list]", section);
+      var slotEl = $("[data-confirm-slot]", section);
 
       var LABEL = {
         pending: '<span class="status status--pending">на проверке</span>',
@@ -3966,7 +3824,6 @@
       }
 
       function load() {
-        if (!confirmReady(statusEl)) return;
         statusEl.textContent = "Загружаем…";
         Store.consentQueue().then(function (res) {
           if (!res || !res.ok) {
@@ -3991,22 +3848,26 @@
                 statusEl.textContent = "Чтобы отклонить, напишите основание — не короче пяти символов.";
                 return;
               }
-              btn.disabled = true;
-              Store.consentReview(id, approve ? "approved" : "rejected", note).then(function (r) {
-                btn.disabled = false;
-                if (!r || !r.ok) {
-                  statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
-                  return;
-                }
-                load();
-              });
+              function sendReview() {
+                btn.disabled = true;
+                Store.consentReview(id, approve ? "approved" : "rejected", note).then(function (r) {
+                  btn.disabled = false;
+                  if (r && r.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
+                  if (!r || !r.ok) {
+                    statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
+                    return;
+                  }
+                  load();
+                });
+              }
+              sendReview();
             });
           });
         });
       }
 
       $("[data-consent-load]", section).addEventListener("click", load);
-      if (Store.hasConfirm && Store.hasConfirm()) load();
+      load();
     }
 
     function mountCardQueue(host) {
@@ -4024,13 +3885,14 @@
         '<p class="sec-head__text">Автор подаёт заявку из кабинета и сразу выбирает, как получить ' +
         "карту: лично в Москве или почтой. Выдача присваивает номер, автор видит его у себя.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
-        confirmRowHtml() +
+        '<div data-confirm-slot style="display:none"></div>' +
         '<button class="btn btn--sm" type="button" data-card-load>Показать заявки</button></div>' +
         '<p class="form__note" data-card-status></p></div><div data-card-list></div>';
       host.appendChild(section);
 
             var statusEl = $("[data-card-status]", section);
       var listEl = $("[data-card-list]", section);
+      var slotEl = $("[data-confirm-slot]", section);
 
       function row(card) {
         var posts = (card.posts || [])
@@ -4049,7 +3911,9 @@
         return (
           '<div class="admin-review"><div class="admin-review__top"><b>' + esc(card.authorName || "Автор") +
           "</b>" + badge + "</div>" +
-          '<div class="admin-review__meta">Материалов в заявке: ' + (card.posts || []).length +
+          '<div class="admin-review__meta">' +
+          (card.byRole ? "Заявка по должности · " : "") +
+          "Материалов в заявке: " + (card.posts || []).length +
           " · " + esc(fmtDate(card.createdAt)) + "</div>" +
           '<p class="admin-review__excerpt">' + esc(posts) + "</p>" +
           deliveryHtml(card) +
@@ -4091,7 +3955,6 @@
       }
 
       function load() {
-        if (!confirmReady(statusEl)) return;
         statusEl.textContent = "Загружаем…";
         Store.apiCardQueue("").then(function (res) {
           if (!res || !res.ok) {
@@ -4123,16 +3986,20 @@
                 if (place === null) return;
                 tracking = window.prompt("Трек-номер почты (если отправляли письмом). Можно пропустить:", "") || "";
               }
-              btn.disabled = true;
-              Store.apiCardReview(pass, id, approve ? "approve" : "reject", noteEl ? noteEl.value.trim() : "", place, tracking)
-                .then(function (r) {
-                  btn.disabled = false;
-                  if (!r || !r.ok) {
-                    statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
-                    return;
-                  }
-                  load();
-                });
+              function sendReview() {
+                btn.disabled = true;
+                Store.apiCardReview("", id, approve ? "approve" : "reject", noteEl ? noteEl.value.trim() : "", place, tracking)
+                  .then(function (r) {
+                    btn.disabled = false;
+                    if (r && r.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
+                    if (!r || !r.ok) {
+                      statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
+                      return;
+                    }
+                    load();
+                  });
+              }
+              sendReview();
             });
           });
         });
@@ -4175,25 +4042,6 @@
           });
           render();
         });
-      var founders = $("[data-admin-founders]", host);
-      if (founders)
-        founders.addEventListener("submit", function (e) {
-          e.preventDefault();
-          Store.saveSettings({
-            org: {
-              founders: [1, 2].map(function (n) {
-                return {
-                  name: val("f" + n + "-name"),
-                  inn: val("f" + n + "-inn"),
-                  role: val("f" + n + "-role") || "Директор",
-                };
-              }),
-            },
-          });
-          var st = $("[data-founders-status]", host);
-          if (st) st.textContent = "Сохранено";
-        });
-
       $$("[data-approve]", host).forEach(function (b) {
         b.addEventListener("click", function () {
           Store.reviewPost(b.getAttribute("data-approve"), "approve", "");
@@ -6692,6 +6540,10 @@
         var posts = (res[0] || []).filter(function (p) {
           return p.status === "published";
         });
+        var me = Store.currentUser();
+        /* сотрудник редакции получает карту по должности: прикладывать
+           пять опубликованных материалов ему не нужно */
+        var byRole = !!(me && me.access && me.access !== "Пользователь");
         var status = res[1] || { requests: [], minPosts: 5 };
         var last = (status.requests || [])[0];
         var need = status.minPosts || 5;
@@ -6723,15 +6575,19 @@
             ? '<div class="panel" style="margin-bottom:18px"><h3>Заявку вернули на доработку</h3><p>' +
               esc(last.note || "Редакция не указала причину.") + "</p></div>"
             : "") +
-          "<p>Опубликовано материалов: <b>" + posts.length + "</b>. Для заявки нужно не меньше " +
-          need + ".</p>";
+          (byRole
+            ? "<p>Вы в команде проекта, поэтому карту можно получить по должности — без пяти " +
+              "опубликованных материалов. Материалы, если они есть, приложите к заявке: по ним " +
+              "редакция сверит номера.</p><p>Опубликовано материалов: <b>" + posts.length + "</b>.</p>"
+            : "<p>Опубликовано материалов: <b>" + posts.length + "</b>. Для заявки нужно не меньше " +
+              need + ".</p>");
 
-        if (!posts.length) {
+        if (!posts.length && !byRole) {
           body.innerHTML =
             head +
-            '<div class="empty"><h3>Пока нечего приложить</h3>' +
+            '<div class="empty"><h3>Нужны опубликованные материалы</h3>' +
             "<p>Сначала опубликуйте материал: после проверки редакцией у него появится номер, " +
-            "и он войдёт в заявку.</p>" +
+            "и он войдёт в заявку. Нужно " + need + ", сейчас 0.</p>" +
             '<div class="empty__actions">' +
             (((Store.consent() || {}).status === "approved")
               ? '<a class="btn btn--sm" href="/write">Написать материал</a>'
@@ -6755,7 +6611,11 @@
 
         body.innerHTML =
           head +
-          '<div class="panel"><div class="stack">' + rows + "</div>" +
+          '<div class="panel"><div class="stack">' +
+          (rows ||
+            '<p class="form__note" style="margin:0">Материалов пока нет — заявка уйдёт по должности, ' +
+            "без приложенных номеров.</p>") +
+          "</div>" +
           '<div class="pcard__section" style="margin-top:18px">' +
           '<span class="kicker">Как получить карту</span>' +
           '<p class="form__note" style="margin:0">Карта не приходит сама: её либо передают лично ' +
@@ -6783,7 +6643,11 @@
           'Данные нужны только для этого и удаляются после выдачи.</span></label>' +
           '<div class="row" style="margin-top:6px">' +
           '<button class="btn" type="button" data-card-send>Подать заявку</button>' +
-          '<span class="form__note" data-card-note>Материалы уже приложены — редакция проверит их по номерам.</span>' +
+          '<span class="form__note" data-card-note>' +
+          (posts.length
+            ? "Материалы уже приложены — редакция проверит их по номерам."
+            : "Заявка по должности: материалы можно приложить позже.") +
+          "</span>" +
           "</div></div></div>";
 
         var send = $("[data-card-send]", section);
@@ -6794,7 +6658,6 @@
         var indexEl = $("[data-card-index]", section);
         var addressEl = $("[data-card-address]", section);
         var agreeEl = $("[data-card-agree]", section);
-        var me = Store.currentUser();
 
         if (me && nameEl && !nameEl.value) nameEl.value = me.name || "";
 
@@ -6821,11 +6684,11 @@
             .map(function (el) {
               return el.value;
             });
-          if (chosen.length !== posts.length) {
+          if (!byRole && chosen.length !== posts.length) {
             note.textContent = "Отметьте все свои материалы: заявка подаётся со всеми публикациями.";
             return;
           }
-          if (chosen.length < need) {
+          if (!byRole && chosen.length < need) {
             note.textContent = "Нужно не меньше " + need + " опубликованных материалов.";
             return;
           }
