@@ -7004,3 +7004,102 @@ html[data-theme="light"] .founder__photo--mono {
     padding: 20px 16px 48px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Почта проекта: список и чтение рядом, письмо в спокойной колонке.
+   На телефоне колонки складываются: сначала список, ниже письмо.
+   --------------------------------------------------------------------------- */
+.mail-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) 1fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .mail-split { grid-template-columns: 1fr; }
+}
+.mail-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line, #e6e6e6);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.mail-row:hover { background: #fafafa; }
+.mail-row__from { font-weight: 600; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; }
+.mail-row__subj { grid-column: 1; color: var(--ink-soft, #555); font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-row__date { grid-row: 1; grid-column: 2; font-size: 0.76rem; color: var(--ink-soft, #777); white-space: nowrap; }
+.mail-row.is-unread .mail-row__from::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #111;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.mail-row.is-unread .mail-row__subj { color: #111; font-weight: 600; }
+.mail-body {
+  max-height: 460px;
+  overflow: auto;
+  font-size: 0.96rem;
+  line-height: 1.6;
+  border-top: 1px solid var(--line, #eee);
+  padding-top: 12px;
+}
+.mail-body img { max-width: 100%; height: auto; }
+.mail-body a { color: inherit; }
+.mail-preview {
+  margin-top: 14px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 12px;
+  padding: 18px;
+  background: #fff;
+}
+.mail-preview__head { font-weight: 700; letter-spacing: 0.02em; margin-bottom: 10px; }
+.mail-preview__foot { margin-top: 14px; font-size: 0.78rem; color: #777; }
+.mail-template-list { display: grid; gap: 8px; margin-top: 8px; }
+.mail-template-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line, #eee);
+}
+.mail-template-row:last-child { border-bottom: 0; }
+
+/* Приём в команду: заявка слева, чек-лист справа. */
+.hiring-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(240px, 360px);
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line, #eee);
+}
+.hiring-row:last-child { border-bottom: 0; }
+@media (max-width: 780px) {
+  .hiring-row { grid-template-columns: 1fr; }
+}
+.hiring-checks { display: grid; gap: 6px; }
+.hiring-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.hiring-check input { margin-top: 2px; flex: none; }
+.mail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}

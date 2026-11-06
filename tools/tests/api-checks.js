@@ -76,7 +76,10 @@ const results = [];
   for (const d of ["/site", "/site/api", "/site/api/lib", "/smena-data"]) {
     try { await php.mkdir(d); } catch (e) {}
   }
-  for (const lib of ["permissions.php", "backup.php", "points.php"]) {
+  /* копируем ВСЕ библиотеки: index.php подключает их все, и забытый файл
+     даёт пустой ответ вместо ошибки (fatal error в wasm не печатается) */
+  for (const lib of fs.readdirSync(SRC + "/lib")) {
+    if (!lib.endsWith(".php")) continue;
     await push(SRC + "/lib/" + lib, "/site/api/lib/" + lib);
   }
   const srcIndex = fs.readFileSync(SRC + "/index.php", "utf8")
@@ -93,7 +96,28 @@ const results = [];
     exit;
 }`);
   await php.writeFile("/site/api/index.php", srcIndex);
-  await push(SRC + "/smtp.php", "/site/api/smtp.php");
+
+  /* Почта в тестах не ходит наружу: подменяем отправку заглушкой и говорим
+     API, что SMTP настроен, — иначе регистрация закрыта (это и есть требование
+     «без письма аккаунт не создаётся»). Проверяется именно логика, не сеть. */
+  const srcSmtp = fs.readFileSync(SRC + "/smtp.php", "utf8")
+    .replace("function mail_send($to, $subject, $text, $html = '', $kind = '') {",
+      "function mail_send($to, $subject, $text, $html = '', $kind = '') { return true;");
+  await php.writeFile("/site/api/smtp.php", srcSmtp);
+  await php.writeFile("/smena-data/mail.json", JSON.stringify({
+    host: "smtp.example.ru", port: 465, secure: "ssl", user: "u@smenakontenta.ru",
+    pass: "x", from: "kod@smenakontenta.ru", fromName: "Смена контента", notify: "",
+  }));
+
+  /* Подтверждение почты: в тесте код не прочитать (в базе только хэш),
+     поэтому сразу отмечаем адрес подтверждённым, как это сделал бы человек,
+     введя код из письма. Проверка «без подтверждения нельзя» — отдельно ниже. */
+  async function verifyAll() {
+    let users = [];
+    try { users = JSON.parse(await readText("/smena-data/users.json")); } catch (e) { return; }
+    for (const u of users) { u.emailVerified = true; if (u.status === "pending_email") u.status = "active"; }
+    await php.writeFile("/smena-data/users.json", JSON.stringify(users));
+  }
 
   // 1. диагностика закрыта
   let r = await call("diag", {});
@@ -122,7 +146,16 @@ const results = [];
   r = await call("reg", { name: "Тест Первый", email: "first@example.ru", pass: "parol1234", region: "moskva", role: "Автор текстов" });
   check("регистрация прошла", r.ok === true, r); console.log("   reg ->", JSON.stringify(r).slice(0,300));
   check("первый аккаунт — Пользователь", r.user && r.user.access === "Пользователь", r.user);
+  check("после регистрации аккаунт ждёт подтверждения почты", r.user && r.user.emailVerified === false, r.user);
   const token1 = r.token;
+
+  /* регистрация без подтверждённой почты: действия закрыты */
+  r = await call("submit", { token: token1, title: "Без подтверждения почты",
+    excerpt: "Проверяем, что без подтверждения адреса материал не уходит в редакцию.",
+    body: "Длинный текст материала для проверки запрета. ".repeat(8),
+    authorName: "Тест Первый", authorKey: "test-author-key-1" });
+  check("без подтверждения почты материал не отправить", r.ok === false && r.code === 403, r);
+  await verifyAll();
 
   r = await call("reg", { name: "Короткий", email: "weak@example.ru", pass: "parol12" });
   check("пароль короче 8 не принимается", r.ok === false, r);
@@ -135,6 +168,7 @@ const results = [];
 
   // 4. админские маршруты недоступны обычному пользователю
   r = await call("reg", { name: "Тест Второй", email: "second@example.ru", pass: "parol1234" });
+  await verifyAll();
   const token2 = r.token;
   check("второй аккаунт — Пользователь", r.user && r.user.access === "Пользователь", r.user);
   r = await call("users", { token: token2 });
@@ -257,6 +291,78 @@ const results = [];
   check("state отвечает", r.ok === true && Array.isArray(r.posts), r);
   r = await call("support-send", { name: "Гость", email: "guest@example.ru", message: "Здравствуйте, вопрос по проекту" });
   check("обращение принимается", r.ok === true, r);
+
+  // 17. ПОЧТА: ящики, доступ, шаблоны (без реальной сети — SMTP заглушён)
+  r = await call("mailboxes", {});
+  check("ящики без входа закрыты", r.ok === false && r.code === 401, r);
+  r = await call("mailboxes", { token: token2b });
+  check("ящики закрыты обычному участнику", r.ok === false && r.code === 403, r);
+  r = await call("mailboxes", { token: token3 });
+  check("администрация видит четыре ящика", r.ok === true && r.mailboxes.length === 4, r);
+  check("адреса ящиков — на домене проекта",
+    r.ok === true && r.mailboxes.every((b) => /@smenakontenta\.ru$/.test(b.address)), r.mailboxes);
+  check("пароли ящиков не отдаются в браузер",
+    r.ok === true && r.mailboxes.every((b) => b.pass === undefined && typeof b.hasPass === "boolean"), r.mailboxes);
+  r = await call("mailboxes-save", { token: token3, box: { key: "nope", pass: "x" } });
+  check("неизвестный ящик не сохраняется", r.ok === false && r.code === 404, r);
+  r = await call("mail-list", { token: token3, key: "editorial" });
+  check("неподключённый ящик не читается", r.ok === false && r.code === 409, r);
+  r = await call("mail-send", { token: token3, key: "editorial", to: "a@example.ru", subject: "Т", text: "Текст" });
+  check("письмо без подтверждения не уходит", r.ok === false && r.code === 428, r);
+  r = await call("mail-send", { token: token3, key: "editorial", to: "a@example.ru", subject: "Т", text: "Текст", confirm: true });
+  check("письмо из ненастроенного ящика не уходит", r.ok === false && r.code === 409, r);
+  r = await call("mail-templates", { token: token3 });
+  check("шаблоны писем доступны редакции", r.ok === true && r.templates.length >= 13, r && r.templates && r.templates.length);
+  r = await call("mail-template-preview", { token: token3, key: "confirm_code" });
+  check("предпросмотр шаблона собирает письмо", r.ok === true && /482913/.test(r.html) && /smenakontenta/.test(r.html), r);
+  r = await call("mail-template-save", { token: token2b, key: "welcome", subject: "Взлом" });
+  check("шаблоны меняет только администрация", r.ok === false && r.code === 403, r);
+  r = await call("mail-log", { token: token2b });
+  check("журнал писем закрыт участнику", r.ok === false && r.code === 403, r);
+  r = await call("mail-log", { token: token3 });
+  check("журнал писем ведётся", r.ok === true && Array.isArray(r.entries), r && r.entries && r.entries.length);
+
+  // 18. ПРИЁМ В КОМАНДУ: заявка, тест, чек-лист, согласование
+  r = await call("hiring-apply", { token: token2b, position: "Автор текстов", motivation: "Хочу писать про городские события." });
+  check("заявка в команду подаётся", r.ok === true && r.application.stage === "test", r);
+  r = await call("hiring-apply", { token: token2b, position: "Автор текстов", motivation: "Хочу писать про городские события." });
+  check("вторая заявка не создаётся", r.ok === false && r.code === 409, r);
+  r = await call("hiring-test", { token: token2b });
+  check("тест выдаёт вопросы без ответов",
+    r.ok === true && r.questions.length >= 8 && r.questions.every((q) => q.right === undefined), r);
+  const wrongAnswers = {};
+  r.questions.forEach((q) => { wrongAnswers[q.id] = q.options.length - 1; });
+  r = await call("hiring-test-submit", { token: token2b, answers: wrongAnswers });
+  check("проваленный тест не пускает дальше", r.ok === true && r.passed === false && r.stage === "test", r);
+  const goodAnswers = {};
+  r = await call("hiring-test", { token: token2b });
+  r.questions.forEach((q) => { goodAnswers[q.id] = 0; });
+  r = await call("hiring-test-submit", { token: token2b, answers: goodAnswers });
+  check("сданный тест переводит на чек-лист", r.ok === true && r.passed === true && r.stage === "checklist", r);
+
+  r = await call("hiring-list", { token: token2b });
+  check("заявки видит только редакция", r.ok === false && r.code === 403, r);
+  r = await call("hiring-list", { token: token3 });
+  const myApp = r.ok ? r.applications.find((a) => a.userId === second.id) : null;
+  check("редакция видит заявку", !!myApp, r);
+  r = await call("hiring-decide", { token: token3, id: myApp.id, decision: "approve" });
+  check("принять без чек-листа нельзя", r.ok === false && r.code === 409 && /чек-лист/i.test(r.error), r);
+
+  const items = myApp.checklist.map((c) => c.key);
+  for (const key of items) {
+    await call("hiring-checklist", { token: token3, id: myApp.id, key, ok: true });
+  }
+  r = await call("hiring-decide", { token: token3, id: myApp.id, decision: "approve" });
+  check("после чек-листа приём проходит", r.ok === true && r.application.stage === "approved", r);
+  r = await call("user-card", { token: token3, id: second.id });
+  check("принятый стал сотрудником", r.ok === true && r.user && r.user.access === "Сотрудник", r && r.user);
+
+  r = await call("hiring-decide", { token: token3, id: myApp.id, decision: "reject", note: "" });
+  check("отказ без причины не принимается", r.ok === false, r);
+
+  r = await call("admin-log", { token: token3 });
+  check("в журнале есть приём в команду",
+    r.ok === true && r.entries.some((e) => /приём в команду/.test(e.action || "")), r && r.entries && r.entries[0]);
 
   console.log("\n=== ИТОГ ===");
   let bad = 0;

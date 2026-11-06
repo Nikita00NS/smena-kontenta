@@ -60,6 +60,16 @@ if ($DATA_DIR !== $DATA_DIR_INSIDE && is_dir($DATA_DIR_INSIDE)) {
     }
 }
 
+/* Без подтверждённой почты аккаунт остаётся «ожидающим»: он виден, в него
+   можно войти, но отправлять материалы, заявки и обращения нельзя. Это
+   защищает и человека (чужой адрес не займут), и редакцию (письма
+   уходят только тем, кто действительно подтвердил адрес). */
+function require_verified($user) {
+    if (empty($user['emailVerified'])) {
+        fail('Подтвердите почту. Откройте кабинет, введите код из письма — без этого действие недоступно. Письмо можно запросить заново.', 403);
+    }
+}
+
 function respond($data, $code = 200) {
     http_response_code($code);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -124,6 +134,10 @@ require __DIR__ . '/smtp.php';
 require __DIR__ . '/lib/permissions.php';
 require __DIR__ . '/lib/backup.php';
 require __DIR__ . '/lib/points.php';
+require __DIR__ . '/lib/mailer.php';   /* фирменные письма, шаблоны, журнал доставки */
+require __DIR__ . '/lib/imap.php';     /* чтение почты с ящиков домена */
+require __DIR__ . '/lib/mailbox.php';  /* ящики домена: чтение, отправка, шаблоны */
+require __DIR__ . '/lib/hiring.php';   /* приём в команду: тест, чек-лист, согласование */
 
 function action() {
     if (isset($_GET['action'])) return (string) $_GET['action'];
@@ -434,6 +448,11 @@ function public_user($u) {
         'createdAt' => isset($u['createdAt']) ? $u['createdAt'] : '',
         'number' => isset($u['number']) ? (int) $u['number'] : 0,
         'emailVerified' => !empty($u['emailVerified']),
+        'status' => isset($u['status']) ? $u['status'] : 'active',
+        'position' => isset($u['position']) ? $u['position'] : '',
+        'hiredAt' => isset($u['hiredAt']) ? $u['hiredAt'] : '',
+        'caps' => function_exists('user_caps') ? user_caps($u) : array(),
+        'canUseMail' => function_exists('can') ? can($u, 'mail.use') : false,
     );
 }
 
@@ -995,6 +1014,7 @@ if ($act === 'selftest_reg') {
    Отвечает на вопрос «почему не пускает»: сколько аккаунтов на сервере,
    можно ли писать файлы, настроена ли почта. Секретов здесь нет. */
 if ($act === 'diag') {
+    /* Служебная диагностика: только для администрации, без паролей и токенов. */
     require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
     ensure_dir($DATA_DIR);
     $users = read_users($DATA_DIR);
@@ -1022,6 +1042,17 @@ if ($act === 'diag') {
         })),
         'support_open' => count(array_filter(read_support($DATA_DIR), function ($t) {
             return isset($t['status']) && $t['status'] === 'open';
+        })),
+        'mailboxes_ready' => count(array_filter(mailboxes_load($DATA_DIR), function ($b) {
+            return !empty($b['pass']) && !empty($b['host']);
+        })),
+        'mailboxes_total' => count(mailboxes_defaults()),
+        'mail_log' => count(mail_log_list($DATA_DIR, 500)),
+        'hiring_open' => count(array_filter(read_hiring($DATA_DIR), function ($a) {
+            return isset($a['stage']) && in_array($a['stage'], array('test', 'checklist', 'review'), true);
+        })),
+        'pending_email' => count(array_filter($users, function ($u) {
+            return empty($u['emailVerified']);
         })),
     ));
 }
@@ -1051,6 +1082,10 @@ if ($act === 'submit') {
     /* кто именно отправил: по токену, если он есть. Нужно, чтобы баллы
        за публикацию начислялись конкретному аккаунту, а не «какому-то». */
     $authorUser = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    /* Материал от аккаунта принимаем только с подтверждённой почтой:
+       иначе баллы и статус автора уходят «в никуда». Гостевую отправку
+       не трогаем — она была и остаётся. */
+    if ($authorUser) require_verified($authorUser);
 
     if (slen($title) < 8) fail('Заголовок короче восьми символов.');
     if (slen($excerpt) < 20) fail('Описание короче двадцати символов.');
@@ -1219,6 +1254,7 @@ if ($act === 'card-apply') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
+    require_verified($me);
 
     $posts = read_json($DATA_DIR . '/posts.json', array());
     $mine = array();
@@ -1521,6 +1557,7 @@ if ($act === 'editorial-apply') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
+    require_verified($user);
 
     $editorialId = text(isset($in['editorialId']) ? $in['editorialId'] : '', 60);
     $target = null;
@@ -1705,6 +1742,7 @@ if ($act === 'portfolio-send') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
+    require_verified($user);
 
     $title = text(isset($in['title']) ? $in['title'] : '', 160);
     $about = text(isset($in['about']) ? $in['about'] : '', 1200);
@@ -1848,6 +1886,7 @@ if ($act === 'consent-send') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
+    require_verified($user);
 
     $err = '';
     $file = data_url_file(
@@ -1953,6 +1992,11 @@ if ($act === 'reg') {
     if (slen($name) < 2) fail('Напишите имя — хотя бы два символа.');
     if (!$email) fail('Проверьте адрес почты — кажется, там опечатка.');
     if (slen($pass) < 8) fail('Пароль должен быть не короче восьми символов.');
+    /* Регистрация без подтверждения почты невозможна: если почта не
+       настроена, аккаунт не создаём вовсе — иначе появятся «мёртвые» адреса. */
+    if (!smtp_configured($DATA_DIR)) {
+        fail('Регистрация временно закрыта: почта проекта не настроена, а без подтверждения адреса аккаунт создать нельзя. Напишите на support@smenakontenta.ru.', 503);
+    }
     if ($craft === '' || !in_array($craft, CRAFT, true)) $craft = 'Автор текстов';
 
     $users = read_users($DATA_DIR);
@@ -1980,6 +2024,8 @@ if ($act === 'reg') {
         'avatar' => '',
         'createdAt' => date('c'),
         'number' => 100 + count($users) + 1,
+        'status' => 'pending_email',
+        'consents' => array(),
     );
     $recovery = recovery_code_new();
     $user['recovery'] = recovery_hash($recovery);
@@ -1993,22 +2039,33 @@ if ($act === 'reg') {
 
     $users[] = $user;
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить аккаунт.', 500);
-    $mailSent = false;
-    if (smtp_configured($DATA_DIR)) {
-        $mailSent = mail_send(
-            $email,
-            'Подтверждение почты — Смена контента',
-            mail_code_text($confirmCode, 30, 'подтверждения почты'),
-            mail_code_html($confirmCode, 30, 'подтверждения почты'),
-            'kod'
-        );
+
+    $token = new_token($DATA_DIR, $id);
+    $mailSent = mail_notify($DATA_DIR, 'confirm_code', $email, array(
+        'name' => $name,
+        'code' => $confirmCode,
+        'minutes' => 30,
+        'link' => 'https://smenakontenta.ru/cabinet/',
+    ), array('dedupe' => 'confirm:' . $id));
+
+    /* Код из письма — единственный способ включить аккаунт. Если письмо не
+       ушло, аккаунт удаляем: иначе адрес занят, а человек не может им
+       пользоваться и не может зарегистрироваться снова. */
+    if (!$mailSent) {
+        $users = read_users($DATA_DIR);
+        $left = array();
+        foreach ($users as $u) { if ($u['id'] !== $id) $left[] = $u; }
+        write_json(users_file($DATA_DIR), $left);
+        fail('Не удалось отправить письмо с кодом. Регистрация не завершена — попробуйте через минуту или напишите на support@smenakontenta.ru.', 502);
     }
     respond(array(
         'ok' => true,
+        'pending' => true,
         'user' => public_user($user),
-        'token' => new_token($DATA_DIR, $id),
+        'token' => $token,
         'recoveryCode' => $recovery,
         'mailSent' => $mailSent,
+        'needConfirm' => 'Мы отправили код на ' . $email . '. Введите его в кабинете, чтобы включить аккаунт.',
     ));
 }
 
@@ -3042,6 +3099,46 @@ if ($act === 'admin-log') {
     respond(array('ok' => true, 'entries' => $out));
 }
 
+/* Выдача доступа по паролю редакции: владелец проекта может назначить
+   администратора, не заходя в чужой аккаунт. Нужен именно пароль редакции —
+   одного токена мало, иначе любой директор мог бы «передать» панель. */
+if ($act === 'grant-admin') {
+    $in = body();
+    if (!is_editor($DATA_DIR, isset($in['password']) ? (string) $in['password'] : '')) {
+        fail('Нужен пароль редакции.', 403);
+    }
+    $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    if (!$email) fail('Укажите почту аккаунта.');
+    $access = text(isset($in['access']) ? $in['access'] : '', 60);
+    $allowed = array('Директор', 'Главный администратор', 'Администрация', 'Администратор',
+        'Технический администратор', 'Главный редактор', 'Сотрудник', 'Модератор');
+    if (!in_array($access, $allowed, true)) fail('Такой роли нет: ' . implode(', ', $allowed) . '.');
+
+    $users = read_users($DATA_DIR);
+    $updated = null;
+    $found = false;
+    foreach ($users as $i => $u) {
+        if (strtolower((string) $u['email']) !== $email) continue;
+        $users[$i]['access'] = $access;
+        /* доступ даёт владелец лично, поэтому почта считается проверенной:
+           иначе администратор не сможет пользоваться панелью */
+        $users[$i]['emailVerified'] = true;
+        if (!isset($users[$i]['status']) || $users[$i]['status'] === 'pending_email') {
+            $users[$i]['status'] = 'active';
+        }
+        $users[$i]['accessGrantedAt'] = date('c');
+        $updated = $users[$i];
+        $found = true;
+        break;
+    }
+    if (!$found) {
+        fail('Аккаунта с такой почтой нет. Пусть человек зарегистрируется — потом выдайте доступ повторно.', 404);
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось выдать доступ.', 500);
+    audit_log($DATA_DIR, 'пароль редакции', 'выдача доступа', $email . ' → ' . $access);
+    respond(array('ok' => true, 'user' => public_user($updated)));
+}
+
 if ($act === 'user-access') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
@@ -3324,13 +3421,12 @@ if ($act === 'confirm-send') {
     }
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить код.', 500);
 
-    $sent = mail_send(
-        $email,
-        'Код подтверждения почты — Смена контента',
-        mail_code_text($code, 30, 'подтверждения почты'),
-        mail_code_html($code, 30, 'подтверждения почты'),
-        'kod'
-    );
+    $sent = mail_notify($DATA_DIR, 'confirm_code', $email, array(
+        'name' => $user['name'],
+        'code' => $code,
+        'minutes' => 30,
+        'link' => 'https://smenakontenta.ru/cabinet/',
+    ));
     if (!$sent) fail('Сервер почты не принял письмо. Проверьте настройки в админке.', 502);
     respond(array('ok' => true, 'mailSent' => true, 'email' => $email));
 }
@@ -3353,10 +3449,21 @@ if ($act === 'confirm-check') {
         $users[$i]['emailVerified'] = true;
         $users[$i]['confirmedAt'] = date('c');
         $users[$i]['confirm'] = '';
+        if (isset($users[$i]['status']) && $users[$i]['status'] === 'pending_email') {
+            $users[$i]['status'] = 'active';
+        }
+        $confirmed = $users[$i];
         break;
     }
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить подтверждение.', 500);
-    respond(array('ok' => true));
+    if (!empty($confirmed)) {
+        mail_notify($DATA_DIR, 'welcome', $confirmed['email'], array(
+            'name' => $confirmed['name'],
+            'link' => 'https://smenakontenta.ru/cabinet/',
+        ), array('dedupe' => 'welcome:' . $confirmed['id']));
+        audit_log($DATA_DIR, $confirmed['email'], 'почта подтверждена', 'аккаунт ' . $confirmed['id']);
+    }
+    respond(array('ok' => true, 'verified' => true, 'user' => isset($confirmed) ? public_user($confirmed) : null));
 }
 
 /* ----------------------------------------------------- поддержка авторов */
@@ -3641,4 +3748,9 @@ if ($act === 'media') {
     exit;
 }
 
-fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, selftest.', 404);
+/* Почта (ящики домена, чтение, отправка, шаблоны) и приём в команду живут
+   в отдельных файлах, но маршруты — здесь, чтобы клиент видел один адрес API. */
+if (mailbox_routes($act, $DATA_DIR)) exit;
+if (hiring_routes($act, $DATA_DIR)) exit;
+
+fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, mailboxes, mail-list, mail-send, hiring-apply, selftest.', 404);

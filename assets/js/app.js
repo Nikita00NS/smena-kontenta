@@ -1687,7 +1687,10 @@
       mountEditorialQueue(panel("editorials"));
       mountCardQueue(panel("cards"));
       mountSupportQueue(panel("support"));
+      mountMailClient(panel("mail"));
       mountMailSettings(panel("mail"));
+      mountHiringAdmin(panel("people"));
+      mountGrantAccess(panel("server"));
       mountSite(panel("site"));
       mountFoundersEditor(panel("site"));
       mountDiag(panel("server"));
@@ -2604,6 +2607,642 @@
     }
 
     /* Почта: настройки SMTP и проверка письмом. Пароль наружу не отдаём. */
+    /* --- Почта: ящики домена, чтение, отправка, шаблоны --------------------- */
+    function mountMailClient(host) {
+      if (!Store.mailBoxes) return;
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:8px");
+      section.setAttribute("data-mail-client", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Почта проекта</span>' +
+        "<h2>Ящики и письма</h2>" +
+        '<p class="sec-head__text">Четыре ящика на домене: редакция, общие вопросы, системные письма и ' +
+        "поддержка. Здесь можно читать входящие, отвечать, пересылать и отправлять письма от имени ящика. " +
+        "Пароли ящиков хранятся на сервере и в браузер не возвращаются.</p></div></div>" +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px" data-mailboxes></div>' +
+        '<div class="panel" style="padding:16px;margin-bottom:14px">' +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">' +
+        '<select data-mail-folder style="max-width:200px">' +
+        '<option value="INBOX">Входящие</option><option value="Sent">Отправленные</option>' +
+        '<option value="Drafts">Черновики</option><option value="Archive">Архив</option>' +
+        '<option value="Junk">Спам</option><option value="Trash">Корзина</option></select>' +
+        '<input type="search" data-mail-q placeholder="Поиск: отправитель, тема, текст" style="flex:1;min-width:180px">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-mail-refresh>Обновить</button>' +
+        '<button class="btn btn--accent btn--sm" type="button" data-mail-write>Написать</button>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-mail-drafts>Черновики</button>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-mail-templates>Шаблоны писем</button>' +
+        "</div>" +
+        '<p class="form__note" data-mail-state style="margin:10px 0 0"></p></div>' +
+        '<div data-mail-compose></div>' +
+        '<div class="mail-split">' +
+        '<div class="panel" style="padding:0;overflow:hidden" data-mail-list>' +
+        '<p class="form__note" style="padding:18px">Загружаем письма…</p></div>' +
+        '<div class="panel" style="padding:18px" data-mail-read>' +
+        '<p class="form__note">Выберите письмо слева — здесь появится текст, вложения и ответ.</p></div>' +
+        "</div>" +
+        '<div data-mail-templates-box style="margin-top:14px"></div>';
+      host.appendChild(section);
+
+      var boxesEl = $("[data-mailboxes]", section);
+      var listEl = $("[data-mail-list]", section);
+      var readEl = $("[data-mail-read]", section);
+      var composeEl = $("[data-mail-compose]", section);
+      var stateEl = $("[data-mail-state]", section);
+      var folderEl = $("[data-mail-folder]", section);
+      var qEl = $("[data-mail-q]", section);
+      var templatesEl = $("[data-mail-templates-box]", section);
+      var state = { box: "editorial", boxes: [], letters: [], msg: null, folder: "INBOX", search: "", offline: false };
+
+      function note(text, isError) {
+        if (!stateEl) return;
+        stateEl.textContent = text || "";
+        stateEl.style.color = isError ? "#a11" : "";
+      }
+
+      function boxLabel(key) {
+        var found = state.boxes.filter(function (b) { return b.key === key; })[0];
+        return found ? found.label + " · " + found.address : key;
+      }
+
+      function drawBoxes() {
+        boxesEl.innerHTML = state.boxes.map(function (b) {
+          var on = b.key === state.box ? " btn--accent" : " btn--ghost";
+          return '<button class="btn btn--sm' + on + '" type="button" data-box="' + esc(b.key) + '">' +
+            esc(b.label) + (b.ready ? "" : " · не подключён") + "</button>";
+        }).join("") +
+          '<span class="form__note" style="align-self:center;margin-left:auto">' +
+          esc(boxLabel(state.box)) + "</span>";
+        $$("[data-box]", boxesEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            state.box = b.getAttribute("data-box");
+            state.msg = null;
+            readEl.innerHTML = '<p class="form__note">Выберите письмо слева.</p>';
+            drawBoxes();
+            load();
+          });
+        });
+      }
+
+      function fmtMailDate(value) {
+        if (!value) return "";
+        var d = new Date(value);
+        if (isNaN(d.getTime())) return value;
+        return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) + " " +
+          d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+      }
+
+      function drawLetters() {
+        if (!state.letters.length) {
+          listEl.innerHTML = '<p class="form__note" style="padding:18px">' +
+            (state.search ? "По запросу ничего не нашлось." : "В этой папке писем нет.") + "</p>";
+          return;
+        }
+        listEl.innerHTML = state.letters.map(function (m) {
+          return '<button type="button" class="mail-row' + (m.seen ? "" : " is-unread") + '" data-uid="' + m.uid + '">' +
+            '<span class="mail-row__from">' + esc(m.from || "неизвестный") + "</span>" +
+            '<span class="mail-row__subj">' + esc(m.subject || "(без темы)") + "</span>" +
+            '<span class="mail-row__date">' + esc(fmtMailDate(m.date)) + "</span></button>";
+        }).join("");
+        $$("[data-uid]", listEl).forEach(function (btn) {
+          btn.addEventListener("click", function () { openLetter(Number(btn.getAttribute("data-uid"))); });
+        });
+      }
+
+      function load() {
+        note("Читаем ящик…");
+        Store.mailList({ key: state.box, folder: state.folder, q: state.search, limit: 30 })
+          .then(function (res) {
+            state.letters = res.messages || [];
+            drawLetters();
+            note("Писем в папке: " + (res.total || 0) + (state.search ? ", найдено: " + (res.matched || 0) : ""));
+          }, function (err) {
+            state.letters = [];
+            listEl.innerHTML = '<p class="form__note" style="padding:18px">Ящик не открылся.</p>';
+            note((err && err.message) || "Ящик не открылся.", true);
+          });
+      }
+
+      function attachList(msg) {
+        if (!msg.attachments || !msg.attachments.length) return "";
+        return '<div style="margin-top:14px"><b>Вложения</b><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">' +
+          msg.attachments.map(function (a) {
+            return '<button class="btn btn--ghost btn--sm" type="button" data-attach="' + a.index + '">' +
+              esc(a.name) + " · " + Math.max(1, Math.round((a.size || 0) / 1024)) + " КБ</button>";
+          }).join("") + "</div></div>";
+      }
+
+      function openLetter(uid) {
+        note("Открываем письмо…");
+        Store.mailGet({ key: state.box, folder: state.folder, uid: uid }).then(function (msg) {
+          state.msg = msg;
+          note("");
+          readEl.innerHTML =
+            "<h3 style=\"margin:0 0 6px\">" + esc(msg.subject || "(без темы)") + "</h3>" +
+            '<p class="form__note" style="margin:0 0 12px">От: ' + esc(msg.from) + " · Кому: " + esc(msg.to) +
+            " · " + esc(fmtMailDate(msg.date)) + "</p>" +
+            '<div class="mail-body">' +
+            (msg.html ? msg.html : "<p>" + esc(msg.text || "(пустое письмо)").replace(/\n/g, "</p><p>") + "</p>") +
+            "</div>" + attachList(msg) +
+            '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:16px">' +
+            '<button class="btn btn--accent btn--sm" type="button" data-mail-reply>Ответить</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-mail-forward>Переслать</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-mail-fav>В избранное</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-mail-archive>В архив</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-mail-trash>В корзину</button>' +
+            "</div>";
+          $$("[data-attach]", readEl).forEach(function (b) {
+            b.addEventListener("click", function () {
+              var idx = Number(b.getAttribute("data-attach"));
+              b.disabled = true;
+              Store.mailAttachment({ key: state.box, folder: state.folder, uid: msg.uid, index: idx })
+                .then(function (file) {
+                  b.disabled = false;
+                  var a = document.createElement("a");
+                  a.href = file.data;
+                  a.download = file.name || "файл";
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                }, function (err) { b.disabled = false; note((err && err.message) || "Вложение не скачалось.", true); });
+            });
+          });
+          var reply = $("[data-mail-reply]", readEl);
+          if (reply) reply.addEventListener("click", function () {
+            var addr = (String(msg.from).match(/[^\s<>"]+@[^\s<>"]+/) || [""])[0];
+            openCompose({ to: addr, subject: /^re:/i.test(msg.subject) ? msg.subject : "Re: " + msg.subject, inReplyTo: msg.messageId });
+          });
+          var fwd = $("[data-mail-forward]", readEl);
+          if (fwd) fwd.addEventListener("click", function () {
+            openCompose({ subject: "Fwd: " + msg.subject, text: "\n\n--- Пересланное письмо ---\nОт: " + msg.from + "\n" + (msg.text || "") });
+          });
+          var fav = $("[data-mail-fav]", readEl);
+          if (fav) fav.addEventListener("click", function () {
+            Store.mailFlag({ key: state.box, folder: state.folder, uid: msg.uid, flag: "\\Flagged", value: true })
+              .then(function () { note("Письмо в избранном."); }, function (e) { note(e.message, true); });
+          });
+          var arch = $("[data-mail-archive]", readEl);
+          if (arch) arch.addEventListener("click", function () {
+            Store.mailMove({ key: state.box, folder: state.folder, uid: msg.uid, to: "Archive" })
+              .then(function () { note("Письмо в архиве."); load(); readEl.innerHTML = ""; }, function (e) { note(e.message, true); });
+          });
+          var trash = $("[data-mail-trash]", readEl);
+          if (trash) trash.addEventListener("click", function () {
+            Store.mailMove({ key: state.box, folder: state.folder, uid: msg.uid, to: "Trash" })
+              .then(function () { note("Письмо в корзине."); load(); readEl.innerHTML = ""; }, function (e) { note(e.message, true); });
+          });
+        }, function (err) { note((err && err.message) || "Письмо не открылось.", true); });
+      }
+
+      function openCompose(prefill) {
+        prefill = prefill || {};
+        var currentBox = state.box;
+        composeEl.innerHTML =
+          '<div class="panel" style="padding:20px;margin-bottom:14px">' +
+          '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          "<h3 style=\"margin:0\">Новое письмо</h3>" +
+          '<span class="form__note">Отправитель: <b>' + esc(boxLabel(currentBox)) + "</b></span>" +
+          '<button class="btn btn--ghost btn--sm" type="button" data-c-close>Закрыть</button></div>' +
+          '<div class="mail-grid">' +
+          '<div class="field"><label>Кому</label><input type="text" data-c-to placeholder="author@example.ru"></div>' +
+          '<div class="field"><label>Копия</label><input type="text" data-c-cc placeholder="необязательно"></div>' +
+          '<div class="field"><label>Скрытая копия</label><input type="text" data-c-bcc placeholder="необязательно"></div>' +
+          '<div class="field"><label>Тема</label><input type="text" data-c-subject placeholder="О чём письмо"></div>' +
+          "</div>" +
+          '<div class="field" style="margin-top:10px"><label>Текст</label>' +
+          '<textarea data-c-text rows="8" placeholder="Текст письма. Пробелы и абзацы сохраняются."></textarea></div>' +
+          '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:10px">' +
+          '<label class="btn btn--ghost btn--sm" style="cursor:pointer">Приложить файл' +
+          '<input type="file" data-c-file multiple style="display:none"></label>' +
+          '<span class="form__note" data-c-files style="align-self:center">до 6 файлов, 8 МБ вместе</span>' +
+          "</div>" +
+          '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">' +
+          '<button class="btn btn--accent btn--sm" type="button" data-c-send>Отправить</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-c-preview>Предпросмотр</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-c-draft>Сохранить черновик</button>' +
+          "</div>" +
+          '<p class="form__note" data-c-note style="margin-top:10px"></p>' +
+          '<div data-c-preview-box></div></div>';
+
+        var toEl = $("[data-c-to]", composeEl);
+        var ccEl = $("[data-c-cc]", composeEl);
+        var bccEl = $("[data-c-bcc]", composeEl);
+        var subjEl = $("[data-c-subject]", composeEl);
+        var textEl = $("[data-c-text]", composeEl);
+        var noteEl = $("[data-c-note]", composeEl);
+        var filesEl = $("[data-c-files]", composeEl);
+        var attachments = [];
+        var draftId = prefill.draftId || "";
+
+        if (prefill.to) toEl.value = prefill.to;
+        if (prefill.subject) subjEl.value = prefill.subject;
+        if (prefill.text) textEl.value = prefill.text;
+
+        $("[data-c-close]", composeEl).addEventListener("click", function () { composeEl.innerHTML = ""; });
+
+        $("[data-c-file]", composeEl).addEventListener("change", function (e) {
+          var files = Array.prototype.slice.call(e.target.files || []);
+          var total = attachments.reduce(function (n, f) { return n + f.size; }, 0);
+          files.forEach(function (f) {
+            if (attachments.length >= 6) return;
+            if (f.size > 5 * 1024 * 1024) { noteEl.textContent = "Файл «" + f.name + "» больше 5 МБ."; return; }
+            total += f.size;
+            if (total > 8 * 1024 * 1024) { noteEl.textContent = "Вложения весят больше 8 МБ."; return; }
+            var reader = new FileReader();
+            reader.onload = function () {
+              attachments.push({ name: f.name, size: f.size, data: String(reader.result) });
+              filesEl.textContent = attachments.map(function (a) { return a.name; }).join(", ");
+            };
+            reader.readAsDataURL(f);
+          });
+          e.target.value = "";
+        });
+
+        function localPreview() {
+          var box = $("[data-c-preview-box]", composeEl);
+          box.innerHTML = '<div class="mail-preview"><div class="mail-preview__head">Смена контента</div>' +
+            "<b>" + esc(subjEl.value || "(без темы)") + "</b>" +
+            "<p>" + esc(textEl.value || "").replace(/\n/g, "<br>") + "</p>" +
+            '<div class="mail-preview__foot">Письмо от ' + esc(boxLabel(currentBox)) + "</div></div>";
+        }
+
+        $("[data-c-preview]", composeEl).addEventListener("click", localPreview);
+
+        $("[data-c-draft]", composeEl).addEventListener("click", function () {
+          Store.mailDraftSave({
+            id: draftId, box: currentBox, to: toEl.value, cc: ccEl.value, bcc: bccEl.value,
+            subject: subjEl.value, text: textEl.value,
+          }).then(function (res) {
+            draftId = res.draft.id;
+            noteEl.textContent = "Черновик сохранён.";
+          }, function (err) { noteEl.textContent = err.message; });
+        });
+
+        var sendBtn = $("[data-c-send]", composeEl);
+        sendBtn.addEventListener("click", function () {
+          if (sendBtn.disabled) return;
+          if (!toEl.value.trim()) { noteEl.textContent = "Укажите почту получателя."; return; }
+          sendBtn.disabled = true;
+          noteEl.textContent = "Отправляем…";
+          var check = [currentBox, toEl.value.trim(), subjEl.value.trim(), textEl.value.slice(0, 200)].join("|");
+          Store.mailSend({
+            key: currentBox, to: toEl.value, cc: ccEl.value, bcc: bccEl.value,
+            subject: subjEl.value, text: textEl.value, html: "",
+            inReplyTo: prefill.inReplyTo || "", confirm: true, check: check,
+            attachments: attachments.map(function (a) { return { name: a.name, data: a.data }; }),
+            draftId: draftId,
+          }).then(function (res) {
+            sendBtn.disabled = false;
+            noteEl.innerHTML = "<b>Письмо ушло.</b> Отправитель: " + esc(res.from) +
+              (res.savedToSent ? ". Копия в «Отправленных»." : ". Копию в «Отправленных» сохранить не удалось — проверьте папку.");
+            composeEl.innerHTML = "";
+            readEl.innerHTML = '<p class="form__note">Письмо отправлено. Оно в папке «Отправленные».</p>';
+            load();
+          }, function (err) {
+            sendBtn.disabled = false;
+            noteEl.textContent = (err && err.message) || "Письмо не ушло.";
+          });
+        });
+      }
+
+      function openTemplates() {
+        templatesEl.innerHTML = '<p class="form__note">Загружаем шаблоны…</p>';
+        Store.mailTemplates().then(function (res) {
+          templatesEl.innerHTML =
+            '<div class="panel" style="padding:20px"><span class="kicker">Письма проекта</span>' +
+            '<h3 style="margin:6px 0 10px">Шаблоны</h3>' +
+            '<p class="form__note">Фирменный макет один для всех писем: логотип, заголовок, кнопка, ' +
+            "колонтитул и причина получения. Текст можно поправить без правки кода.</p>" +
+            '<div class="mail-template-list">' + res.templates.map(function (t) {
+              return '<div class="mail-template-row" data-tpl="' + esc(t.key) + '"><div>' +
+                "<b>" + esc(t.name) + "</b><br><span class=\"form__note\">" + esc(t.subject) + "</span></div>" +
+                '<div class="row" style="gap:6px"><button class="btn btn--ghost btn--sm" type="button" data-tpl-preview="' +
+                esc(t.key) + '">Предпросмотр</button>' +
+                '<button class="btn btn--ghost btn--sm" type="button" data-tpl-test="' + esc(t.key) + '">Прислать себе</button>' +
+                "</div></div>";
+            }).join("") + "</div>" +
+            '<div data-tpl-preview-box style="margin-top:14px"></div>' +
+            '<div data-tpl-log style="margin-top:18px"></div></div>';
+          $$("[data-tpl-preview]", templatesEl).forEach(function (b) {
+            b.addEventListener("click", function () {
+              Store.mailTemplatePreview(b.getAttribute("data-tpl-preview")).then(function (res) {
+                $("[data-tpl-preview-box]", templatesEl).innerHTML =
+                  '<p class="form__note">Тема: ' + esc(res.subject) + "</p>" +
+                  '<iframe title="Предпросмотр письма" style="width:100%;height:560px;border:1px solid #ddd;border-radius:10px;background:#fff" ' +
+                  "srcdoc=\"" + String(res.html).replace(/"/g, "&quot;") + "\"></iframe>";
+              }, function (err) { note(err.message, true); });
+            });
+          });
+          $$("[data-tpl-test]", templatesEl).forEach(function (b) {
+            b.addEventListener("click", function () {
+              b.disabled = true;
+              Store.mailTemplateTest(b.getAttribute("data-tpl-test")).then(function (res) {
+                b.disabled = false;
+                note("Тестовое письмо ушло на " + res.to + ".");
+              }, function (err) { b.disabled = false; note(err.message, true); });
+            });
+          });
+        }, function (err) { templatesEl.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>"; });
+      }
+
+      function openDrafts() {
+        Store.mailDrafts().then(function (res) {
+          templatesEl.innerHTML = '<div class="panel" style="padding:20px"><h3 style="margin:0 0 10px">Черновики</h3>' +
+            (res.drafts.length ? res.drafts.map(function (d) {
+              return '<div class="mail-template-row"><div><b>' + esc(d.subject || "(без темы)") + "</b><br>" +
+                '<span class="form__note">' + esc(d.to || "получатель не указан") + " · " + esc(fmtMailDate(d.updatedAt)) +
+                "</span></div><div class=\"row\" style=\"gap:6px\">" +
+                '<button class="btn btn--ghost btn--sm" type="button" data-draft-open="' + esc(d.id) + '">Открыть</button>' +
+                '<button class="btn btn--ghost btn--sm" type="button" data-draft-del="' + esc(d.id) + '">Удалить</button>' +
+                "</div></div>";
+            }).join("") : '<p class="form__note">Черновиков нет.</p>') + "</div>";
+          $$("[data-draft-open]", templatesEl).forEach(function (b) {
+            b.addEventListener("click", function () {
+              var id = b.getAttribute("data-draft-open");
+              var d = res.drafts.filter(function (x) { return x.id === id; })[0];
+              if (d) openCompose({ to: d.to, subject: d.subject, text: d.text, draftId: d.id });
+            });
+          });
+          $$("[data-draft-del]", templatesEl).forEach(function (b) {
+            b.addEventListener("click", function () {
+              Store.mailDraftDelete(b.getAttribute("data-draft-del")).then(function () { openDrafts(); }, function (e) { note(e.message, true); });
+            });
+          });
+        }, function (err) { note(err.message, true); });
+      }
+
+      $("[data-mail-refresh]", section).addEventListener("click", load);
+      $("[data-mail-write]", section).addEventListener("click", function () { openCompose({}); });
+      $("[data-mail-drafts]", section).addEventListener("click", openDrafts);
+      $("[data-mail-templates]", section).addEventListener("click", openTemplates);
+      folderEl.addEventListener("change", function () { state.folder = folderEl.value; load(); });
+      var searchTimer = null;
+      qEl.addEventListener("input", function () {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () { state.search = qEl.value.trim(); load(); }, 450);
+      });
+
+      Store.mailBoxes().then(function (res) {
+        state.boxes = res.mailboxes || [];
+        var firstReady = state.boxes.filter(function (b) { return b.ready; })[0];
+        if (firstReady) state.box = firstReady.key;
+        drawBoxes();
+        if (!firstReady) {
+          note("Ящики ещё не подключены: впишите пароли в блоке «Отправка писем» ниже. " +
+            "Пока пароля нет, письма читать и отправлять нельзя.", true);
+          listEl.innerHTML = '<p class="form__note" style="padding:18px">Нет ни одного подключённого ящика.</p>';
+          return;
+        }
+        load();
+      }, function (err) {
+        note((err && err.message) || "Почта недоступна.", true);
+        listEl.innerHTML = '<p class="form__note" style="padding:18px">Почта не открылась.</p>';
+      });
+    }
+
+    /* --- Приём в команду: заявки, тест, чек-лист, решение ---------------- */
+    function mountHiringAdmin(host) {
+      if (!Store.hiringList) return;
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:8px");
+      section.setAttribute("data-hiring-admin", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Команда</span>' +
+        "<h2>Приём на работу</h2>" +
+        '<p class="sec-head__text">Заявка → тест знаний → чек-лист документов → согласование. ' +
+        "Роль «Сотрудник» выдаёт сервер и только после всех этапов.</p></div></div>" +
+        '<div class="panel" style="padding:20px"><div data-hiring-banner class="fill-note fill-note--flat">' +
+        "Загружаем заявки…</div><div data-hiring-list></div></div>";
+      host.appendChild(section);
+      var banner = $("[data-hiring-banner]", section);
+      var listEl = $("[data-hiring-list]", section);
+
+      function draw(apps, canDecide) {
+        if (!apps.length) {
+          banner.textContent = "Заявок пока нет. Как только кто-то подаст заявку, она появится здесь.";
+          listEl.innerHTML = "";
+          return;
+        }
+        banner.textContent = "Заявок: " + apps.length + ". Тест проверяется автоматически, чек-лист — вручную.";
+        listEl.innerHTML = apps.map(function (a) {
+          var done = a.checklist.filter(function (c) { return c.ok; }).length;
+          var stageName = { test: "тест", checklist: "чек-лист", review: "согласование", approved: "принят", rejected: "отказ" }[a.stage] || a.stage;
+          return '<div class="hiring-row" data-app="' + esc(a.id) + '">' +
+            '<div class="hiring-row__main"><b>' + esc(a.name) + "</b> · " + esc(a.position) +
+            '<br><span class="form__note">' + esc(a.email) + " · этап: " + esc(stageName) +
+            " · тест: " + a.testPercent + "% · чек-лист: " + done + " из " + a.checklist.length + "</span>" +
+            (a.motivation ? '<p class="form__note" style="margin:8px 0 0">' + esc(a.motivation) + "</p>" : "") +
+            (a.note ? '<p class="form__note" style="margin:6px 0 0">Решение: ' + esc(a.note) + "</p>" : "") +
+            "</div>" +
+            '<div class="hiring-row__side">' +
+            (canDecide && a.stage !== "approved" && a.stage !== "rejected"
+              ? '<div class="hiring-checks">' + a.checklist.map(function (c) {
+                  return '<label class="hiring-check"><input type="checkbox" data-check="' + esc(c.key) + '"' +
+                    (c.ok ? " checked" : "") + "> " + esc(c.label) + "</label>";
+                }).join("") + "</div>" +
+                '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">' +
+                '<button class="btn btn--accent btn--sm" type="button" data-approve>Принять в команду</button>' +
+                '<input type="text" data-reason placeholder="причина отказа" style="max-width:180px">' +
+                '<button class="btn btn--ghost btn--sm" type="button" data-reject>Отказать</button>' +
+                "</div>"
+              : "") +
+            "</div></div>";
+        }).join("");
+
+        $$("[data-app]", listEl).forEach(function (row) {
+          var id = row.getAttribute("data-app");
+          $$("[data-check]", row).forEach(function (box) {
+            box.addEventListener("change", function () {
+              Store.hiringCheck(id, box.getAttribute("data-check"), box.checked).then(refresh, function (err) {
+                box.checked = !box.checked;
+                banner.textContent = err.message;
+              });
+            });
+          });
+          var appr = $("[data-approve]", row);
+          if (appr) appr.addEventListener("click", function () {
+            if (!window.confirm("Принять человека в команду и выдать роль «Сотрудник»?")) return;
+            appr.disabled = true;
+            Store.hiringDecide(id, "approve", "").then(refresh, function (err) {
+              appr.disabled = false;
+              banner.textContent = err.message;
+            });
+          });
+          var rej = $("[data-reject]", row);
+          if (rej) rej.addEventListener("click", function () {
+            var reason = ($("[data-reason]", row) || {}).value || "";
+            if (reason.trim().length < 5) { banner.textContent = "Напишите причину отказа — человек должен её увидеть."; return; }
+            rej.disabled = true;
+            Store.hiringDecide(id, "reject", reason).then(refresh, function (err) {
+              rej.disabled = false;
+              banner.textContent = err.message;
+            });
+          });
+        });
+      }
+
+      function refresh() {
+        Store.hiringList().then(function (res) {
+          draw(res.applications || [], res.canDecide);
+        }, function (err) {
+          section.remove();
+        });
+      }
+      refresh();
+    }
+
+    /* --- Выдача доступа по почте (для владельца проекта) ------------------ */
+    function mountGrantAccess(host) {
+      if (!Store.grantAdmin) return;
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:8px");
+      section.setAttribute("data-grant-access", "");
+      section.innerHTML =
+        '<div class="panel" style="padding:20px"><span class="kicker">Доступы</span>' +
+        '<h3 style="margin:6px 0 8px">Выдать админку по почте</h3>' +
+        '<p class="form__note">Работает только с паролем редакции: одного аккаунта директора мало. ' +
+        "Человек должен быть зарегистрирован — иначе сначала пусть создаст аккаунт.</p>" +
+        '<div class="mail-grid" style="margin-top:10px">' +
+        '<div class="field"><label>Почта человека</label><input type="email" data-g-email placeholder="name@mail.ru"></div>' +
+        '<div class="field"><label>Роль</label><select data-g-access>' +
+        '<option>Главный администратор</option><option>Администрация</option>' +
+        '<option>Технический администратор</option><option>Главный редактор</option>' +
+        '<option>Модератор</option><option>Сотрудник</option></select></div>' +
+        '<div class="field"><label>Пароль редакции</label><input type="password" data-g-pass autocomplete="new-password"></div>' +
+        "</div>" +
+        '<div class="row" style="gap:8px;margin-top:12px"><button class="btn btn--accent btn--sm" type="button" data-g-send>Выдать доступ</button>' +
+        '<span class="form__note" data-g-note style="align-self:center"></span></div></div>';
+      host.appendChild(section);
+
+      var noteEl = $("[data-g-note]", section);
+      $("[data-g-send]", section).addEventListener("click", function () {
+        var email = ($("[data-g-email]", section).value || "").trim();
+        var access = $("[data-g-access]", section).value;
+        var pass = $("[data-g-pass]", section).value;
+        if (!email || !pass) { noteEl.textContent = "Нужны почта и пароль редакции."; return; }
+        noteEl.textContent = "Выдаём…";
+        Store.grantAdmin(email, access, pass).then(function (res) {
+          noteEl.textContent = "Готово: " + res.user.name + " — " + res.user.access + ". Пусть войдёт заново.";
+          $("[data-g-pass]", section).value = "";
+        }, function (err) {
+          noteEl.textContent = (err && err.message) || "Не получилось выдать доступ.";
+        });
+      });
+    }
+
+    /* --- Кабинет: работа в команде --------------------------------------- */
+    function mountHiringCabinet(user) {
+      var host = $("[data-hiring-cabinet]");
+      if (!host || !Store.hiringMine || !user) return;
+
+      function draw() {
+        Store.hiringMine().then(function (res) {
+          var app = res.application;
+          if (!app) {
+            host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Команда</span>' +
+              '<h3 style="margin:6px 0 10px">Хотите работать в проекте?</h3>' +
+              '<p class="form__note">Заявка проходит четыре шага: тест знаний, проверка документов, ' +
+              "согласование редакции и только потом роль «Сотрудник». Почта должна быть подтверждена.</p>" +
+              '<div class="mail-grid" style="margin-top:12px">' +
+              '<div class="field"><label>Направление</label><select data-h-position>' +
+              res.positions.map(function (p) { return "<option>" + esc(p) + "</option>"; }).join("") +
+              "</select></div>" +
+              '<div class="field"><label>Город или регион</label><input type="text" data-h-region placeholder="Москва"></div>' +
+              "</div>" +
+              '<div class="field" style="margin-top:10px"><label>Почему именно вы</label>' +
+              '<textarea data-h-motivation rows="4" placeholder="Опыт, ссылки на работы, чем хотите заниматься"></textarea></div>' +
+              '<div class="row" style="gap:8px;margin-top:10px"><button class="btn btn--accent btn--sm" type="button" data-h-apply>Подать заявку</button>' +
+              '<span class="form__note" data-h-note style="align-self:center"></span></div></div>';
+            var noteEl = $("[data-h-note]", host);
+            $("[data-h-apply]", host).addEventListener("click", function () {
+              noteEl.textContent = "Отправляем…";
+              Store.hiringApply({
+                position: $("[data-h-position]", host).value,
+                region: $("[data-h-region]", host).value,
+                motivation: $("[data-h-motivation]", host).value,
+              }).then(draw, function (err) { noteEl.textContent = err.message; });
+            });
+            return;
+          }
+
+          var stageName = res.stages[app.stage] || app.stage;
+          var head = '<div class="panel" style="padding:22px"><span class="kicker">Команда</span>' +
+            '<h3 style="margin:6px 0 8px">' + esc(app.position) + "</h3>" +
+            '<p class="form__note">Этап: <b>' + esc(stageName) + "</b>. Тест: " + app.testPercent +
+            "% (нужно " + res.passPercent + "%).</p>";
+          var body = "";
+
+          if (app.stage === "test" && res.questionsCount) {
+            body = '<div data-h-test><p class="form__note">Тест короткий: ' + res.questionsCount +
+              " вопросов, по одному ответу. Правильные ответы проверяет сервер.</p>" +
+              '<button class="btn btn--accent btn--sm" type="button" data-h-start>Начать тест</button></div>';
+          } else if (app.stage === "checklist") {
+            body = '<p class="form__note">Тест пройден. Дальше редакция проверит документы и портфолио. ' +
+              "Мы напишем на почту, когда решение будет готово.</p>";
+          } else if (app.stage === "review") {
+            body = '<p class="form__note">Заявка на согласовании у редакции.</p>';
+          } else if (app.stage === "approved") {
+            body = '<p class="form__note"><b>Вы в команде.</b> Роль «Сотрудник» уже выдана: зайдите заново, чтобы обновились права.</p>';
+          } else if (app.stage === "rejected") {
+            body = '<p class="form__note">Заявку не приняли' + (app.note ? ": " + esc(app.note) : "") +
+              ". Можно подать снова, когда будете готовы.</p>" +
+              '<button class="btn btn--ghost btn--sm" type="button" data-h-again>Подать заново</button>';
+          }
+
+          var checks = app.checklist.map(function (c) {
+            return '<div class="pcard__line"><span>' + esc(c.label) + "</span><small>" +
+              (c.ok ? "готово" : "ждёт") + "</small></div>";
+          }).join("");
+
+          host.innerHTML = head + body + '<div class="pcard__list" style="margin-top:12px">' + checks + "</div></div>" +
+            '<div data-h-test-box style="margin-top:14px"></div>';
+
+          var start = $("[data-h-start]", host);
+          if (start) start.addEventListener("click", function () {
+            start.disabled = true;
+            Store.hiringTest().then(function (t) {
+              $("[data-h-test-box]", host).innerHTML = '<div class="panel" style="padding:22px">' +
+                t.questions.map(function (q) {
+                  return '<div class="field" style="margin-bottom:14px"><b>' + esc(q.text) + "</b>" +
+                    q.options.map(function (o, i) {
+                      return '<label class="hiring-check"><input type="radio" name="' + esc(q.id) + '" value="' + i + '"> ' + esc(o) + "</label>";
+                    }).join("") + "</div>";
+                }).join("") +
+                '<button class="btn btn--accent btn--sm" type="button" data-h-submit>Отправить ответы</button>' +
+                '<span class="form__note" data-h-result style="margin-left:10px"></span></div>';
+              $("[data-h-submit]", host).addEventListener("click", function () {
+                var answers = {};
+                t.questions.forEach(function (q) {
+                  var chosen = document.querySelector('input[name="' + q.id + '"]:checked');
+                  if (chosen) answers[q.id] = Number(chosen.value);
+                });
+                $("[data-h-submit]", host).disabled = true;
+                Store.hiringTestSubmit(answers).then(function (r) {
+                  $("[data-h-result]", host).textContent = r.passed
+                    ? "Тест сдан: " + r.right + " из " + r.total + ". Дальше — документы и портфолио."
+                    : "Пока " + r.percent + "%. Нужно " + res.passPercent + "%. Можно попробовать снова.";
+                  if (r.passed) setTimeout(draw, 1200);
+                }, function (err) {
+                  $("[data-h-submit]", host).disabled = false;
+                  $("[data-h-result]", host).textContent = err.message;
+                });
+              });
+            }, function (err) { start.disabled = false; });
+          });
+
+          var again = $("[data-h-again]", host);
+          if (again) again.addEventListener("click", function () {
+            again.disabled = true;
+            Store.hiringApply({ position: app.position, region: app.region, motivation: app.motivation })
+              .then(draw, function (err) { again.disabled = false; alert(err.message); });
+          });
+        }, function () {});
+      }
+      draw();
+    }
+
     function mountMailSettings(host) {
       var old = $("[data-mail-admin]");
       if (old) old.remove();
@@ -4560,7 +5199,11 @@
             } catch (e) {}
           }
           /* показываем код восстановления сразу: иначе человек его не увидит */
-          window.location.href = res.recoveryCode || next === "/profile" ? "/profile?new=1" : next;
+          /* без кода из письма аккаунт не включится, поэтому сразу ведём
+             туда, где этот код вводят, и не обещаем «всё готово» */
+          window.location.href = res.pending
+            ? "/profile?confirm=1"
+            : (res.recoveryCode || next === "/profile" ? "/profile?new=1" : next);
         }, function (err) {
           if (submitBtn) submitBtn.disabled = false;
           out.textContent = (err && err.message) || "Не получилось создать аккаунт. Попробуйте ещё раз.";
@@ -4639,8 +5282,9 @@
         '<span class="kicker">Почта</span>' +
         '<h3 style="margin:6px 0 8px">Подтвердите адрес</h3>' +
         '<p style="font-size:.94rem;color:var(--ink-soft);margin:0 0 12px">' +
-        "Пришлём шестизначный код на " + esc(user.email) + ". Это нужно, чтобы коды " +
-        "восстановления доходили именно вам. Публиковать можно и без подтверждения.</p>" +
+        "Пришлём шестизначный код на " + esc(user.email) + ". Пока адрес не подтверждён, " +
+        "аккаунт не включён: отправка материалов, заявки и обращения закрыты. Так чужой " +
+        "человек не займёт вашу почту, а письма проекта будут доходить именно вам.</p>" +
         '<div class="row" style="gap:10px;flex-wrap:wrap">' +
         '<button class="btn btn--ghost btn--sm" type="button" data-confirm-send>Прислать код</button>' +
         '<input class="confirm-input" type="text" inputmode="numeric" maxlength="6" ' +
@@ -4690,6 +5334,20 @@
     }
 
     draw(!!user.emailVerified);
+
+    /* человек пришёл сразу после регистрации: подсвечиваем, что делать */
+    if (!user.emailVerified) {
+      var host2 = $("[data-profile-status]");
+      var fromReg = param("confirm");
+      if (host2 && fromReg) {
+        host2.textContent = "Аккаунт создан. Ниже введите код из письма — без него действия закрыты.";
+        host2.classList.remove("is-hidden");
+      }
+      var card = host;
+      if (card && fromReg && card.scrollIntoView) {
+        try { card.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+      }
+    }
   }
 
   /* Код восстановления: показываем один раз, потом только по кнопке. */
@@ -5311,6 +5969,7 @@
         '<div data-my-editorial style="margin-top:18px"></div>' +
         '<div data-inbox style="margin-top:18px"></div>' +
         '<div data-email-card style="margin-top:18px"></div>' +
+        '<div data-hiring-cabinet style="margin-top:18px"></div>' +
         '<div data-recovery-card style="margin-top:18px"></div>' +
         '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
         "Отправленный материал уходит в общую приёмную редакции: он доходит до неё с любого " +
@@ -5324,6 +5983,7 @@
       warnLocalOnly();
       mountInbox();
       mountEmailCard(user);
+      mountHiringCabinet(user);
       mountRecoveryCard();
       syncSwatches(readAccent());
       Store.refreshPortfolio();

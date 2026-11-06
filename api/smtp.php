@@ -237,6 +237,90 @@ function smtp_send_mail($cfg, $to, $subject, $text, $html = '') {
     return array('ok' => true, 'error' => '');
 }
 
+/* Доставка готового письма: почтовый раздел админки собирает письмо
+   целиком (копии, вложения, тема в UTF-8), а здесь только разговор с сервером.
+   Возвращает array('ok'=>bool,'error'=>string). */
+function smtp_deliver($cfg, $rcpts, $payload) {
+    $rcpts = array_values(array_filter((array) $rcpts, function ($to) {
+        return filter_var($to, FILTER_VALIDATE_EMAIL);
+    }));
+    if (!$rcpts) return array('ok' => false, 'error' => 'Нет корректных адресов получателей.');
+    if (empty($cfg['host']) || empty($cfg['from'])) {
+        return array('ok' => false, 'error' => 'SMTP не настроен: нет сервера или отправителя.');
+    }
+    $port = (int) (isset($cfg['port']) && $cfg['port'] ? $cfg['port'] : 465);
+    $secure = in_array((string) $cfg['secure'], array('ssl', 'tls', 'none'), true) ? $cfg['secure'] : 'ssl';
+    $target = ($secure === 'ssl' ? 'ssl://' : 'tcp://') . $cfg['host'] . ':' . $port;
+    $ctx = stream_context_create(array('ssl' => array(
+        'verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true,
+    )));
+    $fp = @stream_socket_client($target, $errno, $errstr, 20, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) {
+        return array('ok' => false, 'error' => 'Не удалось подключиться к ' . $cfg['host'] . ':' . $port . ($errstr ? ' — ' . $errstr : ''));
+    }
+    stream_set_timeout($fp, 20);
+    $error = '';
+    if (smtp_cmd($fp, '', $error, '220') === false) {
+        @fclose($fp);
+        return array('ok' => false, 'error' => 'Сервер не поздоровался: ' . $error);
+    }
+    if (smtp_cmd($fp, 'EHLO smenakontenta.ru', $error, '250') === false) {
+        if (smtp_cmd($fp, 'HELO smenakontenta.ru', $error, '250') === false) {
+            @fclose($fp);
+            return array('ok' => false, 'error' => 'EHLO отклонён: ' . $error);
+        }
+    }
+    if ($secure === 'tls') {
+        if (smtp_cmd($fp, 'STARTTLS', $error, '220') === false) {
+            @fclose($fp);
+            return array('ok' => false, 'error' => 'STARTTLS не принят: ' . $error);
+        }
+        if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+            @fclose($fp);
+            return array('ok' => false, 'error' => 'Шифрование TLS не включилось.');
+        }
+        smtp_cmd($fp, 'EHLO smenakontenta.ru', $error, '250');
+    }
+    if (!empty($cfg['user'])) {
+        if (smtp_cmd($fp, 'AUTH LOGIN', $error, '334') === false) {
+            $plain = base64_encode("\0" . $cfg['user'] . "\0" . $cfg['pass']);
+            if (smtp_cmd($fp, 'AUTH PLAIN ' . $plain, $error, '235') === false) {
+                @fclose($fp);
+                return array('ok' => false, 'error' => 'Логин или пароль ящика не приняты: ' . $error);
+            }
+        } else {
+            if (smtp_cmd($fp, base64_encode($cfg['user']), $error, '334') === false
+                || smtp_cmd($fp, base64_encode($cfg['pass']), $error, '235') === false) {
+                @fclose($fp);
+                return array('ok' => false, 'error' => 'Пароль ящика не подошёл: ' . $error);
+            }
+        }
+    }
+    if (smtp_cmd($fp, 'MAIL FROM:<' . $cfg['from'] . '>', $error, '250') === false) {
+        @fclose($fp);
+        return array('ok' => false, 'error' => 'Отправитель отклонён: ' . $error);
+    }
+    foreach ($rcpts as $to) {
+        if (smtp_cmd($fp, 'RCPT TO:<' . $to . '>', $error, '250') === false) {
+            @fclose($fp);
+            return array('ok' => false, 'error' => 'Получатель ' . $to . ' отклонён: ' . $error);
+        }
+    }
+    if (smtp_cmd($fp, 'DATA', $error, '354') === false) {
+        @fclose($fp);
+        return array('ok' => false, 'error' => 'Сервер не принял DATA: ' . $error);
+    }
+    $payload = preg_replace('/^\./m', '..', $payload);
+    fwrite($fp, $payload . "\r\n.\r\n");
+    $final = smtp_read($fp, $error);
+    smtp_cmd($fp, 'QUIT', $error);
+    @fclose($fp);
+    if (substr($final, 0, 3) !== '250') {
+        return array('ok' => false, 'error' => 'Письмо не принято: ' . trim(substr($final, 0, 200)));
+    }
+    return array('ok' => true, 'error' => '');
+}
+
 /* Отправка через настройки сайта: используется везде в index.php */
 /* Домен проекта: на нём работают адреса-алиасы (kod@, support@, redakcia@).
    Отдельных ящиков не заводится: письма уходят от имени домена. */
