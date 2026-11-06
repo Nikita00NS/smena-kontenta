@@ -27,6 +27,23 @@ if ($lib !== '') {
     }
 }
 
+/* ?index=1 — пробуем выполнить index.php и показать причину падения */
+if (isset($_GET['index'])) {
+    $_GET['action'] = 'points-rules';
+    register_shutdown_function(function () {
+        $e = error_get_last();
+        $fatal = $e && in_array($e['type'], array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR), true);
+        while (ob_get_level()) { @ob_end_clean(); }
+        if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8');
+        echo $fatal
+            ? "FATAL: " . $e['message'] . " in " . basename($e['file']) . ":" . $e['line']
+            : "NO-FATAL";
+    });
+    ob_start();
+    require __DIR__ . '/index.php';
+    exit;
+}
+
 /* почему index.php мог упасть: последняя ошибка и подсказка */
 $err = error_get_last();
 if ($err) $out['last_error'] = array('msg' => $err['message'], 'file' => basename($err['file']), 'line' => $err['line']);
