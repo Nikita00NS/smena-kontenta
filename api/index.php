@@ -2396,6 +2396,127 @@ if ($act === 'founders-save') {
     respond(array('ok' => true, 'founders' => $out));
 }
 
+/* ------------------------------------- лучшие авторы на главной странице
+   Редакция решает, кого показывать: тех, у кого больше баллов, или свой
+   список. В список попадают только люди с опубликованными материалами —
+   выдуманных карточек на сайте нет. */
+function authors_show_file($dir) { return $dir . '/authors-show.json'; }
+
+/* Инициалы для карточки: «Никита Сирик» → «НС». */
+function initials_of($name) {
+    $parts = preg_split('/\s+/u', trim((string) $name), -1, PREG_SPLIT_NO_EMPTY);
+    if (!is_array($parts) || !$parts) return 'А';
+    if (count($parts) === 1) return mb_strtoupper(mb_substr($parts[0], 0, 2, 'UTF-8'), 'UTF-8');
+    return mb_strtoupper(mb_substr($parts[0], 0, 1, 'UTF-8') . mb_substr($parts[1], 0, 1, 'UTF-8'), 'UTF-8');
+}
+
+function read_authors_show($dir) {
+    $cfg = read_json(authors_show_file($dir), array());
+    if (!is_array($cfg)) $cfg = array();
+    $ids = array();
+    if (isset($cfg['ids']) && is_array($cfg['ids'])) {
+        foreach ($cfg['ids'] as $rawId) {
+            $id = text($rawId, 40);
+            if ($id !== '') $ids[] = $id;
+        }
+    }
+    return array(
+        'mode' => (isset($cfg['mode']) && $cfg['mode'] === 'manual') ? 'manual' : 'points',
+        'limit' => isset($cfg['limit']) ? max(3, min(8, (int) $cfg['limit'])) : 6,
+        'ids' => $ids,
+        'teaser' => isset($cfg['teaser']) ? (string) $cfg['teaser'] : '',
+    );
+}
+
+function authors_show_rows($dir, $cfg) {
+    $users = read_users($dir);
+    $balances = points_balance_all($dir);
+    $posts = read_json($dir . '/posts.json', array());
+    $published = array();
+    foreach ($posts as $post) {
+        if (!isset($post['authorId']) || !isset($post['status'])) continue;
+        if ($post['status'] !== 'published') continue;
+        $published[$post['authorId']] = isset($published[$post['authorId']]) ? $published[$post['authorId']] + 1 : 1;
+    }
+    $rows = array();
+    foreach ($users as $u) {
+        if (empty($published[$u['id']])) continue;
+        if (isset($u['status']) && $u['status'] !== 'active' && $u['status'] !== 'pending_email') continue;
+        $name = (string) $u['name'];
+        $rows[] = array(
+            'id' => (string) $u['id'],
+            'name' => $name,
+            'initials' => initials_of($name),
+            'role' => isset($u['role']) ? (string) $u['role'] : '',
+            'region' => isset($u['region']) ? (string) $u['region'] : '',
+            'points' => isset($balances[$u['id']]) ? (int) $balances[$u['id']] : 0,
+            'posts' => (int) $published[$u['id']],
+        );
+    }
+    if ($cfg['mode'] === 'manual' && $cfg['ids']) {
+        $order = array();
+        foreach ($cfg['ids'] as $i => $id) $order[$id] = $i;
+        $rows = array_values(array_filter($rows, function ($r) use ($order) {
+            return isset($order[$r['id']]);
+        }));
+        usort($rows, function ($a, $b) use ($order) {
+            return $order[$a['id']] - $order[$b['id']];
+        });
+    } else {
+        usort($rows, function ($a, $b) {
+            if ($a['points'] !== $b['points']) return $b['points'] - $a['points'];
+            if ($a['posts'] !== $b['posts']) return $b['posts'] - $a['posts'];
+            return strcmp((string) $a['name'], (string) $b['name']);
+        });
+    }
+    return array_slice($rows, 0, $cfg['limit']);
+}
+
+if ($act === 'top-authors') {
+    $cfg = read_authors_show($DATA_DIR);
+    respond(array(
+        'ok' => true,
+        'mode' => $cfg['mode'],
+        'limit' => $cfg['limit'],
+        'teaser' => $cfg['teaser'],
+        'authors' => authors_show_rows($DATA_DIR, $cfg),
+    ));
+}
+
+if ($act === 'authors-show-save') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!can($me, 'site.manage')) fail('Кого показывать на главной, решает директор и администрация.', 403);
+
+    $mode = (isset($in['mode']) && $in['mode'] === 'manual') ? 'manual' : 'points';
+    $limit = isset($in['limit']) ? (int) $in['limit'] : 6;
+    $limit = max(3, min(8, $limit));
+    $ids = array();
+    if ($mode === 'manual') {
+        $raw = isset($in['ids']) && is_array($in['ids']) ? $in['ids'] : array();
+        foreach ($raw as $item) {
+            $id = text($item, 40);
+            if ($id !== '') $ids[] = $id;
+        }
+        $ids = array_slice(array_values(array_unique($ids)), 0, 12);
+        if (!$ids) fail('Выберите хотя бы одного человека.');
+    }
+    $cfg = array(
+        'mode' => $mode,
+        'limit' => $limit,
+        'ids' => $ids,
+        'teaser' => text(isset($in['teaser']) ? $in['teaser'] : '', 160),
+        'updatedAt' => date('c'),
+        'updatedBy' => (string) $me['email'],
+    );
+    if (!write_json(authors_show_file($DATA_DIR), $cfg)) fail('Не удалось сохранить список.', 500);
+    audit_log($DATA_DIR, (string) $me['email'], 'authors-show',
+        $mode === 'manual' ? 'вручную: ' . count($ids) : 'по баллам, до ' . $limit);
+    respond(array('ok' => true, 'mode' => $mode, 'limit' => $limit, 'ids' => $ids,
+        'teaser' => $cfg['teaser'], 'authors' => authors_show_rows($DATA_DIR, read_authors_show($DATA_DIR))));
+}
+
 if ($act === 'posts-queue') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
@@ -2680,6 +2801,7 @@ if ($act === 'user-update') {
     $users = read_users($DATA_DIR);
     $found = false;
     $updated = null;
+    $emailChanged = false;
     foreach ($users as $i => $u) {
         if ($u['id'] !== $id) continue;
         if (!can_manage_user($me, $u)) {
@@ -2689,6 +2811,26 @@ if ($act === 'user-update') {
             $name = text($in['name'], 80);
             if (slen($name) < 2) fail('Имя — минимум два символа.');
             $users[$i]['name'] = $name;
+        }
+        /* Смена почты в карточке: адрес должен быть свободен, а новый
+           владелец обязан подтвердить его кодом из письма. */
+        if (isset($in['email'])) {
+            $newEmail = norm_email($in['email']);
+            if ($newEmail === '') fail('Почта указана неверно.');
+            $currentEmail = strtolower((string) (isset($u['email']) ? $u['email'] : ''));
+            if ($newEmail !== $currentEmail) {
+                foreach ($users as $other) {
+                    if ($other['id'] === $u['id']) continue;
+                    if (strtolower((string) (isset($other['email']) ? $other['email'] : '')) === $newEmail) {
+                        fail('Этот адрес уже занят другим аккаунтом.');
+                    }
+                }
+                $users[$i]['email'] = $newEmail;
+                $users[$i]['emailVerified'] = false;
+                $users[$i]['emailChangedAt'] = date('c');
+                $users[$i]['emailChangedBy'] = (string) $me['email'];
+                $emailChanged = true;
+            }
         }
         if (isset($in['region'])) $users[$i]['region'] = text($in['region'], 60);
         if (isset($in['role'])) $users[$i]['role'] = text($in['role'], 60);
@@ -2706,8 +2848,9 @@ if ($act === 'user-update') {
     }
     if (!$found) fail('Участник не найден.', 404);
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить профиль.', 500);
-    audit_log($DATA_DIR, $me['name'], 'user-update', 'профиль: ' . $updated['name']);
-    respond(array('ok' => true, 'user' => public_user($updated)));
+    audit_log($DATA_DIR, $me['email'], 'user-update',
+        'профиль: ' . $updated['name'] . ($emailChanged ? ' · почта теперь ' . $updated['email'] : ''));
+    respond(array('ok' => true, 'user' => public_user($updated), 'emailChanged' => $emailChanged));
 }
 
 if ($act === 'card-grant') {

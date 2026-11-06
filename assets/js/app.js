@@ -1754,7 +1754,6 @@
       mountOverview(panel("overview"));
       mountPeople(panel("people"));
       mountTeamChat(panel("people"));
-      mountRecoveryQueue(panel("people"));
       mountContent(panel("content"));
       mountEditorialQueue(panel("editorials"));
       mountCardQueue(panel("cards"));
@@ -1764,6 +1763,7 @@
       mountHiringAdmin(panel("people"));
       mountTasksAdmin(panel("people"));
       mountSite(panel("site"));
+      mountAuthorsShow(panel("site"));
       mountDiag(panel("server"));
 
       buildAdminTabs(host, TABS);
@@ -2073,6 +2073,108 @@
       });
     }
 
+    /* Кого показывать в блоке «Кто делает материалы» на главной: лучших по
+       баллам или выбранных вручную. Видят только люди с публикациями. */
+    function mountAuthorsShow(host) {
+      var old = $("[data-authors-show]");
+      if (old) old.remove();
+      if (!Store.authorsShowSave) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("data-authors-show", "");
+      section.innerHTML =
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Главная</span>' +
+        "<h2>Кто делает материалы</h2>" +
+        '<p class="sec-head__text">Блок на главной странице. Можно показывать лучших по баллам — ' +
+        "или выбрать людей вручную. В список попадают только те, у кого есть опубликованные " +
+        "материалы: выдуманных карточек на сайте нет.</p></div></div>" +
+        '<div class="panel" style="padding:22px">' +
+        '<label class="switch"><input type="radio" name="authors-show-mode" value="points" data-ash-mode>' +
+        "<span><b>Лучшие по баллам</b><small>Сортировка по баллам, затем по числу материалов</small></span></label>" +
+        '<label class="switch"><input type="radio" name="authors-show-mode" value="manual" data-ash-mode>' +
+        "<span><b>Выбрать вручную</b><small>Показываем тех, кого отметите, в вашем порядке</small></span></label>" +
+        '<div class="field" style="max-width:220px"><label for="ash-limit">Сколько человек</label>' +
+        '<input id="ash-limit" type="number" min="3" max="8" value="6" data-ash-limit></div>' +
+        '<div data-ash-people style="margin-top:6px"><p class="form__note">Загружаем список…</p></div>' +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:12px">' +
+        '<button class="btn btn--accent btn--sm" type="button" data-ash-save>Сохранить</button>' +
+        '<span class="form__note" data-ash-status></span></div></div>';
+      host.appendChild(section);
+
+      var peopleEl = $("[data-ash-people]", section);
+      var limitEl = $("[data-ash-limit]", section);
+      var statusEl = $("[data-ash-status]", section);
+      var chosen = [];
+
+      function modeNow() {
+        var picked = $$("[data-ash-mode]", section).filter(function (el) { return el.checked; })[0];
+        return picked ? picked.value : "points";
+      }
+
+      function drawPeople(users) {
+        var list = (users || []).filter(function (u) {
+          return (u.posts || u.published || u.points || 0) && u.status !== "deleted";
+        });
+        if (!list.length) {
+          peopleEl.innerHTML = '<p class="form__note">Пока не у кого выбирать: список появится, ' +
+            "когда участники опубликуют первые материалы.</p>";
+          return;
+        }
+        peopleEl.innerHTML = list.map(function (u) {
+          return '<label class="authors-show__row"><input type="checkbox" data-ash-pick="' + esc(u.id) + '"' +
+            (chosen.indexOf(u.id) !== -1 ? " checked" : "") + ">" +
+            "<b>" + esc(u.name) + "</b><small>" + esc(u.email || "") + " · " +
+            (u.points || 0) + " б.</small></label>";
+        }).join("");
+        $$("[data-ash-pick]", peopleEl).forEach(function (box) {
+          box.addEventListener("change", function () {
+            var id = box.getAttribute("data-ash-pick");
+            if (box.checked) {
+              if (chosen.indexOf(id) === -1) chosen.push(id);
+            } else {
+              chosen = chosen.filter(function (x) { return x !== id; });
+            }
+          });
+        });
+      }
+
+      Store.authorsShow().then(function (res) {
+        if (!res || !res.ok) return;
+        limitEl.value = res.limit || 6;
+        $$("[data-ash-mode]", section).forEach(function (el) {
+          el.checked = el.value === (res.mode || "points");
+        });
+        chosen = (res.authors || []).map(function (a) { return a.id; });
+        if (Store.usersList) {
+          Store.usersList().then(function (list) {
+            drawPeople((list && list.users) || []);
+          }, function () { drawPeople([]); });
+        }
+      }, function () {
+        peopleEl.innerHTML = '<p class="form__note">Список не загрузился: сервер не ответил.</p>';
+      });
+
+      $("[data-ash-save]", section).addEventListener("click", function () {
+        var mode = modeNow();
+        if (mode === "manual" && !chosen.length) {
+          statusEl.textContent = "Отметьте хотя бы одного человека.";
+          return;
+        }
+        statusEl.textContent = "Сохраняем…";
+        Store.authorsShowSave({
+          mode: mode,
+          limit: Number(limitEl.value) || 6,
+          ids: chosen,
+        }).then(function (res) {
+          statusEl.textContent = "Сохранено. На главной " + ((res.authors || []).length) + " карточек.";
+        }, function (err) {
+          statusEl.textContent = (err && err.message) || "Не сохранилось.";
+        });
+      });
+    }
+
     /* Вкладки: каждая показывает ровно одну панель и поднимает страницу к её началу. */
     function buildAdminTabs(host, TABS) {
       var nav = $("[data-admin-tabs]", host);
@@ -2351,7 +2453,8 @@
           if (r.status !== "open") return;
           rows.push('<div class="pcard__line"><span>Просьба о коде доступа</span><small>ждёт</small>' +
             '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-rc-issue="' +
-            esc(r.id) + '">Выдать код</button></span></div>');
+            esc(r.id) + '">Выдать код</button><button class="btn btn--ghost btn--sm" type="button" ' +
+            'data-rc-close="' + esc(r.id) + '">Закрыть</button></span></div>');
         });
 
         return rows.length ? '<div class="pcard__list">' + rows.join("") + "</div>"
@@ -2377,6 +2480,9 @@
           '<div class="pcard__col"><span class="kicker">Профиль</span>' +
           '<div class="field"><label>Имя и фамилия</label><input type="text" data-pf-name value="' +
           esc(u.name) + '"></div>' +
+          '<div class="field"><label>Почта для входа</label><input type="email" data-pf-email value="' +
+          esc(u.email) + '" autocomplete="off">' +
+          '<small class="form__note">После смены адреса человек подтвердит его кодом из письма.</small></div>' +
           '<div class="field"><label>Регион</label><select data-pf-region>' +
           regionOptions(u.region) + "</select></div>" +
           '<div class="field"><label>Роль (права)</label><select data-pf-access>' +
@@ -2435,19 +2541,36 @@
             if (noteEl) noteEl.textContent = "Имя и фамилия — минимум два символа.";
             return;
           }
+          var emailEl = $("[data-pf-email]", cardEl);
+          var emailVal = emailEl ? (emailEl.value || "").trim() : "";
+          if (emailVal && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailVal)) {
+            if (noteEl) noteEl.textContent = "Почта выглядит неверно: нужен адрес вида name@mail.ru.";
+            return;
+          }
           var payload = {
             name: nameVal,
             region: $("[data-pf-region]", cardEl).value,
             access: $("[data-pf-access]", cardEl).value,
           };
+          if (emailVal && emailVal.toLowerCase() !== String(u.email || "").toLowerCase()) {
+            payload.email = emailVal;
+          }
           if (noteEl) noteEl.textContent = "Сохраняем…";
-          Store.userUpdate(u.id, payload).then(function () {
-            return Store.usersList();
-          }).then(function (fresh) {
-            all = fresh.users || [];
-            roles = fresh.roles || roles;
+          var save = Store.userUpdateFull || Store.userUpdate;
+          save(u.id, payload).then(function (res) {
+            var emailChanged = !!(res && res.emailChanged);
+            return Store.usersList().then(function (fresh) {
+              return { fresh: fresh, emailChanged: emailChanged };
+            });
+          }).then(function (out) {
+            all = out.fresh.users || [];
+            roles = out.fresh.roles || roles;
             draw();
             openCard(u.id);
+            if (out.emailChanged) {
+              var fresh2 = $("[data-pf-note]", cardEl);
+              if (fresh2) fresh2.textContent = "Почта изменена. Человек подтвердит адрес кодом из письма.";
+            }
           }, function (err) {
             if (noteEl) noteEl.textContent = (err && err.message) || "Профиль не сохранился.";
             else window.alert((err && err.message) || "Профиль не сохранился.");
@@ -2549,6 +2672,18 @@
               window.alert(res.code ? "Код для " + u.name + ": " + res.code : "Код отправлен на " + u.email + ".");
               after();
             }, function (e) { window.alert(e.message); });
+          });
+        });
+        $$("[data-rc-close]", cardEl).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var reason = window.prompt("Причина закрытия заявки:", "");
+            if (reason === null) return;
+            if (reason.trim().length < 5) {
+              window.alert("Причина — минимум пять символов.");
+              return;
+            }
+            Store.recoveryClose(b.getAttribute("data-rc-close"), reason.trim())
+              .then(after, function (e) { window.alert(e.message); });
           });
         });
       }
@@ -3636,80 +3771,6 @@
       Store.supportQueue().then(draw, function () { draw([]); });
     }
 
-    function mountRecoveryQueue(host) {
-      var old = $("[data-recovery-admin]");
-      if (old) old.remove();
-      if (!Store.recoveryQueue) return;
-
-      var section = document.createElement("section");
-      section.className = "section wrap";
-      section.setAttribute("style", "padding-top:0");
-      section.setAttribute("data-recovery-admin", "");
-      section.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Доступ</span>' +
-        "<h2>Заявки на восстановление пароля</h2>" +
-        '<p class="sec-head__text">Человек потерял код и просит новый. Выдайте код и передайте ' +
-        "его автору — пароль он сменит сам. Если почта проекта будет подключена, письмо уйдёт " +
-        "автоматически.</p></div></div>" +
-        '<div data-recovery-admin-list><p class="form__note">Загружаем…</p></div>';
-      host.appendChild(section);
-
-      var listEl = $("[data-recovery-admin-list]", section);
-
-      function draw(items) {
-        if (!items.length) {
-          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Заявок нет</b>' +
-            "<p>Появятся здесь, как только кто-то попросит код.</p></div>";
-          return;
-        }
-        listEl.innerHTML = '<div class="editorial-queue">' + items.map(function (r) {
-          return '<div class="editorial-card"><div class="editorial-card__top"><b>' +
-            esc(r.name || "Без имени") + "</b><span>" + esc(fmtDate(r.createdAt)) + "</span></div>" +
-            '<div class="editorial-card__meta">' + esc(r.email) + "</div>" +
-            "<p>" + esc(r.note) + "</p>" +
-            '<div class="row" style="margin-top:10px">' +
-            '<button class="btn btn--accent btn--sm" type="button" data-rc-issue="' + esc(r.id) +
-            '">Выдать код</button>' +
-            '<button class="btn btn--ghost btn--sm" type="button" data-rc-close="' + esc(r.id) +
-            '">Закрыть</button></div></div>';
-        }).join("") + "</div>";
-
-        $$("[data-rc-issue]", listEl).forEach(function (b) {
-          b.addEventListener("click", function () {
-            b.disabled = true;
-            Store.recoveryIssue(b.getAttribute("data-rc-issue")).then(function (res) {
-              b.disabled = false;
-              if (res.mailed) {
-                window.alert("Код отправлен на почту " + res.email + ".");
-              } else {
-                window.alert("Код для " + res.name + " (" + res.email + "):\n\n" + res.code +
-                  "\n\nПередайте его лично или письмом. После входа человек сможет выдать себе новый код.");
-              }
-              return Store.recoveryQueue();
-            }).then(draw, function (e) {
-              b.disabled = false;
-              window.alert(e.message);
-            });
-          });
-        });
-        $$("[data-rc-close]", listEl).forEach(function (b) {
-          b.addEventListener("click", function () {
-            var note = window.prompt("Причина закрытия заявки:", "");
-            if (note === null) return;
-            if (note.trim().length < 5) {
-              window.alert("Причина — минимум 5 символов.");
-              return;
-            }
-            Store.recoveryClose(b.getAttribute("data-rc-close"), note.trim())
-              .then(function () { return Store.recoveryQueue(); })
-              .then(draw, function (e) { window.alert(e.message); });
-          });
-        });
-      }
-
-      Store.recoveryQueue().then(draw, function () { draw([]); });
-    }
-
     function mountEditorialQueue(host) {
       var old = $("[data-editorial-admin]");
       if (old) old.remove();
@@ -4316,6 +4377,27 @@
     var authorsHost = $("[data-authors]");
     if (authorsHost) {
       var faces = (SC.authors || []).slice(0, 8);
+      /* Уже опубликовавшие авторы приходят с сервера: редакция решает в
+         админке, показывать лучших по баллам или свой список. Пока таких
+         нет — честные «места свободны», без выдуманных имён. */
+      function drawRealAuthors(list) {
+        if (!list || !list.length) return false;
+        authorsHost.innerHTML = list
+          .map(function (a, i) {
+            return '<div class="author-card" data-reveal data-delay="' + (i % 4) + '">' +
+              '<span class="author-card__ava">' + esc(a.initials) + "</span>" +
+              '<div><div class="author-card__name">' + esc(a.name) + "</div>" +
+              '<div class="author-card__role">' + esc(a.role || "автор проекта") +
+              (a.regionName || a.region ? " · " + esc(regionName(a.region) || a.region) : "") + "</div>" +
+              '<div class="author-card__points">' + (a.points || 0) + " " +
+              plural(a.points || 0, ["балл", "балла", "баллов"]) + " · " +
+              (a.posts || 0) + " " + plural(a.posts || 0, ["материал", "материала", "материалов"]) +
+              "</div></div></div>";
+          })
+          .join("");
+        return true;
+      }
+
       authorsHost.innerHTML = faces.length
         ? faces
             .map(function (a, i) {
@@ -4337,6 +4419,14 @@
           "<p>Мы не показываем выдуманных авторов: карточки появятся, когда участники " +
           "зарегистрируются и опубликуют первые материалы.</p>" +
           '<a class="btn btn--accent btn--sm" href="/join">Занять место</a></div>';
+
+      if (Store.authorsShow) {
+        Store.authorsShow().then(function (res) {
+          if (res && res.ok) drawRealAuthors(res.authors || []);
+        }, function () {
+          /* сервер молчит — остаются места и приглашение */
+        });
+      }
     }
 
     // возможности

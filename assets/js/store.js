@@ -1588,6 +1588,27 @@ window.Store = (function () {
     });
   }
 
+  /* то же сохранение, но с ответом целиком: нужно знать, сменилась ли почта */
+  /* лучшие авторы на главной: список читают все, настраивает редакция */
+  function authorsShow() {
+    return api("top-authors", {}).then(function (res) {
+      if (res && res.ok) return res;
+      return { ok: false, authors: [] };
+    });
+  }
+
+  function authorsShowSave(cfg) {
+    return withToken("authors-show-save", cfg || {});
+  }
+
+  function userUpdateFull(id, patch) {
+    var token = readToken();
+    return api("user-update", Object.assign({ token: token, id: id }, patch || {})).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Профиль не сохранился.");
+    });
+  }
+
   /* заявка на пресс-карту: способ получения, контакты, согласие */
   function cardApply(input) {
     var token = readToken();
@@ -2182,6 +2203,9 @@ window.Store = (function () {
     apiCardReview: apiCardReview,
     userCard: userCard,
     userUpdate: userUpdate,
+    userUpdateFull: userUpdateFull,
+    authorsShow: authorsShow,
+    authorsShowSave: authorsShowSave,
     cardApply: cardApply,
     cardGrant: cardGrant,
     userMessage: userMessage,

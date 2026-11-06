@@ -3878,6 +3878,33 @@ p:last-child {
   margin-top: 3px;
 }
 
+/* баллы и число материалов под именем автора на главной */
+.author-card__points {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* настройка блока авторов в админке */
+.authors-show__row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.authors-show__row b {
+  font-weight: 600;
+}
+
+.authors-show__row small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 .author-box {
   display: flex;
   gap: 14px;

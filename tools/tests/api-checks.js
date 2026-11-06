@@ -237,6 +237,16 @@ const results = [];
   r = await call("card-review", { token: token3, id: "c_none", decision: "approve" });
   check("решение по карте без кода не проходит", r.ok === false && r.code === 428, r);
 
+  // 9в. блок «Кто делает материалы» на главной
+  r = await call("top-authors", {});
+  check("список авторов на главной открыт всем", r.ok === true && Array.isArray(r.authors), r);
+  r = await call("authors-show-save", { token: token2, mode: "points", limit: 5 });
+  check("настройку авторов меняет только редакция", r.ok === false && r.code === 403, r);
+  r = await call("authors-show-save", { token: token3, mode: "manual", ids: [] });
+  check("пустой ручной список не сохраняется", r.ok === false, r);
+  r = await call("authors-show-save", { token: token3, mode: "points", limit: 5 });
+  check("редакция сохраняет настройку авторов", r.ok === true && r.limit === 5, r);
+
   // 9б. карта по должности: сотруднику не нужно пять опубликованных материалов
   r = await call("card-apply", { token: token3, delivery: "personal",
     fullName: "Никита Сирик", phone: "9000000000", agree: true });
