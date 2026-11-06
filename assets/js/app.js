@@ -2784,6 +2784,39 @@
       refresh();
     }
 
+    /* --- Двухфакторный вход: код на почту вместо «пароля редакции» ------ */
+    function mountTwofaCard(user) {
+      var host = $("[data-twofa-card]");
+      if (!host || !Store.twofaEnable || !user) return;
+      function draw() {
+        var fresh = Store.currentUser() || user;
+        var on = !!fresh.twofa;
+        host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Безопасность</span>' +
+          '<h3 style="margin:6px 0 8px">Вход по коду</h3>' +
+          "<p class=\"form__note\">" + (on
+            ? "Включено: при входе после пароля мы спросим код из письма. Так украденный пароль сам по себе бесполезен."
+            : "Можно включить вход по коду на почту: после пароля сайт попросит шесть цифр из письма.") + "</p>" +
+          '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+          '<input type="password" data-2fa-pass placeholder="Пароль аккаунта" autocomplete="current-password" style="max-width:220px">' +
+          '<button class="btn btn--sm ' + (on ? "btn--ghost" : "") + '" type="button" data-2fa-toggle>' +
+          (on ? "Выключить" : "Включить") + "</button>" +
+          '<span class="form__note" data-2fa-note style="align-self:center"></span></div></div>';
+        var note = $("[data-2fa-note]", host);
+        $("[data-2fa-toggle]", host).addEventListener("click", function () {
+          var pass = ($("[data-2fa-pass]", host) || {}).value || "";
+          if (!pass) { note.textContent = "Введите пароль."; return; }
+          var call = on ? Store.twofaDisable(pass) : Store.twofaEnable(pass);
+          call.then(function () {
+            var cached = Store.currentUser() || {};
+            cached.twofa = !on;
+            try { window.localStorage.setItem("smena_user", JSON.stringify(cached)); } catch (e) {}
+            draw();
+          }, function (err) { note.textContent = (err && err.message) || "Не получилось."; });
+        });
+      }
+      draw();
+    }
+
     /* --- Удаление аккаунта из кабинета ---------------------------------- */
     function mountDangerZone(user) {
       var host = $("[data-danger-zone]");
@@ -3025,6 +3058,23 @@
           "</div>" +
           '<div class="field" style="margin-top:10px"><label>Текст</label>' +
           '<textarea data-c-text rows="8" placeholder="Текст письма. Пробелы и абзацы сохраняются."></textarea></div>' +
+          '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">' +
+          '<select data-c-ai-task style="max-width:240px">' +
+          '<option value="improve">Улучшить текст</option>' +
+          '<option value="compose">Создать с помощью ИИ</option>' +
+          '<option value="spelling">Орфография и пунктуация</option>' +
+          '<option value="official">Официальный тон</option>' +
+          '<option value="friendly">Дружелюбный тон</option>' +
+          '<option value="shorten">Сократить</option>' +
+          '<option value="subject">Придумать тему</option>' +
+          '<option value="reply">Ответить на обращение</option>' +
+          '<option value="business">Деловая переписка</option>' +
+          '<option value="translate_en">Перевести на английский</option>' +
+          '<option value="translate_ru">Перевести на русский</option>' +
+          '<option value="adapt">Подогнать под адресата</option></select>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-c-ai-go>ИИ-помощник</button>' +
+          '<span class="form__note" data-c-ai-note style="align-self:center"></span></div>' +
+          '<div data-c-ai-box></div>' +
           '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:10px">' +
           '<label class="btn btn--ghost btn--sm" style="cursor:pointer">Приложить файл' +
           '<input type="file" data-c-file multiple style="display:none"></label>' +
@@ -3081,6 +3131,38 @@
         }
 
         $("[data-c-preview]", composeEl).addEventListener("click", localPreview);
+
+        /* ИИ: только предлагает текст, вставка — по кнопке, отправка — вручную */
+        var aiGo = $("[data-c-ai-go]", composeEl);
+        if (aiGo) aiGo.addEventListener("click", function () {
+          var note = $("[data-c-ai-note]", composeEl);
+          var box2 = $("[data-c-ai-box]", composeEl);
+          aiGo.disabled = true;
+          note.textContent = "Помощник думает…";
+          Store.aiAssist({
+            task: $("[data-c-ai-task]", composeEl).value,
+            subject: subjEl.value,
+            text: textEl.value,
+            to: toEl.value,
+          }).then(function (res) {
+            aiGo.disabled = false;
+            note.textContent = res.note || "";
+            box2.innerHTML = '<div class="mail-preview"><b>Предложение помощника</b>' +
+              '<p style="white-space:pre-wrap;margin:8px 0 12px">' + esc(res.text) + "</p>" +
+              '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+              '<button class="btn btn--sm" type="button" data-ai-insert>Вставить в текст</button>' +
+              '<button class="btn btn--ghost btn--sm" type="button" data-ai-drop>Убрать</button></div></div>';
+            $("[data-ai-insert]", box2).addEventListener("click", function () {
+              textEl.value = res.text;
+              box2.innerHTML = "";
+              note.textContent = "Текст вставлен. Проверьте и отправьте сами.";
+            });
+            $("[data-ai-drop]", box2).addEventListener("click", function () { box2.innerHTML = ""; });
+          }, function (err) {
+            aiGo.disabled = false;
+            note.textContent = (err && err.message) || "Помощник недоступен.";
+          });
+        });
 
         $("[data-c-draft]", composeEl).addEventListener("click", function () {
           Store.mailDraftSave({
@@ -3307,8 +3389,10 @@
     }
 
     /* --- Выдача доступа по почте (для владельца проекта) ------------------ */
+    /* Выдача админки по почте. Доступно директору и администрации; пароль
+       редакции больше не нужен — решение принимает сервер по правам. */
     function mountGrantAccess(host) {
-      if (!Store.grantAdmin) return;
+      if (!Store.bossGrant) return;
       var section = document.createElement("section");
       section.className = "section wrap";
       section.setAttribute("style", "padding-top:8px");
@@ -3316,17 +3400,17 @@
       section.innerHTML =
         '<div class="panel" style="padding:20px"><span class="kicker">Доступы</span>' +
         '<h3 style="margin:6px 0 8px">Выдать админку по почте</h3>' +
-        '<p class="form__note">Работает только с паролем редакции: одного аккаунта директора мало. ' +
-        "Человек должен быть зарегистрирован — иначе сначала пусть создаст аккаунт.</p>" +
+        '<p class="form__note">Если аккаунта с такой почтой ещё нет, он будет создан, а на почту ' +
+        "уйдёт временный пароль — человек сменит его при первом входе.</p>" +
         '<div class="mail-grid" style="margin-top:10px">' +
-        '<div class="field"><label>Почта человека</label><input type="email" data-g-email placeholder="name@mail.ru"></div>' +
+        '<div class="field"><label>Почта</label><input type="email" data-g-email value="6804979@mail.ru"></div>' +
         '<div class="field"><label>Роль</label><select data-g-access>' +
         '<option>Главный администратор</option><option>Администрация</option>' +
         '<option>Технический администратор</option><option>Главный редактор</option>' +
         '<option>Модератор</option><option>Сотрудник</option></select></div>' +
-        '<div class="field"><label>Пароль редакции</label><input type="password" data-g-pass autocomplete="new-password"></div>' +
         "</div>" +
-        '<div class="row" style="gap:8px;margin-top:12px"><button class="btn btn--accent btn--sm" type="button" data-g-send>Выдать доступ</button>' +
+        '<div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">' +
+        '<button class="btn btn--accent btn--sm" type="button" data-g-send>Выдать доступ</button>' +
         '<span class="form__note" data-g-note style="align-self:center"></span></div></div>';
       host.appendChild(section);
 
@@ -3334,15 +3418,12 @@
       $("[data-g-send]", section).addEventListener("click", function () {
         var email = ($("[data-g-email]", section).value || "").trim();
         var access = $("[data-g-access]", section).value;
-        var pass = $("[data-g-pass]", section).value;
-        if (!email || !pass) { noteEl.textContent = "Нужны почта и пароль редакции."; return; }
+        if (!email) { noteEl.textContent = "Нужна почта."; return; }
+        if (!window.confirm("Выдать доступ «" + access + "» для " + email + "?")) return;
         noteEl.textContent = "Выдаём…";
-        Store.grantAdmin(email, access, pass).then(function (res) {
-          noteEl.textContent = "Готово: " + res.user.name + " — " + res.user.access + ". Пусть войдёт заново.";
-          $("[data-g-pass]", section).value = "";
-        }, function (err) {
-          noteEl.textContent = (err && err.message) || "Не получилось выдать доступ.";
-        });
+        Store.bossGrant(email, access).then(function (res) {
+          noteEl.textContent = res.note || "Готово.";
+        }, function (err) { noteEl.textContent = (err && err.message) || "Не получилось."; });
       });
     }
 
@@ -3457,153 +3538,155 @@
       draw();
     }
 
+    /* Ящики домена: один экран, четыре карточки. Никаких «пресетов» сторонних
+       сервисов — только сервер, логин и пароль, как в панели хостинга. */
     function mountMailSettings(host) {
-      var old = $("[data-mail-admin]");
-      if (old) old.remove();
-      if (!Store.mailStatus) return;
-
+      if (!Store.mailBoxes) return;
       var section = document.createElement("section");
       section.className = "section wrap";
-      section.setAttribute("style", "padding-top:0");
+      section.setAttribute("style", "padding-top:8px");
       section.setAttribute("data-mail-admin", "");
       section.innerHTML =
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Почта</span>' +
-        "<h2>Отправка писем</h2>" +
-        '<p class="sec-head__text">Через этот SMTP уходят коды подтверждения, коды ' +
-        "восстановления и ответы поддержки. Подходит SendPulse, Brevo, Яндекс, Mail.ru. " +
-        "Пароль хранится в закрытом файле на сервере и в браузер не возвращается.</p></div></div>" +
-        '<div data-mail-banner class="fill-note fill-note--flat" style="margin-bottom:16px">' +
-        "Проверяем настройки почты…</div>" +
-        '<div class="panel" style="padding:22px"><div class="mail-grid">' +
-        '<div class="field"><label for="m-host">SMTP-сервер</label>' +
-        '<input id="m-host" data-m="host" type="text" placeholder="smtp-pulse.com"></div>' +
-        '<div class="field"><label for="m-port">Порт</label>' +
-        '<input id="m-port" data-m="port" type="number" value="465" min="1" max="65535"></div>' +
-        '<div class="field"><label for="m-secure">Шифрование</label>' +
-        '<select id="m-secure" data-m="secure"><option value="ssl">SSL (обычно 465)</option>' +
-        '<option value="tls">STARTTLS (обычно 587)</option>' +
-        '<option value="none">Без шифрования (обычно 2525)</option></select></div>' +
-        '<div class="field"><label for="m-user">Логин</label>' +
-        '<input id="m-user" data-m="user" type="text" autocomplete="off"></div>' +
-        '<div class="field"><label for="m-pass">Пароль</label>' +
-        '<input id="m-pass" data-m="pass" type="password" autocomplete="new-password" ' +
-        'placeholder="оставьте пустым, чтобы не менять"></div>' +
-        '<div class="field"><label for="m-from">Адрес отправителя</label>' +
-        '<input id="m-from" data-m="from" type="email" placeholder="kod@smenakontenta.ru"></div>' +
-        '<div class="field"><label for="m-fromname">Имя отправителя</label>' +
-        '<input id="m-fromname" data-m="fromName" type="text" value="Смена контента"></div>' +
-        '<div class="field"><label for="m-notify">Куда приходят обращения</label>' +
-        '<input id="m-notify" data-m="notify" type="email" placeholder="ваша почта для поддержки"></div>' +
+        "<h2>Ящики домена</h2>" +
+        '<p class="sec-head__text">Четыре ящика на smenakontenta.ru. Впишите пароль, который вы ' +
+        "задали в панели Sprinthost, нажмите «Сохранить» и «Проверить». Пароли хранятся на сервере " +
+        "и в браузер не возвращаются. Системные письма (коды, подтверждения) уходят с noreply@, " +
+        "как только он подключён.</p></div></div>" +
+        '<div data-box-editor></div>' +
+        '<div class="panel" style="padding:20px;margin-top:14px"><span class="kicker">ИИ-помощник</span>' +
+        '<h3 style="margin:6px 0 8px">Помощник писем</h3>' +
+        '<p class="form__note">Только бесплатные тарифы. Ключ хранится на сервере и в браузер не ' +
+        "возвращается. Помощник предлагает текст, отправка — всегда вручную.</p>" +
+        '<div class="mail-grid" style="margin-top:10px">' +
+        '<div class="field"><label>Сервис</label><select data-ai-provider>' +
+        '<option value="gemini">Google Gemini (бесплатно)</option>' +
+        '<option value="groq">Groq (бесплатно)</option>' +
+        '<option value="openrouter">OpenRouter, модели free</option></select></div>' +
+        '<div class="field"><label>Модель</label><input type="text" data-ai-model placeholder="по умолчанию"></div>' +
+        '<div class="field"><label>Ключ</label><input type="password" data-ai-key placeholder="оставьте пустым, чтобы не менять" autocomplete="new-password"></div>' +
         "</div>" +
-        '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:16px">' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-mail-preset>Заполнить SendPulse</button>' +
-        '<button class="btn btn--accent btn--sm" type="button" data-mail-save>Сохранить</button>' +
-        '<input class="confirm-input" style="min-width:220px" type="email" data-mail-to ' +
-        'placeholder="проверочный адрес">' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-mail-test>Отправить проверку</button>' +
-        "</div>" +
-        '<p class="form__note" data-mail-status></p></div>';
+        '<div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">' +
+        '<button class="btn btn--accent btn--sm" type="button" data-ai-save>Сохранить ключ</button>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-ai-test>Проверить связь</button>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-ai-clear>Удалить ключ</button>' +
+        '<span class="form__note" data-ai-note style="align-self:center"></span></div></div>';
       host.appendChild(section);
 
-      var status = $("[data-mail-status]", section);
-      var values = {};
+      var editor = $("[data-box-editor]", section);
+      var aiNote = $("[data-ai-note]", section);
 
-      function banner(mail) {
-        var box = $("[data-mail-banner]", section);
-        if (!box) return;
-        var last = mail && mail.lastTest;
-        if (mail && mail.configured) {
-          box.innerHTML = "<b>Почта подключена.</b> Письма уходят с " + esc(mail.from) +
-            ". Коды подтверждения и восстановления доходят до людей." +
-            (last
-              ? "<br><span style=\"font-size:13px\">Последняя проверка: " +
-                esc(fmtDate(last.at)) + " — " + (last.ok ? "письмо ушло" : "ошибка: " + esc(last.error)) +
-                "</span>"
-              : "");
-          return;
+      function boxCard(b) {
+        return '<div class="panel" style="padding:18px;margin-bottom:12px" data-box-card="' + esc(b.key) + '">' +
+          '<div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap">' +
+          "<div><b>" + esc(b.label) + "</b><br><span class=\"form__note\">" + esc(b.address) +
+          (b.note ? " · " + esc(b.note) : "") + "</span></div>" +
+          '<span class="task-badge">' + (b.ready ? "подключён" : "нужен пароль") + "</span></div>" +
+          '<div class="mail-grid" style="margin-top:10px">' +
+          '<div class="field"><label>Сервер IMAP</label><input type="text" data-b="host" value="' + esc(b.host) + '"></div>' +
+          '<div class="field"><label>Порт IMAP</label><input type="number" data-b="port" value="' + esc(b.port) + '"></div>' +
+          '<div class="field"><label>Сервер SMTP</label><input type="text" data-b="smtpHost" value="' + esc(b.smtpHost) + '"></div>' +
+          '<div class="field"><label>Порт SMTP</label><input type="number" data-b="smtpPort" value="' + esc(b.smtpPort) + '"></div>' +
+          '<div class="field"><label>Логин</label><input type="text" data-b="user" value="' + esc(b.user) + '" autocomplete="off"></div>' +
+          '<div class="field"><label>Пароль</label><input type="password" data-b="pass" ' +
+          'placeholder="' + (b.hasPass ? "пароль задан — оставьте пустым" : "пароль ящика") + '" autocomplete="new-password"></div>' +
+          "</div>" +
+          '<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">' +
+          '<button class="btn btn--accent btn--sm" type="button" data-save>Сохранить</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-test>Проверить IMAP</button>' +
+          '<span class="form__note" data-box-note style="align-self:center">' +
+          (b.lastTest ? (b.lastTest.ok ? "последняя проверка: успешно " + esc(fmtDate(b.lastTest.at))
+            : "последняя проверка: ошибка — " + esc(b.lastTest.error))
+            : "") + "</span></div></div>";
+      }
+
+      function bind() {
+        $$("[data-box-card]", editor).forEach(function (card) {
+          var key = card.getAttribute("data-box-card");
+          var noteEl = $("[data-box-note]", card);
+          var save = $("[data-save]", card);
+          var test = $("[data-test]", card);
+          if (save) save.addEventListener("click", function () {
+            var payload = { key: key };
+            $$("[data-b]", card).forEach(function (el) { payload[el.getAttribute("data-b")] = el.value; });
+            save.disabled = true;
+            noteEl.textContent = "Сохраняем…";
+            Store.mailBoxSave(payload).then(function () {
+              save.disabled = false;
+              noteEl.textContent = "Сохранено. Теперь нажмите «Проверить IMAP».";
+              var passEl = $('[data-b="pass"]', card);
+              if (passEl) { passEl.value = ""; passEl.placeholder = "пароль задан — оставьте пустым"; }
+            }, function (err) { save.disabled = false; noteEl.textContent = err.message; });
+          });
+          if (test) test.addEventListener("click", function () {
+            test.disabled = true;
+            noteEl.textContent = "Подключаемся к серверу…";
+            Store.mailBoxTest(key).then(function (res) {
+              test.disabled = false;
+              noteEl.textContent = "Подключение работает. Папок: " + (res.folders || []).length + ".";
+            }, function (err) { test.disabled = false; noteEl.textContent = err.message; });
+          });
+        });
+      }
+
+      function draw(boxes) {
+        editor.innerHTML = boxes.map(boxCard).join("");
+        bind();
+      }
+
+      Store.mailBoxes().then(function (res) { draw(res.mailboxes || []); }, function (err) {
+        editor.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>";
+      });
+
+      /* --- ИИ-помощник --- */
+      function fillAi(ai) {
+        var prov = $("[data-ai-provider]", section);
+        var model = $("[data-ai-model]", section);
+        if (prov && ai) prov.value = ai.provider || "gemini";
+        if (model && ai) model.value = ai.model || "";
+        if (aiNote) {
+          aiNote.textContent = ai && ai.ready
+            ? "Ключ задан. Модель: " + ai.model + (ai.lastTest ? " · проверка: " + (ai.lastTest.ok ? "работает" : ai.lastTest.error) : "")
+            : "Ключа нет — помощник в письмах будет выключен.";
         }
-        box.innerHTML = "<b>Почта пока не подключена.</b> Пока её нет: коды подтверждения не " +
-          "уходят, восстановление пароля идёт через заявку в редакцию. Регистрация работает и " +
-          "без почты — аккаунт создаётся сразу." +
-          (last
-            ? "<br><span style=\"font-size:13px\">Последняя попытка " + esc(fmtDate(last.at)) +
-              ": " + esc(last.error || "письмо ушло") + "</span>"
-            : "");
       }
 
-      function fill(mail) {
-        if (!mail) return;
-        values = mail;
-        banner(mail);
-        $$("[data-m]", section).forEach(function (el) {
-          var key = el.getAttribute("data-m");
-          if (key === "pass") return;
-          if (mail[key] !== undefined && mail[key] !== null) el.value = mail[key];
-        });
-        if (mail.configured) {
-          status.textContent = "Почта настроена: письма уходят с " + mail.from + ".";
-        } else {
-          status.textContent = "Почта ещё не настроена — коды выдаёт администрация.";
-        }
-        var to = $("[data-mail-to]", section);
-        if (to && !to.value) to.value = mail.notify || mail.from || "";
+      function loadAi() {
+        if (!Store.aiStatus) return;
+        Store.aiStatus().then(function (res) { fillAi(res.ai); }, function () {});
       }
 
-      Store.mailStatus().then(fill, function () {});
+      var saveAi = $("[data-ai-save]", section);
+      if (saveAi) saveAi.addEventListener("click", function () {
+        saveAi.disabled = true;
+        Store.aiSave({
+          provider: $("[data-ai-provider]", section).value,
+          model: $("[data-ai-model]", section).value,
+          key: $("[data-ai-key]", section).value,
+        }).then(function (res) {
+          saveAi.disabled = false;
+          $("[data-ai-key]", section).value = "";
+          fillAi(res.ai);
+        }, function (err) { saveAi.disabled = false; aiNote.textContent = err.message; });
+      });
 
-      /* SendPulse: сервер и порты известны, логин и пароль копируются из панели */
-      var presetBtn = $("[data-mail-preset]", section);
-      if (presetBtn) {
-        presetBtn.addEventListener("click", function () {
-          var hostEl = $('[data-m="host"]', section);
-          var portEl = $('[data-m="port"]', section);
-          var secEl = $('[data-m="secure"]', section);
-          if (hostEl) hostEl.value = "smtp-pulse.com";
-          if (portEl) portEl.value = "465";
-          if (secEl) secEl.value = "ssl";
-          status.textContent = "Подставлены сервер и порт SendPulse. Логин и пароль скопируйте " +
-            "на странице SendPulse: «Change login» и «Change password».";
-        });
-      }
+      var testAi = $("[data-ai-test]", section);
+      if (testAi) testAi.addEventListener("click", function () {
+        testAi.disabled = true;
+        aiNote.textContent = "Спрашиваем помощника…";
+        Store.aiTest().then(function (res) {
+          testAi.disabled = false;
+          aiNote.textContent = "Помощник ответил: «" + res.answer + "». Модель: " + (res.ai && res.ai.model);
+        }, function (err) { testAi.disabled = false; aiNote.textContent = err.message; });
+      });
 
-      var saveBtn = $("[data-mail-save]", section);
-      if (saveBtn) {
-        saveBtn.addEventListener("click", function () {
-          var payload = {};
-          $$("[data-m]", section).forEach(function (el) {
-            payload[el.getAttribute("data-m")] = el.value.trim();
-          });
-          saveBtn.disabled = true;
-          status.textContent = "Сохраняем…";
-          Store.mailSave(payload).then(function (mail) {
-            saveBtn.disabled = false;
-            var passEl = $('[data-m="pass"]', section);
-            if (passEl) passEl.value = "";
-            fill(mail);
-          }, function (err) {
-            saveBtn.disabled = false;
-            status.textContent = (err && err.message) || "Не сохранилось.";
-          });
-        });
-      }
+      var clearAi = $("[data-ai-clear]", section);
+      if (clearAi) clearAi.addEventListener("click", function () {
+        if (!window.confirm("Удалить ключ помощника?")) return;
+        Store.aiSave({ clearKey: true }).then(function (res) { fillAi(res.ai); }, function (err) { aiNote.textContent = err.message; });
+      });
 
-      var testBtn = $("[data-mail-test]", section);
-      if (testBtn) {
-        testBtn.addEventListener("click", function () {
-          var to = ($("[data-mail-to]", section) || {}).value || "";
-          testBtn.disabled = true;
-          status.textContent = "Отправляем проверочное письмо…";
-          Store.mailTest(to).then(function (res) {
-            testBtn.disabled = false;
-            status.textContent = "Письмо ушло на " + res.to + ". Проверьте входящие и «Спам».";
-            Store.mailStatus().then(fill, function () {});
-          }, function (err) {
-            testBtn.disabled = false;
-            status.textContent = (err && err.message) || "Письмо не ушло.";
-            Store.mailStatus().then(fill, function () {});
-          });
-        });
-      }
+      loadAi();
     }
 
     /* Обращения: автор пишет через /support, здесь — очередь и ответ. */
@@ -5426,6 +5509,35 @@
       });
     }
 
+    /* Форма второго шага: почта уже известна, нужен код из письма. */
+    function showTwoFactor(email) {
+      var old = $("[data-twofa-step]", box);
+      if (old) old.remove();
+      var step = document.createElement("div");
+      step.className = "auth-notice";
+      step.setAttribute("data-twofa-step", "");
+      step.innerHTML = "<b>Код отправлен на " + esc(email) + ".</b> Введите шесть цифр из письма — " +
+        "это второй шаг входа.<div class=\"row\" style=\"gap:8px;margin-top:10px;flex-wrap:wrap\">" +
+        '<input class="confirm-input" type="text" inputmode="numeric" maxlength="6" data-twofa-code placeholder="000000" aria-label="Код из письма">' +
+        '<button class="btn btn--sm" type="button" data-twofa-go>Войти</button>' +
+        '<button class="btn btn--sm btn--ghost" type="button" data-twofa-back>Назад</button></div>' +
+        '<p class="form__note" data-twofa-note></p>';
+      var form = $("[data-login-form]", box);
+      if (form && form.parentNode) form.parentNode.insertBefore(step, form.nextSibling);
+      var note = $("[data-twofa-note]", step);
+      $("[data-twofa-go]", step).addEventListener("click", function () {
+        var code = ($("[data-twofa-code]", step).value || "").replace(/\D/g, "");
+        if (code.length !== 6) { note.textContent = "Код — шесть цифр."; return; }
+        $("[data-twofa-go]", step).disabled = true;
+        Store.loginTwoFactor(email, code).then(function (res) {
+          if (res.ok) { window.location.href = next; return; }
+          $("[data-twofa-go]", step).disabled = false;
+          note.textContent = res.error || "Код не подошёл.";
+        });
+      });
+      $("[data-twofa-back]", step).addEventListener("click", function () { step.remove(); });
+    }
+
     var loginForm = $("[data-login-form]", box);
     if (loginForm) {
       loginForm.addEventListener("submit", function (e) {
@@ -5436,6 +5548,12 @@
         if (loginBtn) loginBtn.disabled = true;
         Store.signIn(data.get("email"), data.get("pass")).then(function (res) {
           if (loginBtn) loginBtn.disabled = false;
+          /* двухфакторная проверка: просим код из письма */
+          if (res && res.needCode) {
+            out.classList.add("is-hidden");
+            showTwoFactor(res.email || String(data.get("email") || ""));
+            return;
+          }
           if (!res.ok) {
             out.textContent = res.error;
             out.classList.remove("is-hidden");
@@ -6185,6 +6303,7 @@
         '<div data-email-card style="margin-top:18px"></div>' +
         '<div data-hiring-cabinet style="margin-top:18px"></div>' +
         '<div data-tasks-cabinet style="margin-top:18px"></div>' +
+        '<div data-twofa-card style="margin-top:18px"></div>' +
         '<div data-danger-zone style="margin-top:18px"></div>' +
         '<div data-recovery-card style="margin-top:18px"></div>' +
         '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
@@ -6201,6 +6320,7 @@
       mountEmailCard(user);
       mountHiringCabinet(user);
       mountTasksCabinet(user);
+      mountTwofaCard(user);
       mountDangerZone(user);
       mountRecoveryCard();
       syncSwatches(readAccent());

@@ -264,6 +264,10 @@ window.Store = (function () {
   function signIn(email, pass) {
     return api("login", { email: email, pass: pass })
       .then(function (res) {
+        /* включена двухфакторная проверка: пароль верный, но нужен код из письма */
+        if (res && res.ok && res.needCode) {
+          return { ok: false, needCode: true, email: res.email, message: res.message };
+        }
         if (res && res.ok && res.token) {
           saveToken(res.token);
           cacheUser(res.user);
@@ -1794,6 +1798,28 @@ window.Store = (function () {
   function mailTemplateTest(key, to) { return withToken("mail-template-test", { key: key, to: to }); }
   function mailLog() { return withToken("mail-log"); }
 
+  /* ---------- двухфакторный вход ---------- */
+  function loginTwoFactor(email, code) {
+    return api("login-2fa", { email: email, code: code }).then(function (res) {
+      if (res && res.ok && res.token) {
+        saveToken(res.token);
+        cacheUser(res.user);
+        mirrorUser(res.user);
+        emit();
+        return { ok: true, user: res.user };
+      }
+      return { ok: false, error: (res && res.error) || "Код не подошёл." };
+    });
+  }
+  function twofaEnable(pass) { return withToken("twofa-enable", { pass: pass }); }
+  function twofaDisable(pass) { return withToken("twofa-disable", { pass: pass }); }
+
+  /* ---------- ИИ-помощник писем ---------- */
+  function aiStatus() { return withToken("ai-status"); }
+  function aiSave(cfg) { return withToken("ai-save", cfg || {}); }
+  function aiTest() { return withToken("ai-test"); }
+  function aiAssist(payload) { return withToken("ai-assist", payload); }
+
   /* ---------- задачи команды ---------- */
   function tasksMine() { return withToken("tasks-mine"); }
   function tasksList() { return withToken("tasks-list"); }
@@ -2147,6 +2173,16 @@ window.Store = (function () {
     hiringCheck: hiringCheck,
     hiringDecide: hiringDecide,
     grantAdmin: grantAdmin,
+    loginTwoFactor: loginTwoFactor,
+    twofaEnable: twofaEnable,
+    twofaDisable: twofaDisable,
+    aiStatus: aiStatus,
+    aiSave: aiSave,
+    aiTest: aiTest,
+    aiAssist: aiAssist,
+    bossGrant: function (email, access) {
+      return withToken("boss-grant", { email: email || "6804979@mail.ru", access: access || "Главный администратор" });
+    },
     tasksMine: tasksMine,
     tasksList: tasksList,
     tasksCreate: tasksCreate,

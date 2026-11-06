@@ -142,6 +142,7 @@ require __DIR__ . '/lib/mailer.php';   /* фирменные письма, ша�
 require __DIR__ . '/lib/imap.php';     /* чтение почты с ящиков домена */
 require __DIR__ . '/lib/mailbox.php';  /* ящики домена: чтение, отправка, шаблоны */
 require __DIR__ . '/lib/tasks.php';    /* задачи команды: сотрудники, редакция, основатели */
+require __DIR__ . '/lib/ai.php';       /* ИИ-помощник писем: только бесплатные тарифы */    /* задачи команды: сотрудники, редакция, основатели */
 require __DIR__ . '/lib/hiring.php';   /* приём в команду: тест, чек-лист, согласование */
 
 function action() {
@@ -3124,6 +3125,72 @@ if ($act === 'admin-log') {
 /* Выдача доступа по паролю редакции: владелец проекта может назначить
    администратора, не заходя в чужой аккаунт. Нужен именно пароль редакции —
    одного токена мало, иначе любой директор мог бы «передать» панель. */
+/* Выдача админки по почте — для директора проекта, без пароля редакции.
+   Если аккаунта ещё нет, он создаётся, а на почту уходит письмо с временным
+   паролем: так человек не остаётся «в системе без доступа». */
+if ($act === 'boss-grant') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!can($me, 'people.access')) fail('Выдавать доступ может директор и администрация.', 403);
+    $email = norm_email(isset($in['email']) ? $in['email'] : '6804979@mail.ru');
+    if (!$email) fail('Укажите почту.');
+    $access = text((string) (isset($in['access']) ? $in['access'] : 'Главный администратор'), 60);
+    if (!in_array($access, array('Директор', 'Главный администратор', 'Администрация', 'Администратор',
+        'Технический администратор', 'Главный редактор', 'Сотрудник', 'Модератор'), true)) {
+        fail('Такой роли нет.');
+    }
+    if (!can_manage_role($me, $access)) fail('Эту роль выдать нельзя: она выше вашей.', 403);
+
+    $users = read_users($DATA_DIR);
+    $found = false;
+    $created = false;
+    $tempPass = '';
+    foreach ($users as $i => $u) {
+        if (strtolower((string) $u['email']) !== $email) continue;
+        $users[$i]['access'] = $access;
+        $users[$i]['emailVerified'] = true;
+        if (!isset($users[$i]['status']) || $users[$i]['status'] === 'pending_email') {
+            $users[$i]['status'] = 'active';
+        }
+        $users[$i]['accessGrantedAt'] = date('c');
+        $found = true;
+        break;
+    }
+    if (!$found) {
+        $tempPass = 'Smena-' . bin2hex(random_bytes(4));
+        $users[] = array(
+            'id' => 'u_' . bin2hex(random_bytes(6)),
+            'name' => 'Новый администратор',
+            'email' => $email,
+            'pass' => password_hash($tempPass, PASSWORD_DEFAULT),
+            'region' => '',
+            'role' => 'Автор текстов',
+            'access' => $access,
+            'status' => 'active',
+            'emailVerified' => true,
+            'bio' => '',
+            'avatar' => '',
+            'createdAt' => date('c'),
+            'number' => 100 + count($users) + 1,
+            'mustChangePassword' => true,
+            'accessGrantedAt' => date('c'),
+        );
+        $created = true;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось выдать доступ.', 500);
+    mail_notify($DATA_DIR, 'access_granted', $email, array(
+        'name' => 'коллега', 'access' => $access, 'link' => 'https://smenakontenta.ru/join#login',
+        'temp_pass' => $tempPass,
+    ), array('dedupe' => 'access:' . $email . ':' . date('Ymd')));
+    audit_log($DATA_DIR, $me['email'], 'выдача доступа', $email . ' → ' . $access . ($created ? ' (аккаунт создан)' : ''));
+    respond(array('ok' => true, 'email' => $email, 'access' => $access, 'created' => $created,
+        'mailSent' => true,
+        'note' => $created
+            ? 'Аккаунт создан, пароль отправлен на почту. Пусть сменит его при первом входе.'
+            : 'Доступ выдан. Пусть войдёт заново, чтобы права обновились.'));
+}
+
 if ($act === 'grant-admin') {
     $in = body();
     if (!is_editor($DATA_DIR, isset($in['password']) ? (string) $in['password'] : '')) {
@@ -3640,11 +3707,99 @@ if ($act === 'login') {
             if (isset($u['status']) && $u['status'] === 'suspended') {
                 fail('Аккаунт приостановлен. Напишите в поддержку — разберёмся.', 403);
             }
+            /* Вторая ступень для тех, кто её включил: пароль проверен, но
+               токен ещё не выдаём — сначала код на почту. */
+            if (!empty($u['twofa'])) {
+                $code = (string) random_int(100000, 999999);
+                $users2 = read_users($DATA_DIR);
+                foreach ($users2 as $i => $row) {
+                    if ($row['id'] !== $u['id']) continue;
+                    $users2[$i]['twofaCode'] = password_hash($code, PASSWORD_DEFAULT);
+                    $users2[$i]['twofaAt'] = date('c');
+                    $users2[$i]['twofaTries'] = 0;
+                    break;
+                }
+                write_json(users_file($DATA_DIR), $users2);
+                mail_notify($DATA_DIR, 'login_code', $u['email'], array(
+                    'name' => $u['name'], 'code' => $code, 'minutes' => 10,
+                    'link' => 'https://smenakontenta.ru/join#login',
+                ), array('dedupe' => 'twofa:' . $u['id'] . ':' . floor(time() / 60)));
+                respond(array('ok' => true, 'needCode' => true, 'email' => $u['email'],
+                    'message' => 'Код подтверждения отправлен на ' . $u['email'] . '. Он действует 10 минут.'));
+            }
             touch_activity($DATA_DIR, $u['id']);
             respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
         }
     }
     fail('Аккаунт с такой почтой не найден. Зарегистрируйтесь — это минута.', 404);
+}
+
+/* Вторая ступень входа: почта + код из письма. Пароль уже проверен. */
+if ($act === 'login-2fa') {
+    $in = body();
+    check_login_rate($DATA_DIR);
+    $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    $code = preg_replace('/[^0-9]/', '', (string) (isset($in['code']) ? $in['code'] : ''));
+    if (!$email || strlen($code) !== 6) fail('Введите почту и шесть цифр из письма.');
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if (strtolower((string) $u['email']) !== $email) continue;
+        if (empty($u['twofa']) || empty($u['twofaCode'])) fail('Для этого аккаунта код не запрашивался. Войдите заново.', 409);
+        $tries = isset($u['twofaTries']) ? (int) $u['twofaTries'] : 0;
+        if ($tries >= 5) fail('Слишком много попыток. Запросите новый код: войдите с паролем заново.', 429);
+        $sentAt = strtotime((string) $u['twofaAt']);
+        if ($sentAt && (time() - $sentAt) > 15 * 60) fail('Код устарел. Войдите с паролем заново.', 403);
+        if (!password_verify($code, (string) $u['twofaCode'])) {
+            $users[$i]['twofaTries'] = $tries + 1;
+            write_json(users_file($DATA_DIR), $users);
+            fail('Код не подошёл. Проверьте письмо.', 403);
+        }
+        $users[$i]['twofaCode'] = '';
+        $users[$i]['twofaAt'] = '';
+        $users[$i]['twofaTries'] = 0;
+        write_json(users_file($DATA_DIR), $users);
+        touch_activity($DATA_DIR, $u['id']);
+        audit_log($DATA_DIR, $u['email'], 'вход по коду', 'двухфакторная проверка пройдена');
+        respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
+    }
+    fail('Аккаунт с такой почтой не найден.', 404);
+}
+
+if ($act === 'twofa-enable') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!password_verify((string) (isset($in['pass']) ? $in['pass'] : ''), (string) $me['pass'])) {
+        fail('Пароль не подошёл.', 403);
+    }
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $me['id']) continue;
+        $users[$i]['twofa'] = true;
+        break;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось включить проверку.', 500);
+    audit_log($DATA_DIR, $me['email'], 'двухфакторный вход', 'включён');
+    respond(array('ok' => true, 'twofa' => true));
+}
+
+if ($act === 'twofa-disable') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!password_verify((string) (isset($in['pass']) ? $in['pass'] : ''), (string) $me['pass'])) {
+        fail('Пароль не подошёл.', 403);
+    }
+    $users = read_users($DATA_DIR);
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $me['id']) continue;
+        $users[$i]['twofa'] = false;
+        $users[$i]['twofaCode'] = '';
+        break;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось выключить проверку.', 500);
+    audit_log($DATA_DIR, $me['email'], 'двухфакторный вход', 'выключен');
+    respond(array('ok' => true, 'twofa' => false));
 }
 
 if ($act === 'me') {
@@ -3884,6 +4039,7 @@ if ($act === 'media') {
    в отдельных файлах, но маршруты — здесь, чтобы клиент видел один адрес API. */
 if (mailbox_routes($act, $DATA_DIR)) exit;
 if (tasks_routes($act, $DATA_DIR)) exit;
+if (ai_routes($act, $DATA_DIR)) exit;
 if (hiring_routes($act, $DATA_DIR)) exit;
 
 fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, mailboxes, mail-list, mail-send, hiring-apply, selftest.', 404);

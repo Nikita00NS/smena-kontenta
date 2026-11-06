@@ -342,6 +342,29 @@ function mail_from_kind($kind) {
 
 function mail_send($to, $subject, $text, $html = '', $kind = '') {
     $dir = $GLOBALS['DATA_DIR'];
+
+    /* Системные письма уходят с ящика noreply@, если он подключён в админке:
+       один набор настроек вместо «старого сервиса» и новых ящиков. Если ящик
+       ещё не настроен — работает прежний SMTP, чтобы письма не вставали. */
+    if (function_exists('mailboxes_load')) {
+        $boxes = mailboxes_load($dir);
+        if (isset($boxes['noreply']) && !empty($boxes['noreply']['pass'])) {
+            $box = $boxes['noreply'];
+            $cfg = array(
+                'host' => $box['smtpHost'] !== '' ? $box['smtpHost'] : $box['host'],
+                'port' => (int) ($box['smtpPort'] ? $box['smtpPort'] : 465),
+                'secure' => $box['secure'],
+                'user' => $box['user'],
+                'pass' => $box['pass'],
+                'from' => $box['address'],
+                'fromName' => 'Смена контента',
+                'notify' => $box['address'],
+            );
+            $res = smtp_send_mail($cfg, $to, $subject, $text, $html);
+            if (!empty($res['ok'])) return true;
+        }
+    }
+
     if (!smtp_configured($dir)) {
         return false;
     }
