@@ -97,7 +97,8 @@ def line(label, width=None):
         ("LINEBELOW", (0, 0), (-1, -1), 0.7, LINE),
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
     ]))
-    t = Table([[label], [blank]], colWidths=[width or 105 * mm])
+    t = Table([[label], [blank]], colWidths=[width or 105 * mm], hAlign="LEFT")
+    blank.hAlign = "LEFT"
     t.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -108,12 +109,18 @@ def line(label, width=None):
 
 
 def footer(canvas, doc):
+    """Официальный бланк: без логотипа, без цветных плашек и рекламных подписей.
+    Сверху — название документа, снизу — только номер страницы."""
     canvas.saveState()
-    canvas.setFont("DM", 7)
-    canvas.setFillColor(MUTED)
-    canvas.drawString(20 * mm, 12 * mm,
-                      "СМЕНА КОНТЕНТА · СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ")
-    canvas.drawRightString(190 * mm, 12 * mm, "стр. %d" % doc.page)
+    canvas.setFont("DM", 7.4)
+    canvas.setFillColor(INK)
+    canvas.drawString(20 * mm, 283 * mm,
+                      "СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ")
+    canvas.setStrokeColor(colors.black)
+    canvas.setLineWidth(0.5)
+    canvas.line(20 * mm, 280.5 * mm, 190 * mm, 280.5 * mm)
+    canvas.setFont("DM", 7.2)
+    canvas.drawCentredString(105 * mm, 12 * mm, "— %d —" % doc.page)
     canvas.restoreState()
 
 
@@ -122,8 +129,8 @@ def build():
         OUT, pagesize=A4,
         leftMargin=20 * mm, rightMargin=20 * mm,
         topMargin=16 * mm, bottomMargin=18 * mm,
-        title="Согласие на обработку персональных данных — Смена контента",
-        author="Смена контента",
+        title="Согласие на обработку персональных данных",
+        author="",
     )
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="f")
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=footer)])
@@ -131,13 +138,16 @@ def build():
     founders = ", ".join(PROJECT["founders"])
     story = []
 
-    story.append(Paragraph("ДОКУМЕНТ ДЛЯ ПОДПИСИ · РЕДАКЦИЯ 1.0", S["kicker"]))
-    story.append(Paragraph("Согласие на обработку<br/>персональных данных", S["h1"]))
+    story.append(Paragraph(
+        "Приложение № 1<br/>к Политике конфиденциальности проекта «Смена контента»",
+        S["small"]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("СОГЛАСИЕ<br/>на обработку персональных данных", S["h1"]))
     story.append(Paragraph(
         "Заполняется от руки, подписывается, фотографируется и загружается "
         "в личном кабинете на сайте проекта. Пока согласие не проверено "
         "комиссией, публикация материалов недоступна.", S["p"]))
-    story.append(HRFlowable(width="100%", thickness=1, color=LINE,
+    story.append(HRFlowable(width="100%", thickness=0.8, color=INK,
                             spaceBefore=2, spaceAfter=10))
 
     story.append(Paragraph("1. Оператор", S["h2"]))

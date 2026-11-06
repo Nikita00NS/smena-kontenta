@@ -127,17 +127,33 @@ S = {
 
 
 class Doc:
-    def __init__(self, filename, kicker, title, subtitle, header_right=""):
+    def __init__(self, filename, kicker, title, subtitle, header_right="", plain=False):
         self.path = os.path.join(OUT, filename)
         self.kicker = kicker
+        self.plain = plain
         self.title = title
         self.subtitle = subtitle
         self.header_right = header_right or kicker.split(" · ")[0]
+        self.header_left = (title if plain else "").upper()
         self.items = []
 
     def _frame(self, canvas, doc):
         w, h = A4
         canvas.saveState()
+        if self.plain:
+            """Официальные документы печатаются без логотипа и цветных плашек:
+            сверху только название документа и номер страницы, как в бланках."""
+            canvas.setFillColor(INK)
+            canvas.setFont("DM", 7.4)
+            canvas.drawString(22 * mm, h - 15 * mm, self.header_left)
+            canvas.setStrokeColor(colors.black)
+            canvas.setLineWidth(0.5)
+            canvas.line(22 * mm, h - 17.5 * mm, w - 22 * mm, h - 17.5 * mm)
+            canvas.setFillColor(INK)
+            canvas.setFont("DM", 7.2)
+            canvas.drawCentredString(w / 2.0, 12 * mm, "— %d —" % canvas.getPageNumber())
+            canvas.restoreState()
+            return
         logo = os.path.join("assets", "img", "logo-dark.png")
         if os.path.exists(logo):
             from reportlab.platypus import Image as RLImage
@@ -233,10 +249,13 @@ class Doc:
         frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="main")
         doc.addPageTemplates([PageTemplate(id="all", frames=[frame], onPage=self._frame)])
 
-        head = [
-            Paragraph(self.kicker, S["kicker"]),
-            Paragraph(self.title, S["h1"]),
-        ]
+        head = []
+        if not self.plain:
+            head.append(Paragraph(self.kicker, S["kicker"]))
+        else:
+            head.append(Paragraph("УТВЕРЖДЕНО проектом «Смена контента»".replace(
+                "УТВЕРЖДЕНО проектом", "Документ проекта"), S["small"]))
+        head.append(Paragraph(self.title, S["h1"]))
         if self.subtitle:
             head.append(Paragraph(self.subtitle, S["lead"]))
         head.append(Spacer(1, 4))
@@ -548,9 +567,10 @@ def school_program():
 # ------------------------------------------- политика конфиденциальности ---
 
 def privacy():
-    d = Doc("politika-konfidencialnosti.pdf", "ДОКУМЕНТ · РЕДАКЦИЯ 1.0",
+    d = Doc("politika-konfidencialnosti.pdf", "",
             "Политика конфиденциальности",
-            "Порядок обработки персональных данных на сайте проекта «Смена контента»")
+            "Порядок обработки персональных данных на сайте проекта «Смена контента»",
+            header_right="", plain=True)
 
     d.p("Документ объясняет, какие данные сайт получает, зачем они нужны, где хранятся "
         "и как их удалить. Мы собираем минимум: без этого не работает вход и публикация "
@@ -565,7 +585,7 @@ def privacy():
         ["Оператор", "проект «Смена контента», " + PROJECT["city"]],
         ["Контакт для обращений", mail()],
     ], [55 * mm, 110 * mm])
-    d.table(founder_rows(with_inn=True), [40 * mm, 90 * mm, 35 * mm])
+    d.table(founder_rows(with_inn=False), [50 * mm, 130 * mm])
     if not any(f["name"] for f in PROJECT["founders"]):
         d.p("Прочерк означает, что данные заполняются до начала работы с пользователями. "
             "Актуальные сведения можно получить по контакту, указанному выше.", "small")
@@ -584,11 +604,12 @@ def privacy():
         "на сайте не используются.")
 
     d.h2("3. Где хранятся данные")
-    d.p("Сейчас сайт работает без сервера: аккаунт, черновики и опубликованные материалы "
-        "хранятся в памяти браузера на вашем устройстве (localStorage) и не передаются "
-        "по сети. Это значит, что данные недоступны другим людям и другим устройствам.")
-    d.p("Если проект перейдёт на серверное хранение, этот документ будет обновлён до запуска "
-        "такой версии, а пользователи получат уведомление на указанную почту.")
+    d.p("Аккаунт, черновики, опубликованные материалы и обращения авторов хранятся на сервере "
+        "проекта в дата-центре на территории России. Пароли хранятся только в виде необратимого "
+        "хеша, почтовые пароли ящиков проекта в браузер не передаются.")
+    d.p("Резервные копии делаются на том же сервере и содержат те же данные. Доступ к ним есть "
+        "только у основателей проекта. Данные не передаются третьим лицам, за исключением "
+        "случаев, прямо предусмотренных законом.")
 
     d.h2("4. Зачем нужны данные")
     d.bullets([
@@ -624,8 +645,9 @@ def privacy():
         "по обращению на почту оператора.")
 
     d.h2("9. Файлы cookie и локальное хранилище")
-    d.p("Сайт использует localStorage браузера для входа в аккаунт и сохранения черновиков. "
-        "Сторонние cookie, рекламные и аналитические сценарии не используются.")
+    d.p("Сайт использует cookie и локальное хранилище браузера только для входа в аккаунт, "
+        "сохранения черновика и выбранной темы оформления. Сторонние cookie, рекламные "
+        "и аналитические сценарии не используются.")
 
     d.h2("10. Изменения политики")
     d.p("Актуальная редакция всегда доступна на этой странице. Дата и номер редакции указаны "
@@ -636,9 +658,10 @@ def privacy():
 # ------------------------------------------------ пользовательское соглашение ---
 
 def terms():
-    d = Doc("polzovatelskoe-soglashenie.pdf", "ДОКУМЕНТ · РЕДАКЦИЯ 1.0",
+    d = Doc("polzovatelskoe-soglashenie.pdf", "",
             "Пользовательское соглашение",
-            "Условия пользования сайтом и публикации материалов")
+            "Условия пользования сайтом и публикации материалов",
+            header_right="", plain=True)
 
     d.p("Соглашение действует между проектом «Смена контента» и пользователем сайта. "
         "Регистрируясь, вы принимаете эти условия полностью.", "lead")

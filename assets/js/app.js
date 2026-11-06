@@ -52,6 +52,32 @@
     });
   }
 
+  /* Фото профиля: обрезаем по центру в квадрат и ужимаем до 480 px.
+     Сервер принимает только сам файл (data URL до 400 КБ), а не ссылку. */
+  function avatarToSquare(file) {
+    return fileToDataUrl(file).then(function (dataUrl) {
+      return new Promise(function (resolve) {
+        var img = new Image();
+        img.onload = function () {
+          var side = Math.min(img.width, img.height);
+          var size = 480;
+          var canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+          try {
+            resolve(canvas.toDataURL("image/jpeg", 0.85));
+          } catch (e) {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = function () { resolve(dataUrl); };
+        img.src = dataUrl;
+      });
+    });
+  }
+
   function esc(str) {
     return String(str == null ? "" : str)
       .replace(/&/g, "&amp;")
@@ -2635,73 +2661,6 @@
       return '<span class="task-badge' + cls + '">' + esc(t.priorityLabel || "Обычная") + "</span>";
     }
 
-    function taskCard(t, statuses) {
-      var who = t.assignee ? esc(t.assignee.name) : esc(t.groupLabel || "—");
-      var due = t.due ? "срок " + esc(t.due) : "без срока";
-      var options = Object.keys(statuses || {}).map(function (k) {
-        return '<option value="' + esc(k) + '"' + (k === t.status ? " selected" : "") + ">" + esc(statuses[k]) + "</option>";
-      }).join("");
-      return '<div class="task-card' + (t.status === "done" ? " is-done" : "") + '" data-task="' + esc(t.id) + '">' +
-        '<div class="task-card__head"><b>' + esc(t.title) + "</b>" + taskBadge(t) + "</div>" +
-        '<div class="task-card__meta"><span>' + who + "</span><span>" + due + "</span>" +
-        "<span>" + esc(t.statusLabel || "") + "</span></div>" +
-        (t.description ? '<div class="task-card__text">' + esc(t.description) + "</div>" : "") +
-        (t.comments && t.comments.length
-          ? '<div class="task-comments">' + t.comments.map(function (c) {
-              return "<div><b>" + esc(c.by) + ":</b> " + esc(c.text) + "</div>";
-            }).join("") + "</div>"
-          : "") +
-        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:4px">' +
-        '<select data-task-status style="max-width:170px">' + options + "</select>" +
-        '<input type="text" data-task-comment placeholder="комментарий" style="max-width:220px">' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-task-send>Добавить</button>' +
-        "</div></div>";
-    }
-
-    function bindTaskCards(host, statuses, reload) {
-      $$("[data-task]", host).forEach(function (card) {
-        var id = card.getAttribute("data-task");
-        var select = $("[data-task-status]", card);
-        if (select) {
-          select.addEventListener("change", function () {
-            select.disabled = true;
-            Store.tasksUpdate({ id: id, status: select.value }).then(reload, function (err) {
-              select.disabled = false;
-              alert(err.message);
-            });
-          });
-        }
-        var btn = $("[data-task-send]", card);
-        if (btn) btn.addEventListener("click", function () {
-          var text = ($("[data-task-comment]", card) || {}).value || "";
-          if (text.trim().length < 2) return;
-          btn.disabled = true;
-          Store.tasksComment(id, text).then(reload, function (err) { btn.disabled = false; alert(err.message); });
-        });
-      });
-    }
-
-    function mountTasksCabinet(user) {
-      var host = $("[data-tasks-cabinet]");
-      if (!host || !Store.tasksMine || !user) return;
-      function draw() {
-        Store.tasksMine().then(function (res) {
-          if (!res.tasks.length) {
-            host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Работа</span>' +
-              '<h3 style="margin:6px 0 8px">Задачи</h3><p class="form__note">Задач пока нет. ' +
-              "Когда редакция поставит задачу, она появится здесь.</p></div>";
-            return;
-          }
-          host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Работа</span>' +
-            '<h3 style="margin:6px 0 10px">Задачи</h3>' +
-            res.tasks.map(function (t) { return taskCard(t, res.statuses); }).join("") +
-            "</div>";
-          bindTaskCards(host, res.statuses, draw);
-        }, function () {});
-      }
-      draw();
-    }
-
     function mountTasksAdmin(host) {
       if (!Store.tasksList) return;
       var section = document.createElement("section");
@@ -2781,72 +2740,7 @@
     }
 
     /* --- Двухфакторный вход: код на почту вместо «пароля редакции» ------ */
-    function mountTwofaCard(user) {
-      var host = $("[data-twofa-card]");
-      if (!host || !Store.twofaEnable || !user) return;
-      function draw() {
-        var fresh = Store.currentUser() || user;
-        var on = !!fresh.twofa;
-        host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Безопасность</span>' +
-          '<h3 style="margin:6px 0 8px">Вход по коду</h3>' +
-          "<p class=\"form__note\">" + (on
-            ? "Включено: при входе после пароля мы спросим код из письма. Так украденный пароль сам по себе бесполезен."
-            : "Можно включить вход по коду на почту: после пароля сайт попросит шесть цифр из письма.") + "</p>" +
-          '<div class="row" style="gap:8px;flex-wrap:wrap">' +
-          '<input type="password" data-2fa-pass placeholder="Пароль аккаунта" autocomplete="current-password" style="max-width:220px">' +
-          '<button class="btn btn--sm ' + (on ? "btn--ghost" : "") + '" type="button" data-2fa-toggle>' +
-          (on ? "Выключить" : "Включить") + "</button>" +
-          '<span class="form__note" data-2fa-note style="align-self:center"></span></div></div>';
-        var note = $("[data-2fa-note]", host);
-        $("[data-2fa-toggle]", host).addEventListener("click", function () {
-          var pass = ($("[data-2fa-pass]", host) || {}).value || "";
-          if (!pass) { note.textContent = "Введите пароль."; return; }
-          var call = on ? Store.twofaDisable(pass) : Store.twofaEnable(pass);
-          call.then(function () {
-            var cached = Store.currentUser() || {};
-            cached.twofa = !on;
-            try { window.localStorage.setItem("smena_user", JSON.stringify(cached)); } catch (e) {}
-            draw();
-          }, function (err) { note.textContent = (err && err.message) || "Не получилось."; });
-        });
-      }
-      draw();
-    }
-
     /* --- Удаление аккаунта из кабинета ---------------------------------- */
-    function mountDangerZone(user) {
-      var host = $("[data-danger-zone]");
-      if (!host || !Store.accountDelete || !user) return;
-      host.innerHTML =
-        '<div class="danger-zone"><h3>Удаление аккаунта</h3>' +
-        "<p>Аккаунт и личные данные удаляются навсегда: имя, почта, пароль и черновики. " +
-        "Опубликованные материалы остаются в проекте, но без вашего имени. " +
-        "Восстановить аккаунт после удаления нельзя.</p>" +
-        '<div class="row"><input type="password" data-del-pass placeholder="Пароль" autocomplete="current-password" style="max-width:220px">' +
-        '<input type="text" data-del-word placeholder="Напишите УДАЛИТЬ" style="max-width:200px">' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-del-do>Удалить аккаунт</button></div>' +
-        '<p class="form__note" data-del-note></p></div>';
-
-      var noteEl = $("[data-del-note]", host);
-      var btn = $("[data-del-do]", host);
-      btn.addEventListener("click", function () {
-        var pass = ($("[data-del-pass]", host) || {}).value || "";
-        var word = ($("[data-del-word]", host) || {}).value || "";
-        if (!pass) { noteEl.textContent = "Введите пароль."; return; }
-        if (word.trim().toUpperCase() !== "УДАЛИТЬ") { noteEl.textContent = "Напишите слово УДАЛИТЬ."; return; }
-        if (!window.confirm("Удалить аккаунт навсегда? Восстановить его будет нельзя.")) return;
-        btn.disabled = true;
-        noteEl.textContent = "Удаляем…";
-        Store.accountDelete(pass, word.trim()).then(function () {
-          noteEl.textContent = "Аккаунт удалён. Возвращаем на главную.";
-          setTimeout(function () { window.location.href = "/"; }, 1200);
-        }, function (err) {
-          btn.disabled = false;
-          noteEl.textContent = (err && err.message) || "Не получилось удалить аккаунт.";
-        });
-      });
-    }
-
     /* --- Почта: ящики домена, чтение, отправка, шаблоны --------------------- */
     function mountMailClient(host) {
       if (!Store.mailBoxes) return;
@@ -3576,116 +3470,6 @@
     }
 
     /* --- Кабинет: работа в команде --------------------------------------- */
-    function mountHiringCabinet(user) {
-      var host = $("[data-hiring-cabinet]");
-      if (!host || !Store.hiringMine || !user) return;
-
-      function draw() {
-        Store.hiringMine().then(function (res) {
-          var app = res.application;
-          if (!app) {
-            host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Команда</span>' +
-              '<h3 style="margin:6px 0 10px">Хотите работать в проекте?</h3>' +
-              '<p class="form__note">Заявка проходит четыре шага: тест знаний, проверка документов, ' +
-              "согласование редакции и только потом роль «Сотрудник». Почта должна быть подтверждена.</p>" +
-              '<div class="mail-grid" style="margin-top:12px">' +
-              '<div class="field"><label>Направление</label><select data-h-position>' +
-              res.positions.map(function (p) { return "<option>" + esc(p) + "</option>"; }).join("") +
-              "</select></div>" +
-              '<div class="field"><label>Город или регион</label><input type="text" data-h-region placeholder="Москва"></div>' +
-              "</div>" +
-              '<div class="field" style="margin-top:10px"><label>Почему именно вы</label>' +
-              '<textarea data-h-motivation rows="4" placeholder="Опыт, ссылки на работы, чем хотите заниматься"></textarea></div>' +
-              '<div class="row" style="gap:8px;margin-top:10px"><button class="btn btn--accent btn--sm" type="button" data-h-apply>Подать заявку</button>' +
-              '<span class="form__note" data-h-note style="align-self:center"></span></div></div>';
-            var noteEl = $("[data-h-note]", host);
-            $("[data-h-apply]", host).addEventListener("click", function () {
-              noteEl.textContent = "Отправляем…";
-              Store.hiringApply({
-                position: $("[data-h-position]", host).value,
-                region: $("[data-h-region]", host).value,
-                motivation: $("[data-h-motivation]", host).value,
-              }).then(draw, function (err) { noteEl.textContent = err.message; });
-            });
-            return;
-          }
-
-          var stageName = res.stages[app.stage] || app.stage;
-          var head = '<div class="panel" style="padding:22px"><span class="kicker">Команда</span>' +
-            '<h3 style="margin:6px 0 8px">' + esc(app.position) + "</h3>" +
-            '<p class="form__note">Этап: <b>' + esc(stageName) + "</b>. Тест: " + app.testPercent +
-            "% (нужно " + res.passPercent + "%).</p>";
-          var body = "";
-
-          if (app.stage === "test" && res.questionsCount) {
-            body = '<div data-h-test><p class="form__note">Тест короткий: ' + res.questionsCount +
-              " вопросов, по одному ответу. Правильные ответы проверяет сервер.</p>" +
-              '<button class="btn btn--accent btn--sm" type="button" data-h-start>Начать тест</button></div>';
-          } else if (app.stage === "checklist") {
-            body = '<p class="form__note">Тест пройден. Дальше редакция проверит документы и портфолио. ' +
-              "Мы напишем на почту, когда решение будет готово.</p>";
-          } else if (app.stage === "review") {
-            body = '<p class="form__note">Заявка на согласовании у редакции.</p>';
-          } else if (app.stage === "approved") {
-            body = '<p class="form__note"><b>Вы в команде.</b> Роль «Сотрудник» уже выдана: зайдите заново, чтобы обновились права.</p>';
-          } else if (app.stage === "rejected") {
-            body = '<p class="form__note">Заявку не приняли' + (app.note ? ": " + esc(app.note) : "") +
-              ". Можно подать снова, когда будете готовы.</p>" +
-              '<button class="btn btn--ghost btn--sm" type="button" data-h-again>Подать заново</button>';
-          }
-
-          var checks = app.checklist.map(function (c) {
-            return '<div class="pcard__line"><span>' + esc(c.label) + "</span><small>" +
-              (c.ok ? "готово" : "ждёт") + "</small></div>";
-          }).join("");
-
-          host.innerHTML = head + body + '<div class="pcard__list" style="margin-top:12px">' + checks + "</div></div>" +
-            '<div data-h-test-box style="margin-top:14px"></div>';
-
-          var start = $("[data-h-start]", host);
-          if (start) start.addEventListener("click", function () {
-            start.disabled = true;
-            Store.hiringTest().then(function (t) {
-              $("[data-h-test-box]", host).innerHTML = '<div class="panel" style="padding:22px">' +
-                t.questions.map(function (q) {
-                  return '<div class="field" style="margin-bottom:14px"><b>' + esc(q.text) + "</b>" +
-                    q.options.map(function (o, i) {
-                      return '<label class="hiring-check"><input type="radio" name="' + esc(q.id) + '" value="' + i + '"> ' + esc(o) + "</label>";
-                    }).join("") + "</div>";
-                }).join("") +
-                '<button class="btn btn--accent btn--sm" type="button" data-h-submit>Отправить ответы</button>' +
-                '<span class="form__note" data-h-result style="margin-left:10px"></span></div>';
-              $("[data-h-submit]", host).addEventListener("click", function () {
-                var answers = {};
-                t.questions.forEach(function (q) {
-                  var chosen = document.querySelector('input[name="' + q.id + '"]:checked');
-                  if (chosen) answers[q.id] = Number(chosen.value);
-                });
-                $("[data-h-submit]", host).disabled = true;
-                Store.hiringTestSubmit(answers).then(function (r) {
-                  $("[data-h-result]", host).textContent = r.passed
-                    ? "Тест сдан: " + r.right + " из " + r.total + ". Дальше — документы и портфолио."
-                    : "Пока " + r.percent + "%. Нужно " + res.passPercent + "%. Можно попробовать снова.";
-                  if (r.passed) setTimeout(draw, 1200);
-                }, function (err) {
-                  $("[data-h-submit]", host).disabled = false;
-                  $("[data-h-result]", host).textContent = err.message;
-                });
-              });
-            }, function (err) { start.disabled = false; });
-          });
-
-          var again = $("[data-h-again]", host);
-          if (again) again.addEventListener("click", function () {
-            again.disabled = true;
-            Store.hiringApply({ position: app.position, region: app.region, motivation: app.motivation })
-              .then(draw, function (err) { again.disabled = false; alert(err.message); });
-          });
-        }, function () {});
-      }
-      draw();
-    }
-
     function stepsHtml(steps) {
       if (!steps || !steps.length) return "";
       return steps.map(function (st) {
@@ -5777,64 +5561,302 @@
       head + body + actions + "</div>";
   }
 
-  /* пресс-карта автора: до нужного числа публикаций — прогресс, после — карта */
+  /* Пресс-карта автора: компактная карточка вместо огромного бланка.
+     Пока карты нет — прогресс и понятные шаги; когда выдана — номер и срок. */
   function issueCardBlock(card) {
     var percent = Math.min(100, Math.round((card.posts / card.need) * 100));
+
     if (!card.issued) {
       return (
-        '<div class="presscard presscard--personal presscard--pending" data-reveal>' +
-        '<div class="presscard__main">' +
-        '<div class="presscard__top"><span class="presscard__label">Пресс-карта автора</span>' +
-        '<span class="presscard__code">не выдана</span></div>' +
-        '<div class="presscard__name">' + esc(card.name) + "</div>" +
-        '<div class="presscard__desc">' + esc(card.role) + " · " + esc(card.region) + "</div>" +
-        '<div class="presscard__editorial">' + esc(card.editorial) + "</div>" +
-        '<div class="card-progress">' +
-        '<div class="card-progress__head"><b>' + card.posts + " из " + card.need +
-        "</b><span>осталось " + card.left + " " +
-        plural(card.left, ["материал", "материала", "материалов"]) +
-        "</span></div>" +
-        '<div class="card-progress__bar"><i style="width:' + percent + '%"></i></div>' +
-        '<p class="card-progress__note">' +
+        '<div class="pcard pcard--pending" data-reveal>' +
+        '<div class="pcard__top"><span class="kicker">Пресс-карта автора</span>' +
+        '<span class="pcard__state">ещё не выдана</span></div>' +
+        '<div class="pcard__progress">' +
+        '<b>' + card.posts + " из " + card.need + "</b>" +
+        "<span>осталось " + card.left + " " +
+        plural(card.left, ["материал", "материала", "материалов"]) + "</span></div>" +
+        '<div class="pcard__bar"><i style="width:' + percent + '%"></i></div>' +
+        '<p class="pcard__note">' +
         (card.scope === "team"
-          ? "Карта выдаётся, когда редакция «" + esc(card.teamName) + "» наберёт " + card.need +
-            " опубликованных материалов — тогда её получает каждый участник команды."
-          : "Карта выдаётся после " + card.need + " опубликованных материалов. С ней можно " +
-            "брать интервью и ходить на события как журналист проекта.") +
+          ? "Карту получит каждый участник редакции «" + esc(card.teamName) + "», когда у команды будет " +
+            card.need + " опубликованных материалов."
+          : "Карта даёт право ходить на события и брать комментарии как автор проекта. Нужно " +
+            card.need + " опубликованных материалов, которые приняла редакция.") +
         "</p>" +
-        "</div>" +
-        '<div class="presscard__row">' +
-        "<span><b>Публикаций</b>" + card.posts + "</span>" +
-        "<span><b>Нужно</b>" + card.need + "</span>" +
-        "<span><b>Выдаёт</b>" + esc(card.issuer) + "</span>" +
-        "</div></div>" +
-        '<div class="presscard__side">' +
-        '<div class="presscard__stamp presscard__stamp--muted">пресс<br>карта<br><span>после ' +
-        card.need + "</span></div>" +
+        '<ol class="pcard__steps">' +
+        "<li>Подпишите согласие на обработку данных — без него материалы не публикуются.</li>" +
+        "<li>Опубликуйте " + card.need + " материала: черновик не считается, нужна публикация.</li>" +
+        "<li>Подайте заявление в кабинете — его подписывает " + esc(card.issuer) + ", решение за 3 дня.</li>" +
+        "<li>Карту передаём лично в Москве или присылаем почтой.</li>" +
+        "</ol>" +
+        '<div class="pcard__actions">' +
+        '<a class="btn btn--ghost btn--sm" href="/docs">Правила выдачи</a>' +
+        '<a class="btn btn--ghost btn--sm" href="/support">Спросить о карте</a>' +
         "</div></div>"
       );
     }
+
     return (
-      '<div class="presscard presscard--personal" data-reveal>' +
-      '<div class="presscard__main">' +
-      '<div class="presscard__top"><span class="presscard__label">Пресс-карта автора</span>' +
-      '<span class="presscard__code">' + esc(card.number) + "</span></div>" +
-      '<div class="presscard__name">' + esc(card.name) + "</div>" +
-      '<div class="presscard__desc">' + esc(card.role) + " · " + esc(card.region) + "</div>" +
-      '<div class="presscard__editorial">' + esc(card.editorial) + "</div>" +
-      '<div class="presscard__row">' +
+      '<div class="pcard pcard--issued" data-reveal>' +
+      '<div class="pcard__top"><span class="kicker">Пресс-карта автора</span>' +
+      '<span class="pcard__num">' + esc(card.number) + "</span></div>" +
+      '<div class="pcard__name">' + esc(card.name) + "</div>" +
+      '<div class="pcard__role">' + esc(card.role) + " · " + esc(card.region) + " · " +
+      esc(card.editorial) + "</div>" +
+      '<div class="pcard__row">' +
       "<span><b>Выдана</b>" + fmtDate(card.issuedAt) + "</span>" +
       "<span><b>Действует до</b>" + fmtDate(card.validUntil) + "</span>" +
       "<span><b>Публикаций</b>" + card.posts + "</span>" +
       "<span><b>Выдаёт</b>" + esc(card.issuer) + "</span>" +
-      (card.head ? "<span><b>Руководитель</b>" + esc(card.head) + "</span>" : "") +
-      "</div></div>" +
-      '<div class="presscard__side">' +
-      '<div class="presscard__stamp">смена<br>контента<br><span>' +
-      esc(String(new Date(card.issuedAt).getFullYear() || "")) + "</span></div>" +
-      '<button class="btn btn--sm btn--ghost" type="button" data-print>Печать</button>' +
+      "</div>" +
+      '<div class="pcard__actions">' +
+      '<button class="btn btn--sm btn--ghost" type="button" data-print>Печать карты</button>' +
       "</div></div>"
     );
+  }
+
+  /* Кабинет: эти блоки вызываются со страницы профиля, поэтому живут
+     в общем пространстве имён, а не внутри админки. */
+  function taskCard(t, statuses) {
+    var who = t.assignee ? esc(t.assignee.name) : esc(t.groupLabel || "—");
+    var due = t.due ? "срок " + esc(t.due) : "без срока";
+    var options = Object.keys(statuses || {}).map(function (k) {
+      return '<option value="' + esc(k) + '"' + (k === t.status ? " selected" : "") + ">" + esc(statuses[k]) + "</option>";
+    }).join("");
+    return '<div class="task-card' + (t.status === "done" ? " is-done" : "") + '" data-task="' + esc(t.id) + '">' +
+      '<div class="task-card__head"><b>' + esc(t.title) + "</b>" + taskBadge(t) + "</div>" +
+      '<div class="task-card__meta"><span>' + who + "</span><span>" + due + "</span>" +
+      "<span>" + esc(t.statusLabel || "") + "</span></div>" +
+      (t.description ? '<div class="task-card__text">' + esc(t.description) + "</div>" : "") +
+      (t.comments && t.comments.length
+        ? '<div class="task-comments">' + t.comments.map(function (c) {
+            return "<div><b>" + esc(c.by) + ":</b> " + esc(c.text) + "</div>";
+          }).join("") + "</div>"
+        : "") +
+      '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:4px">' +
+      '<select data-task-status style="max-width:170px">' + options + "</select>" +
+      '<input type="text" data-task-comment placeholder="комментарий" style="max-width:220px">' +
+      '<button class="btn btn--ghost btn--sm" type="button" data-task-send>Добавить</button>' +
+      "</div></div>";
+  }
+
+  function bindTaskCards(host, statuses, reload) {
+    $$("[data-task]", host).forEach(function (card) {
+      var id = card.getAttribute("data-task");
+      var select = $("[data-task-status]", card);
+      if (select) {
+        select.addEventListener("change", function () {
+          select.disabled = true;
+          Store.tasksUpdate({ id: id, status: select.value }).then(reload, function (err) {
+            select.disabled = false;
+            alert(err.message);
+          });
+        });
+      }
+      var btn = $("[data-task-send]", card);
+      if (btn) btn.addEventListener("click", function () {
+        var text = ($("[data-task-comment]", card) || {}).value || "";
+        if (text.trim().length < 2) return;
+        btn.disabled = true;
+        Store.tasksComment(id, text).then(reload, function (err) { btn.disabled = false; alert(err.message); });
+      });
+    });
+  }
+
+  function mountTasksCabinet(user) {
+    var host = $("[data-tasks-cabinet]");
+    if (!host || !Store.tasksMine || !user) return;
+    function draw() {
+      Store.tasksMine().then(function (res) {
+        if (!res.tasks.length) {
+          host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Работа</span>' +
+            '<h3 style="margin:6px 0 8px">Задачи</h3><p class="form__note">Задач пока нет. ' +
+            "Когда редакция поставит задачу, она появится здесь.</p></div>";
+          return;
+        }
+        host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Работа</span>' +
+          '<h3 style="margin:6px 0 10px">Задачи</h3>' +
+          res.tasks.map(function (t) { return taskCard(t, res.statuses); }).join("") +
+          "</div>";
+        bindTaskCards(host, res.statuses, draw);
+      }, function () {});
+    }
+    draw();
+  }
+
+  function mountTwofaCard(user) {
+    var host = $("[data-twofa-card]");
+    if (!host || !Store.twofaEnable || !user) return;
+    function draw() {
+      var fresh = Store.currentUser() || user;
+      var on = !!fresh.twofa;
+      host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Безопасность</span>' +
+        '<h3 style="margin:6px 0 8px">Вход по коду</h3>' +
+        "<p class=\"form__note\">" + (on
+          ? "Включено: при входе после пароля мы спросим код из письма. Так украденный пароль сам по себе бесполезен."
+          : "Можно включить вход по коду на почту: после пароля сайт попросит шесть цифр из письма.") + "</p>" +
+        '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+        '<input type="password" data-2fa-pass placeholder="Пароль аккаунта" autocomplete="current-password" style="max-width:220px">' +
+        '<button class="btn btn--sm ' + (on ? "btn--ghost" : "") + '" type="button" data-2fa-toggle>' +
+        (on ? "Выключить" : "Включить") + "</button>" +
+        '<span class="form__note" data-2fa-note style="align-self:center"></span></div></div>';
+      var note = $("[data-2fa-note]", host);
+      $("[data-2fa-toggle]", host).addEventListener("click", function () {
+        var pass = ($("[data-2fa-pass]", host) || {}).value || "";
+        if (!pass) { note.textContent = "Введите пароль."; return; }
+        var call = on ? Store.twofaDisable(pass) : Store.twofaEnable(pass);
+        call.then(function () {
+          var cached = Store.currentUser() || {};
+          cached.twofa = !on;
+          try { window.localStorage.setItem("smena_user", JSON.stringify(cached)); } catch (e) {}
+          draw();
+        }, function (err) { note.textContent = (err && err.message) || "Не получилось."; });
+      });
+    }
+    draw();
+  }
+
+  function mountDangerZone(user) {
+    var host = $("[data-danger-zone]");
+    if (!host || !Store.accountDelete || !user) return;
+    host.innerHTML =
+      '<div class="danger-zone"><h3>Удаление аккаунта</h3>' +
+      "<p>Аккаунт и личные данные удаляются навсегда: имя, почта, пароль и черновики. " +
+      "Опубликованные материалы остаются в проекте, но без вашего имени. " +
+      "Восстановить аккаунт после удаления нельзя.</p>" +
+      '<div class="row"><input type="password" data-del-pass placeholder="Пароль" autocomplete="current-password" style="max-width:220px">' +
+      '<input type="text" data-del-word placeholder="Напишите УДАЛИТЬ" style="max-width:200px">' +
+      '<button class="btn btn--ghost btn--sm" type="button" data-del-do>Удалить аккаунт</button></div>' +
+      '<p class="form__note" data-del-note></p></div>';
+
+    var noteEl = $("[data-del-note]", host);
+    var btn = $("[data-del-do]", host);
+    btn.addEventListener("click", function () {
+      var pass = ($("[data-del-pass]", host) || {}).value || "";
+      var word = ($("[data-del-word]", host) || {}).value || "";
+      if (!pass) { noteEl.textContent = "Введите пароль."; return; }
+      if (word.trim().toUpperCase() !== "УДАЛИТЬ") { noteEl.textContent = "Напишите слово УДАЛИТЬ."; return; }
+      if (!window.confirm("Удалить аккаунт навсегда? Восстановить его будет нельзя.")) return;
+      btn.disabled = true;
+      noteEl.textContent = "Удаляем…";
+      Store.accountDelete(pass, word.trim()).then(function () {
+        noteEl.textContent = "Аккаунт удалён. Возвращаем на главную.";
+        setTimeout(function () { window.location.href = "/"; }, 1200);
+      }, function (err) {
+        btn.disabled = false;
+        noteEl.textContent = (err && err.message) || "Не получилось удалить аккаунт.";
+      });
+    });
+  }
+
+  function mountHiringCabinet(user) {
+    var host = $("[data-hiring-cabinet]");
+    if (!host || !Store.hiringMine || !user) return;
+
+    function draw() {
+      Store.hiringMine().then(function (res) {
+        var app = res.application;
+        if (!app) {
+          host.innerHTML = '<div class="panel" style="padding:22px"><span class="kicker">Команда</span>' +
+            '<h3 style="margin:6px 0 10px">Хотите работать в проекте?</h3>' +
+            '<p class="form__note">Заявка проходит четыре шага: тест знаний, проверка документов, ' +
+            "согласование редакции и только потом роль «Сотрудник». Почта должна быть подтверждена.</p>" +
+            '<div class="mail-grid" style="margin-top:12px">' +
+            '<div class="field"><label>Направление</label><select data-h-position>' +
+            res.positions.map(function (p) { return "<option>" + esc(p) + "</option>"; }).join("") +
+            "</select></div>" +
+            '<div class="field"><label>Город или регион</label><input type="text" data-h-region placeholder="Москва"></div>' +
+            "</div>" +
+            '<div class="field" style="margin-top:10px"><label>Почему именно вы</label>' +
+            '<textarea data-h-motivation rows="4" placeholder="Опыт, ссылки на работы, чем хотите заниматься"></textarea></div>' +
+            '<div class="row" style="gap:8px;margin-top:10px"><button class="btn btn--accent btn--sm" type="button" data-h-apply>Подать заявку</button>' +
+            '<span class="form__note" data-h-note style="align-self:center"></span></div></div>';
+          var noteEl = $("[data-h-note]", host);
+          $("[data-h-apply]", host).addEventListener("click", function () {
+            noteEl.textContent = "Отправляем…";
+            Store.hiringApply({
+              position: $("[data-h-position]", host).value,
+              region: $("[data-h-region]", host).value,
+              motivation: $("[data-h-motivation]", host).value,
+            }).then(draw, function (err) { noteEl.textContent = err.message; });
+          });
+          return;
+        }
+
+        var stageName = res.stages[app.stage] || app.stage;
+        var head = '<div class="panel" style="padding:22px"><span class="kicker">Команда</span>' +
+          '<h3 style="margin:6px 0 8px">' + esc(app.position) + "</h3>" +
+          '<p class="form__note">Этап: <b>' + esc(stageName) + "</b>. Тест: " + app.testPercent +
+          "% (нужно " + res.passPercent + "%).</p>";
+        var body = "";
+
+        if (app.stage === "test" && res.questionsCount) {
+          body = '<div data-h-test><p class="form__note">Тест короткий: ' + res.questionsCount +
+            " вопросов, по одному ответу. Правильные ответы проверяет сервер.</p>" +
+            '<button class="btn btn--accent btn--sm" type="button" data-h-start>Начать тест</button></div>';
+        } else if (app.stage === "checklist") {
+          body = '<p class="form__note">Тест пройден. Дальше редакция проверит документы и портфолио. ' +
+            "Мы напишем на почту, когда решение будет готово.</p>";
+        } else if (app.stage === "review") {
+          body = '<p class="form__note">Заявка на согласовании у редакции.</p>';
+        } else if (app.stage === "approved") {
+          body = '<p class="form__note"><b>Вы в команде.</b> Роль «Сотрудник» уже выдана: зайдите заново, чтобы обновились права.</p>';
+        } else if (app.stage === "rejected") {
+          body = '<p class="form__note">Заявку не приняли' + (app.note ? ": " + esc(app.note) : "") +
+            ". Можно подать снова, когда будете готовы.</p>" +
+            '<button class="btn btn--ghost btn--sm" type="button" data-h-again>Подать заново</button>';
+        }
+
+        var checks = app.checklist.map(function (c) {
+          return '<div class="pcard__line"><span>' + esc(c.label) + "</span><small>" +
+            (c.ok ? "готово" : "ждёт") + "</small></div>";
+        }).join("");
+
+        host.innerHTML = head + body + '<div class="pcard__list" style="margin-top:12px">' + checks + "</div></div>" +
+          '<div data-h-test-box style="margin-top:14px"></div>';
+
+        var start = $("[data-h-start]", host);
+        if (start) start.addEventListener("click", function () {
+          start.disabled = true;
+          Store.hiringTest().then(function (t) {
+            $("[data-h-test-box]", host).innerHTML = '<div class="panel" style="padding:22px">' +
+              t.questions.map(function (q) {
+                return '<div class="field" style="margin-bottom:14px"><b>' + esc(q.text) + "</b>" +
+                  q.options.map(function (o, i) {
+                    return '<label class="hiring-check"><input type="radio" name="' + esc(q.id) + '" value="' + i + '"> ' + esc(o) + "</label>";
+                  }).join("") + "</div>";
+              }).join("") +
+              '<button class="btn btn--accent btn--sm" type="button" data-h-submit>Отправить ответы</button>' +
+              '<span class="form__note" data-h-result style="margin-left:10px"></span></div>';
+            $("[data-h-submit]", host).addEventListener("click", function () {
+              var answers = {};
+              t.questions.forEach(function (q) {
+                var chosen = document.querySelector('input[name="' + q.id + '"]:checked');
+                if (chosen) answers[q.id] = Number(chosen.value);
+              });
+              $("[data-h-submit]", host).disabled = true;
+              Store.hiringTestSubmit(answers).then(function (r) {
+                $("[data-h-result]", host).textContent = r.passed
+                  ? "Тест сдан: " + r.right + " из " + r.total + ". Дальше — документы и портфолио."
+                  : "Пока " + r.percent + "%. Нужно " + res.passPercent + "%. Можно попробовать снова.";
+                if (r.passed) setTimeout(draw, 1200);
+              }, function (err) {
+                $("[data-h-submit]", host).disabled = false;
+                $("[data-h-result]", host).textContent = err.message;
+              });
+            });
+          }, function (err) { start.disabled = false; });
+        });
+
+        var again = $("[data-h-again]", host);
+        if (again) again.addEventListener("click", function () {
+          again.disabled = true;
+          Store.hiringApply({ position: app.position, region: app.region, motivation: app.motivation })
+            .then(draw, function (err) { again.disabled = false; alert(err.message); });
+        });
+      }, function () {});
+    }
+    draw();
   }
 
   function initProfile() {
@@ -5853,6 +5875,9 @@
       var card = Store.pressCard();
       var consent = Store.consent();
       var consentStatus = (consent && consent.status) || "none";
+      /* Писать материалы можно только с принятым согласием на обработку ПД:
+         до этого кнопка не ведёт в редактор, а показывает, чего не хватает. */
+      var canWrite = consentStatus === "approved";
       var published = Store.listPosts({ authorId: user.id, status: "published" });
       var drafts = Store.listPosts({ authorId: user.id, status: "draft" });
       var pending = Store.listPosts({ authorId: user.id, status: "pending" });
@@ -6072,12 +6097,28 @@
           (teamCard ? teamCard.need : 5) + " материалов. Если соберётесь с друзьями — " +
           "создайте свою редакцию: тогда карта выдаётся всей команде после " +
           Store.getSettings().card.teamMinPosts + " публикаций.</p>" +
+          '<details class="team-rules"><summary>Правила и договор о создании редакции</summary>' +
+          "<ol>" +
+          "<li>Редакцию создаёт автор проекта с подтверждённым аккаунтом и согласием на обработку данных.</li>" +
+          "<li>Глава редакции отвечает за своих авторов: проверяет факты, соблюдает кодекс редакции " +
+          "и не публикует материалы без согласия людей на фото и в цитатах.</li>" +
+          "<li>Название редакции не должно повторять чужие бренды, СМИ и школьные проекты. Если название занято, " +
+          "комиссия попросит другое.</li>" +
+          "<li>Карта автора выдаётся всей команде после " + Store.getSettings().card.teamMinPosts +
+          " опубликованных материалов. За выдуманные материалы карта отзывается.</li>" +
+          "<li>Выйти из редакции можно в любой момент. Публикации остаются, карта начинает считаться " +
+          "по личным материалам.</li>" +
+          "<li>Договор действует без срока; условия меняются только письменно, с уведомлением в кабинете.</li>" +
+          "</ol>" +
+          '<label class="check-line"><input type="checkbox" data-team-agree value="1">' +
+          "<span>Я прочитал правила и подписываю договор о создании редакции от своего имени</span></label>" +
+          "</details>" +
           '<form class="team-form" data-team-create>' +
           '<div class="field"><label for="t-name">Название команды</label>' +
           '<input id="t-name" name="name" type="text" placeholder="Например, НоВоСебирьСети" maxlength="60"></div>' +
           '<div class="field"><label for="t-about">О чём вы</label>' +
           '<input id="t-about" name="about" type="text" placeholder="Коротко: город и темы" maxlength="120"></div>' +
-          '<div class="row"><button class="btn btn--sm" type="submit">Создать команду</button>' +
+          '<div class="row"><button class="btn btn--sm" type="submit" data-team-submit disabled>Создать редакцию</button>' +
           '<span class="form__note" data-team-status></span></div></form>' +
           '<form class="team-form team-form--join" data-team-join>' +
           '<div class="field"><label for="t-code">Или присоединитесь по коду</label>' +
@@ -6097,6 +6138,9 @@
           : '<span class="profile-id__ava">' + esc(Store.initials(user.name)) + "</span>") +
         '<span class="profile-ava__hint">сменить</span></button>' +
         '<input type="file" accept="image/*" data-avatar-input hidden>' +
+        (user.avatar
+          ? '<button class="profile-ava__clear" type="button" data-avatar-clear>убрать фото</button>'
+          : "") +
         "<div><h1>" + esc(user.name) + "</h1>" +
         '<p class="profile-id__role"><span class="status-badge">' + esc(user.access || "Пользователь") +
         "</span>" + esc(user.role) +
@@ -6105,9 +6149,15 @@
         (card.number ? " · карта " + esc(card.number) : "") + "</p></div>" +
         "</div>" +
         '<div class="profile-hero__actions">' +
-        '<a class="btn btn--accent" href="/write">Написать материал</a>' +
+        (canWrite
+          ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
+          : '<span class="btn btn--accent is-locked" aria-disabled="true" ' +
+            'title="Откроется после того, как комиссия примет согласие">Написать материал</span>') +
         '<a class="btn btn--ghost" href="/admin">Панель проекта</a>' +
         '<button class="btn btn--ghost" type="button" data-logout>Выйти</button>' +
+        (canWrite ? "" :
+          '<p class="profile-hero__lock">Редактор откроется, когда комиссия примет согласие ' +
+          "на обработку персональных данных: файл ниже.</p>") +
         "</div></div></div></section>" +
 
         '<section class="section wrap">' +
@@ -6150,13 +6200,19 @@
         '<p class="sec-head__text">Выложено на сайт: <b>' + published.length + "</b>. " +
         "Не выложено: <b>" + (mine.length - published.length) + "</b> — это черновики, " +
         "материалы на проверке и те, что вернули на правки.</p></div>" +
-        '<a class="sec-link" href="/write">Новый материал <span aria-hidden="true">→</span></a></div>' +
+        (canWrite
+          ? '<a class="sec-link" href="/write">Новый материал <span aria-hidden="true">→</span></a>'
+          : '<span class="sec-link sec-link--off">Новый материал <span aria-hidden="true">→</span></span>') +
+        "</div>" +
         (mine.length
           ? mine.map(postRow).join("")
           : '<div class="empty"><h3>Пока ничего не опубликовано</h3>' +
             "<p>Начните с простого: история из вашего двора, района или вуза. " +
             "Памятка автору подскажет, с чего начать.</p>" +
-            '<div class="empty__actions"><a class="btn btn--accent" href="/write">Написать материал</a>' +
+            '<div class="empty__actions">' +
+            (canWrite
+              ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
+              : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
             '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div>" +
 
@@ -6178,15 +6234,17 @@
         '<div class="field form__full"><label for="p-bio">О себе</label>' +
         '<textarea id="p-bio" name="bio" placeholder="Пара предложений: о чём хотите рассказывать">' +
         esc(user.bio || "") + "</textarea></div>" +
-        '<div class="form__full"><label>Смена пароля</label>' +
-        '<div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">' +
-        '<div class="field" style="margin:0"><input name="oldPass" type="password" ' +
-        'placeholder="Текущий пароль" autocomplete="current-password"></div>' +
-        '<div class="field" style="margin:0"><input name="newPass" type="password" ' +
-        'placeholder="Новый пароль, от 8 символов" autocomplete="new-password"></div>' +
-        '<button class="btn btn--sm btn--ghost" type="button" data-pass-change>Сменить пароль</button>' +
+        '<div class="form__full"><label for="p-old">Смена пароля</label>' +
+        '<div class="pass-change">' +
+        '<div class="field"><label for="p-old">Текущий пароль</label>' +
+        '<input id="p-old" name="oldPass" type="password" autocomplete="current-password"></div>' +
+        '<div class="field"><label for="p-new">Новый пароль</label>' +
+        '<input id="p-new" name="newPass" type="password" placeholder="От 8 символов" ' +
+        'autocomplete="new-password"></div>' +
         "</div>" +
-        '<p class="form__note" data-pass-note></p></div>' +
+        '<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">' +
+        '<button class="btn btn--sm btn--ghost" type="button" data-pass-change>Сменить пароль</button>' +
+        '<span class="form__note" data-pass-note></span></div></div>' +
         '<div class="form__full"><label>Акцентный цвет</label>' + swatchesHtml() +
         '<p class="form__note" style="margin:8px 0 0">Цвет интерфейса. ' +
         "По умолчанию оранжевый, выбор запоминается в этом браузере.</p></div>" +
@@ -6195,7 +6253,6 @@
         "</form>" +
         '<div data-my-editorial style="margin-top:18px"></div>' +
         '<div data-inbox style="margin-top:18px"></div>' +
-        '<div data-email-card style="margin-top:18px"></div>' +
         '<div data-hiring-cabinet style="margin-top:18px"></div>' +
         '<div data-tasks-cabinet style="margin-top:18px"></div>' +
         '<div data-twofa-card style="margin-top:18px"></div>' +
@@ -6212,7 +6269,6 @@
       mountMyEditorial(user);
       warnLocalOnly();
       mountInbox();
-      mountEmailCard(user);
       mountHiringCabinet(user);
       mountTasksCabinet(user);
       mountTwofaCard(user);
@@ -6247,18 +6303,36 @@
         avatarBtn.addEventListener("click", function () { avatarInput.click(); });
         avatarInput.addEventListener("change", function () {
           var file = avatarInput.files && avatarInput.files[0];
+          avatarInput.value = "";
           if (!file) return;
+          if (!/^image\//.test(file.type)) {
+            window.alert("Нужна фотография: jpg, png или webp.");
+            return;
+          }
           avatarBtn.classList.add("is-busy");
-          Store.uploadMedia(file)
-            .catch(function () { return fileToDataUrl(file); })
-            .then(function (avatar) { return Store.saveProfile({ avatar: avatar }); })
-            .then(function () {
+          avatarToSquare(file)
+            .then(function (dataUrl) { return Store.saveProfile({ avatar: dataUrl }); })
+            .then(function (res) {
               avatarBtn.classList.remove("is-busy");
+              if (res && res.ok === false) {
+                window.alert(res.error || "Фото не сохранилось.");
+                return;
+              }
               render();
             }, function (err) {
               avatarBtn.classList.remove("is-busy");
               window.alert((err && err.message) || "Не удалось загрузить фотографию.");
             });
+        });
+      }
+
+      var avatarClearBtn = $("[data-avatar-clear]", host);
+      if (avatarClearBtn) {
+        avatarClearBtn.addEventListener("click", function () {
+          if (!window.confirm("Убрать фотографию из профиля?")) return;
+          Store.saveProfile({ avatarClear: true }).then(function () { render(); }, function (err) {
+            window.alert((err && err.message) || "Не удалось убрать фото.");
+          });
         });
       }
 
@@ -6382,9 +6456,21 @@
       });
 
       var teamCreate = $("[data-team-create]", host);
+      var teamAgree = $("[data-team-agree]", host);
+      var teamSubmit = $("[data-team-submit]", host);
+      if (teamAgree && teamSubmit) {
+        teamAgree.addEventListener("change", function () {
+          teamSubmit.disabled = !teamAgree.checked;
+        });
+      }
       if (teamCreate) {
         teamCreate.addEventListener("submit", function (e) {
           e.preventDefault();
+          if (teamAgree && !teamAgree.checked) {
+            var noteAgree = $("[data-team-status]", host);
+            if (noteAgree) noteAgree.textContent = "Отметьте, что правила прочитаны и договор подписан.";
+            return;
+          }
           var fd = new FormData(teamCreate);
           var res = Store.createTeam({ name: fd.get("name"), about: fd.get("about"), region: user.region });
           var note = $("[data-team-status]", host);
@@ -6491,7 +6577,12 @@
             '<div class="empty"><h3>Пока нечего приложить</h3>' +
             "<p>Сначала опубликуйте материал: после проверки редакцией у него появится номер, " +
             "и он войдёт в заявку.</p>" +
-            '<div class="empty__actions"><a class="btn btn--sm" href="/write">Написать материал</a></div></div>';
+            '<div class="empty__actions">' +
+            (((Store.consent() || {}).status === "approved")
+              ? '<a class="btn btn--sm" href="/write">Написать материал</a>'
+              : '<span class="btn btn--sm is-locked" aria-disabled="true">Написать материал</span>' +
+                '<p class="form__note">Откроется после того, как комиссия примет согласие на обработку данных.</p>') +
+            "</div></div>";
           return;
         }
 
