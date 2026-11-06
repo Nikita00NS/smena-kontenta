@@ -340,6 +340,88 @@ function mail_from_kind($kind) {
     return $kind . '@' . SMENA_MAIL_DOMAIN;
 }
 
+
+/* ---------------------------------------------------------------------------
+   Подбор SMTP для ящика. Хостинг принимает и smtp.<домен>:465, и
+   mail.<домен>:465, и 587/25 с STARTTLS. Перебираем сами и запоминаем
+   рабочий вариант: человеку не нужно знать, какой порт у него открыт.
+   --------------------------------------------------------------------------- */
+function smtp_candidates($box) {
+    $domain = '';
+    $address = isset($box['address']) ? (string) $box['address'] : '';
+    if (strpos($address, '@') !== false) $domain = substr($address, strpos($address, '@') + 1);
+    $hosts = array();
+    foreach (array($box['smtpHost'], $box['host'], 'smtp.' . $domain, 'mail.' . $domain) as $h) {
+        $h = trim((string) $h);
+        if ($h !== '' && !in_array($h, $hosts, true)) $hosts[] = $h;
+    }
+    $out = array();
+    foreach ($hosts as $h) {
+        foreach (array(array(465, 'ssl'), array(587, 'tls'), array(25, 'tls')) as $pair) {
+            $out[] = array($h, $pair[0], $pair[1]);
+        }
+    }
+    return array_slice($out, 0, 6);
+}
+
+/* Отправка с ящика с перебором вариантов SMTP: тем же способом, что и
+   проверка. Возвращает рабочий вариант в $used. */
+function smtp_send_from_box($box, $to, $subject, $text, $html = '', &$used = null) {
+    $used = null;
+    $tried = array();
+    foreach (smtp_candidates($box) as $cand) {
+        $cfg = array(
+            'host' => $cand[0], 'port' => $cand[1], 'secure' => $cand[2],
+            'user' => isset($box['user']) ? $box['user'] : '',
+            'pass' => isset($box['pass']) ? $box['pass'] : '',
+            'from' => isset($box['address']) ? $box['address'] : '',
+            'fromName' => 'Смена контента',
+            'notify' => isset($box['address']) ? $box['address'] : '',
+        );
+        if ($cfg['from'] === '' || $cfg['pass'] === '') {
+            return array('ok' => false, 'error' => 'Пароль ящика не задан.');
+        }
+        $res = smtp_send_mail($cfg, $to, $subject, $text, $html);
+        if (!empty($res['ok'])) {
+            $used = $cand;
+            return array('ok' => true, 'error' => '', 'host' => $cand[0] . ':' . $cand[1]);
+        }
+        $tried[] = $cand[0] . ':' . $cand[1] . ' — ' . (isset($res['error']) ? $res['error'] : 'отказ');
+    }
+    return array('ok' => false, 'error' => implode('; ', array_slice($tried, 0, 3)));
+}
+
+/* Пробная отправка письма себе. Возвращает рабочий вариант в $used. */
+function smtp_test_send($box, $to, &$used) {
+    $used = null;
+    $tried = array();
+    foreach (smtp_candidates($box) as $cand) {
+        $cfg = array(
+            'host' => $cand[0], 'port' => $cand[1], 'secure' => $cand[2],
+            'user' => isset($box['user']) ? $box['user'] : '',
+            'pass' => isset($box['pass']) ? $box['pass'] : '',
+            'from' => isset($box['address']) ? $box['address'] : '',
+            'fromName' => 'Смена контента',
+            'notify' => isset($box['address']) ? $box['address'] : '',
+        );
+        if ($cfg['from'] === '' || $cfg['pass'] === '') {
+            return array('ok' => false, 'error' => 'Впишите пароль ящика.', 'tried' => $tried);
+        }
+        $res = smtp_send_mail($cfg, $to,
+            'Проверка отправки — Смена контента',
+            "Это проверочное письмо. Значит, ящик " . $cfg['from'] . " умеет отправлять письма.
+
+"
+            . "Отправлено со страницы «Почта» — «Ящики домена».");
+        if (!empty($res['ok'])) {
+            $used = $cand;
+            return array('ok' => true, 'error' => '', 'tried' => $tried);
+        }
+        $tried[] = $cand[0] . ':' . $cand[1] . ' — ' . (isset($res['error']) ? $res['error'] : 'отказ');
+    }
+    return array('ok' => false, 'error' => 'Ни один вариант SMTP не пустил: ' . implode('; ', array_slice($tried, 0, 3)), 'tried' => $tried);
+}
+
 function mail_send($to, $subject, $text, $html = '', $kind = '') {
     $dir = $GLOBALS['DATA_DIR'];
 
@@ -349,19 +431,21 @@ function mail_send($to, $subject, $text, $html = '', $kind = '') {
     if (function_exists('mailboxes_load')) {
         $boxes = mailboxes_load($dir);
         if (isset($boxes['noreply']) && !empty($boxes['noreply']['pass'])) {
-            $box = $boxes['noreply'];
-            $cfg = array(
-                'host' => $box['smtpHost'] !== '' ? $box['smtpHost'] : $box['host'],
-                'port' => (int) ($box['smtpPort'] ? $box['smtpPort'] : 465),
-                'secure' => $box['secure'],
-                'user' => $box['user'],
-                'pass' => $box['pass'],
-                'from' => $box['address'],
-                'fromName' => 'Смена контента',
-                'notify' => $box['address'],
-            );
-            $res = smtp_send_mail($cfg, $to, $subject, $text, $html);
-            if (!empty($res['ok'])) return true;
+            $used = null;
+            $res = smtp_send_from_box($boxes['noreply'], $to, $subject, $text, $html, $used);
+            if (!empty($res['ok'])) {
+                /* запомним рабочий сервер, чтобы не перебирать каждый раз */
+                if (is_array($used) && function_exists('mailboxes_save')) {
+                    $fresh = mailboxes_load($dir);
+                    if (isset($fresh['noreply'])) {
+                        $fresh['noreply']['smtpHost'] = $used[0];
+                        $fresh['noreply']['smtpPort'] = (int) $used[1];
+                        $fresh['noreply']['secure'] = $used[2];
+                        mailboxes_save($dir, $fresh);
+                    }
+                }
+                return true;
+            }
         }
     }
 

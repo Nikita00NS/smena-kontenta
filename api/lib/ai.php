@@ -32,6 +32,9 @@ function ai_settings($dir) {
         'model' => isset($saved['model']) ? (string) $saved['model'] : '',
         'updatedAt' => isset($saved['updatedAt']) ? (string) $saved['updatedAt'] : '',
         'lastTest' => isset($saved['lastTest']) && is_array($saved['lastTest']) ? $saved['lastTest'] : null,
+        /* ключ на каждый сервис: если один сервис недоступен из России,
+           помощник сам переключается на другой */
+        'keys' => isset($saved['keys']) && is_array($saved['keys']) ? $saved['keys'] : array(),
     );
 }
 
@@ -42,6 +45,11 @@ function ai_public($dir) {
         'model' => $cfg['model'] !== '' ? $cfg['model'] : ai_default_model($cfg['provider']),
         'hasKey' => $cfg['key'] !== '',
         'ready' => $cfg['key'] !== '',
+        'keys' => array(
+            'gemini' => !empty($cfg['keys']['gemini']),
+            'groq' => !empty($cfg['keys']['groq']),
+            'openrouter' => !empty($cfg['keys']['openrouter']),
+        ),
         'updatedAt' => $cfg['updatedAt'],
         'lastTest' => $cfg['lastTest'],
     );
@@ -100,7 +108,7 @@ function ai_model_fits($model, $provider) {
     return stripos($model, 'gemini') === false && strpos($model, '/') === false;
 }
 
-function ai_request($cfg, $system, $userText) {
+function ai_request_one($cfg, $system, $userText) {
     $provider = $cfg['provider'];
     $key = $cfg['key'];
     $model = $cfg['model'] !== '' ? $cfg['model'] : ai_default_model($provider);
@@ -187,19 +195,8 @@ function ai_request($cfg, $system, $userText) {
                 ? (isset($decoded['error']['message']) ? (string) $decoded['error']['message'] : '')
                 : (string) $decoded['error'];
         }
-        /* Ключ может быть от другого бесплатного сервиса — тогда пробуем
-           один раз именно его, прежде чем показывать ошибку человеку. */
-        $detected = ai_provider_from_key($key);
-        if (empty($cfg['_retry']) && in_array($status, array(401, 403, 404), true)
-            && $detected !== '' && $detected !== $provider) {
-            $second = $cfg;
-            $second['provider'] = $detected;
-            $second['model'] = '';
-            $second['_retry'] = true;
-            return ai_request($second, $system, $userText);
-        }
         $label = ai_provider_label($provider);
-        return array('ok' => false, 'provider' => $provider,
+        return array('ok' => false, 'provider' => $provider, 'status' => $status,
             'error' => $error !== '' ? ($label . ': ' . $error)
             : ($label . ' ответил ошибкой ' . $status . ($short !== '' ? ': ' . substr($short, 0, 200) : '')));
     }
@@ -224,8 +221,125 @@ function ai_request($cfg, $system, $userText) {
     return array('ok' => true, 'text' => $text, 'model' => $model, 'provider' => $provider);
 }
 
+/* Помощник перебирает сервисы: сначала выбранный, затем те, к которым есть
+   ключ. Groq и Gemini из России часто отвечают 403 — это не поломка сайта,
+   а закрытый доступ, и молча падать нельзя. */
+function ai_request($cfg, $system, $userText) {
+    $keys = isset($cfg['keys']) && is_array($cfg['keys']) ? $cfg['keys'] : array();
+    $order = array($cfg['provider']);
+    foreach (array('gemini', 'groq', 'openrouter') as $p) {
+        if ($p !== $cfg['provider'] && !empty($keys[$p])) $order[] = $p;
+    }
+    $lastError = 'Ключ помощника не задан.';
+    $tried = array();
+    foreach ($order as $p) {
+        $key = $p === $cfg['provider'] ? $cfg['key'] : (isset($keys[$p]) ? (string) $keys[$p] : '');
+        if ($key === '') continue;
+        $one = $cfg;
+        $one['provider'] = $p;
+        $one['key'] = $key;
+        $one['model'] = $p === $cfg['provider'] ? $cfg['model'] : '';
+        $one['keys'] = $keys;
+        if (!ai_model_fits($one['model'], $p)) $one['model'] = '';
+        $res = ai_request_one($one, $system, $userText);
+        if (!empty($res['ok'])) return $res;
+        $tried[] = ai_provider_label($p);
+        $lastError = $res['error'];
+        $status = isset($res['status']) ? (int) $res['status'] : 0;
+        /* 401/403/404 — вопрос доступа: пробуем следующий сервис.
+           Прочие ошибки (сеть, лимит) — прекращаем, иначе письмо уйдёт
+           в никуда после трёх таймаутов. */
+        if (!in_array($status, array(401, 403, 404), true)) break;
+    }
+    return array('ok' => false, 'error' => $lastError
+        . ($tried ? ' Пробовали: ' . implode(', ', $tried) . '.' : ''));
+}
+
+/* GET-запрос без тела: нужен только код ответа. По нему видно, доступен ли
+   сервис с сервера сайта и принимает ли он ключ. */
+function ai_http_get($url, $headers) {
+    $status = 0;
+    $body = '';
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, array(
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_CONNECTTIMEOUT => 10,
+        ));
+        $body = (string) curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+    } else {
+        $ctx = stream_context_create(array('http' => array(
+            'method' => 'GET', 'header' => implode("\r\n", $headers),
+            'timeout' => 20, 'ignore_errors' => true,
+        ), 'ssl' => array('verify_peer' => true, 'verify_peer_name' => true)));
+        $body = (string) @file_get_contents($url, false, $ctx);
+        if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
+            $status = (int) $m[1];
+        }
+    }
+    return array('status' => $status, 'body' => $body);
+}
+
+/* Проверка доступности всех трёх сервисов. Человек видит, какой из них
+   вообще открывается с сервера сайта, а какой закрыт. */
+function ai_probe($cfg) {
+    $keys = isset($cfg['keys']) && is_array($cfg['keys']) ? $cfg['keys'] : array();
+    $out = array();
+    $plan = array(
+        'gemini' => array(
+            'url' => 'https://generativelanguage.googleapis.com/v1beta/models',
+            'needKey' => true,
+        ),
+        'groq' => array(
+            'url' => 'https://api.groq.com/openai/v1/models',
+            'needKey' => true,
+        ),
+        'openrouter' => array(
+            'url' => 'https://openrouter.ai/api/v1/models',
+            'needKey' => false,
+        ),
+    );
+    foreach ($plan as $provider => $step) {
+        $key = isset($keys[$provider]) ? (string) $keys[$provider] : '';
+        if ($provider === $cfg['provider'] && $cfg['key'] !== '') $key = $cfg['key'];
+        $url = $step['url'];
+        $headers = array('Accept: application/json');
+        if ($provider === 'gemini' && $key !== '') $url .= '?key=' . rawurlencode($key);
+        if ($provider !== 'gemini' && $key !== '') $headers[] = 'Authorization: Bearer ' . $key;
+        $res = ai_http_get($url, $headers);
+        $status = (int) $res['status'];
+        $message = '';
+        if ($status >= 200 && $status < 300) {
+            $message = 'сервис открыт' . ($key !== '' ? ', ключ принят' : ', ключа нет');
+        } elseif ($status === 401) {
+            $message = 'ключ не принят (401)';
+        } elseif ($status === 403) {
+            $message = 'сервис ответил 403 — обычно это закрытый доступ из страны или ограничение ключа';
+        } elseif ($status === 429) {
+            $message = 'лимит запросов исчерпан (429)';
+        } elseif ($status === 0) {
+            $message = 'нет связи с сервисом';
+        } else {
+            $message = 'ответ ' . $status;
+        }
+        $out[] = array(
+            'provider' => $provider,
+            'label' => ai_provider_label($provider),
+            'status' => $status,
+            'ok' => $status >= 200 && $status < 300,
+            'hasKey' => $key !== '',
+            'message' => $message,
+        );
+    }
+    return $out;
+}
+
 function ai_routes($act, $dir) {
-    if (!in_array($act, array('ai-status', 'ai-save', 'ai-test', 'ai-assist'), true)) return false;
+    if (!in_array($act, array('ai-status', 'ai-save', 'ai-test', 'ai-assist', 'ai-probe'), true)) return false;
     $in = body();
     $me = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
@@ -249,6 +363,8 @@ function ai_routes($act, $dir) {
         if (isset($in['key']) && trim((string) $in['key']) !== '') {
             $key = trim((string) $in['key']);
             $cfg['key'] = $key;
+            if (!isset($cfg['keys']) || !is_array($cfg['keys'])) $cfg['keys'] = array();
+            $cfg['keys'][$cfg['provider']] = $key;
             /* ключ сам рассказывает, от какого он сервиса — верим ключу */
             $detected = ai_provider_from_key($key);
             if ($detected !== '' && $detected !== $cfg['provider']) {
@@ -258,7 +374,11 @@ function ai_routes($act, $dir) {
                     . ' — переключил на него и взял модель по умолчанию.';
             }
         }
-        if (!empty($in['clearKey'])) $cfg['key'] = '';
+        if (!empty($in['clearKey'])) {
+            $cfg['key'] = '';
+            if (!isset($cfg['keys']) || !is_array($cfg['keys'])) $cfg['keys'] = array();
+            $cfg['keys'][$cfg['provider']] = '';
+        }
         /* модель чужого сервиса не заработает: меняем на родную */
         if ($cfg['model'] !== '' && !ai_model_fits($cfg['model'], $cfg['provider'])) {
             $note .= ($note !== '' ? ' ' : '') . 'Модель «' . $cfg['model'] . '» не подходит сервису '
@@ -271,14 +391,24 @@ function ai_routes($act, $dir) {
         respond(array('ok' => true, 'note' => $note, 'ai' => ai_public($dir)));
     }
 
+    if ($act === 'ai-probe') {
+        if (!can($me, 'mail.manage')) fail('Проверка сервисов доступна администрации.', 403);
+        respond(array('ok' => true, 'providers' => ai_probe(ai_settings($dir)), 'ai' => ai_public($dir)));
+    }
+
     if ($act === 'ai-test') {
         if (!can($me, 'mail.manage')) fail('Проверка доступна администрации.', 403);
         $cfg = ai_settings($dir);
         if ($cfg['key'] === '') fail('Сначала впишите ключ.', 409);
         $res = ai_request($cfg, 'Ты проверка связи. Ответь одним словом: работает.', 'Проверка связи.');
-        $cfg['lastTest'] = array('ok' => !empty($res['ok']), 'error' => empty($res['ok']) ? $res['error'] : '',
-            'at' => date('c'), 'model' => isset($res['model']) ? $res['model'] : '');
-        write_json(ai_file($dir), $cfg);
+        $saved = read_json(ai_file($dir), array());
+        if (!is_array($saved)) $saved = array();
+        $saved['lastTest'] = array('ok' => !empty($res['ok']),
+            'error' => empty($res['ok']) ? $res['error'] : '',
+            'at' => date('c'),
+            'provider' => isset($res['provider']) ? $res['provider'] : $cfg['provider'],
+            'model' => isset($res['model']) ? $res['model'] : '');
+        write_json(ai_file($dir), $saved);
         if (empty($res['ok'])) fail($res['error'], 502);
         respond(array('ok' => true, 'answer' => $res['text'], 'ai' => ai_public($dir)));
     }

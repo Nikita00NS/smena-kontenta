@@ -417,6 +417,13 @@ const results = [];
   check("без настоящего ключа помощник честно падает",
     r.ok === false && (r.code === 502 || r.code === 409), r);
 
+  r = await call("mailboxes-smtp-test", { token: token2b, key: "editorial" });
+  check("проверка отправки закрыта участнику", r.ok === false && r.code === 403, r);
+  r = await call("mailboxes-smtp-test", { token: token3, key: "editorial" });
+  check("без пароля ящика отправку не проверить", r.ok === false && r.code === 409, r);
+  r = await call("ai-probe", { token: token2b });
+  check("проверка сервисов помощника закрыта участнику", r.ok === false && r.code === 403, r);
+
   // 22. ВЫДАЧА АДМИНКИ БЕЗ ПАРОЛЯ РЕДАКЦИИ
   r = await call("boss-grant", { token: token2b, email: "boss@example.ru" });
   check("участник не выдаёт доступ", r.ok === false && r.code === 403, r);
