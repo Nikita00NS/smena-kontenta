@@ -1754,6 +1754,7 @@
       warnLocalOnly();
       mountOverview(panel("overview"));
       mountPeople(panel("people"));
+      mountTeamChat(panel("people"));
       mountRecoveryQueue(panel("people"));
       mountContent(panel("content"));
       mountEditorialQueue(panel("editorials"));
@@ -2107,6 +2108,89 @@
     }
 
     /* Люди: список с поиском, по клику — карточка человека со всеми решениями. */
+    /* Чат команды: общая лента коротких сообщений для тех, у кого есть
+       доступ к панели. Ничего не шифруем и не обещаем: обычный рабочий чат. */
+    function mountTeamChat(host) {
+      var old = $("[data-team-chat]");
+      if (old) old.remove();
+      if (!Store.teamChatList) return;
+
+      var section = document.createElement("section");
+      section.className = "section wrap";
+      section.setAttribute("style", "padding-top:6px");
+      section.setAttribute("data-team-chat", "");
+      section.innerHTML =
+        '<div class="chat"><div class="chat__head">' +
+        '<span class="kicker">Команда</span><h2>Чат команды</h2>' +
+        '<p class="chat__hint">Короткие сообщения между теми, у кого есть доступ к панели. ' +
+        "Ленту видят все в редакции.</p></div>" +
+        '<div class="chat__log" data-chat-log><p class="form__note">Загружаем сообщения…</p></div>' +
+        '<form class="chat__form" data-chat-form>' +
+        '<textarea rows="2" data-chat-text maxlength="1500" ' +
+        'placeholder="Написать команде: кто чем занят, что нужно сделать"></textarea>' +
+        '<button class="btn btn--accent btn--sm" type="submit">Отправить</button></form>' +
+        '<p class="form__note" data-chat-note></p></div>';
+      host.appendChild(section);
+
+      var logEl = $("[data-chat-log]", section);
+      var form = $("[data-chat-form]", section);
+      var field = $("[data-chat-text]", section);
+      var noteEl = $("[data-chat-note]", section);
+      var me = "";
+
+      function draw(messages) {
+        if (!messages.length) {
+          logEl.innerHTML = '<div class="chat__empty">Пока пусто: напишите первое сообщение — ' +
+            "его увидит вся команда.</div>";
+          return;
+        }
+        logEl.innerHTML = messages.map(function (m) {
+          var mine = m.from === me;
+          return '<div class="chat__msg' + (mine ? " is-mine" : "") + '">' +
+            "<b>" + esc(m.from || "участник") + "</b>" +
+            (m.role ? '<span class="chat__role">' + esc(m.role) + "</span>" : "") +
+            '<div class="chat__text">' + esc(m.text) + "</div>" +
+            '<time>' + esc(fmtMailDate(m.createdAt)) + "</time></div>";
+        }).join("");
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function load() {
+        Store.teamChatList().then(function (res) {
+          me = res.me || me;
+          draw(res.messages || []);
+        }, function (err) {
+          if (logEl.querySelector(".form__note")) {
+            logEl.innerHTML = '<p class="form__note">' + esc((err && err.message) || "Чат недоступен.") + "</p>";
+          }
+        });
+      }
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var text = (field.value || "").trim();
+        if (text.length < 1) return;
+        var btn = form.querySelector("button");
+        btn.disabled = true;
+        Store.teamChatSend(text).then(function () {
+          btn.disabled = false;
+          field.value = "";
+          if (noteEl) noteEl.textContent = "";
+          load();
+        }, function (err) {
+          btn.disabled = false;
+          if (noteEl) noteEl.textContent = (err && err.message) || "Не отправилось.";
+        });
+      });
+
+      load();
+      var timer = setInterval(function () {
+        if (!document.body.contains(section)) { clearInterval(timer); return; }
+        if (document.hidden) return;
+        load();
+      }, 25000);
+    }
+
     function mountPeople(host) {
       if (!Store.usersList) return;
 
@@ -2117,6 +2201,12 @@
         "заявления, пресс-карта и переписка. Всё решается на одном экране.</p></div>" +
         '<div class="people-search"><input type="search" placeholder="Поиск: имя или почта" ' +
         'data-people-search aria-label="Поиск участника"></div></div>' +
+        '<div class="people-cats" data-people-cats>' +
+        '<button class="people-cat is-on" type="button" data-cat="all">Все</button>' +
+        '<button class="people-cat" type="button" data-cat="team">Команда</button>' +
+        '<button class="people-cat" type="button" data-cat="members">Участники</button>' +
+        '<button class="people-cat" type="button" data-cat="requests">Заявки</button>' +
+        "</div>" +
         '<div data-people-list><p class="form__note">Загружаем участников…</p></div>' +
         '<div data-person-card></div>';
 
@@ -2127,6 +2217,7 @@
       var roles = Store.ACCESS || [];
       var openedId = "";
       var needScroll = false;
+      var cat = "all";
 
       function chip(access) {
         var cls = access === "Директор" ? "status--pub"
@@ -2134,12 +2225,33 @@
         return '<span class="status ' + cls + '">' + esc(access || "Пользователь") + "</span>";
       }
 
+      function isStaff(u) {
+        return !!u.access && u.access !== "Пользователь";
+      }
+
       function draw() {
         var q = ((searchEl && searchEl.value) || "").trim().toLowerCase();
         var list = all.filter(function (u) {
+          if (cat === "team" && !isStaff(u)) return false;
+          if (cat === "members" && isStaff(u)) return false;
+          if (cat === "requests" && !(u.hasRequests || u.recoveryOpen)) return false;
           if (!q) return true;
           return (u.name || "").toLowerCase().indexOf(q) !== -1 ||
             (u.email || "").toLowerCase().indexOf(q) !== -1;
+        });
+
+        var counts = {
+          all: all.length,
+          team: all.filter(isStaff).length,
+          members: all.filter(function (u) { return !isStaff(u); }).length,
+          requests: all.filter(function (u) { return u.hasRequests || u.recoveryOpen; }).length,
+        };
+        $$("[data-cat]", host).forEach(function (b) {
+          var key = b.getAttribute("data-cat");
+          b.classList.toggle("is-on", key === cat);
+          var n = counts[key] || 0;
+          b.textContent = { all: "Все", team: "Команда", members: "Участники", requests: "Заявки" }[key] +
+            " · " + n;
         });
 
         if (!all.length) {
@@ -2253,7 +2365,8 @@
           '<div class="pcard__head"><div><h3>' + esc(u.name) + "</h3>" +
           '<p class="pcard__sub">' + esc(u.email) + " · " + esc(regionName(u.region) || "регион не указан") +
           " · с " + esc(fmtDate(u.createdAt)) + "</p></div>" +
-          '<div class="pcard__badges">' + chip(u.access) +
+          '<div class="pcard__badges"><button class="btn btn--ghost btn--sm" type="button" data-close-card>Свернуть</button>' +
+          chip(u.access) +
           (u.emailVerified ? '<span class="status status--pub">почта подтверждена</span>'
             : '<span class="status status--draft">почта не подтверждена</span>') + "</div></div>" +
 
@@ -2267,11 +2380,9 @@
           roles.map(function (r) {
             return '<option' + (r === u.access ? " selected" : "") + ">" + esc(r) + "</option>";
           }).join("") + "</select></div>" +
-          '<div class="field"><label>Чем занимается</label><input type="text" data-pf-role value="' +
-          esc(u.role || "") + '"></div>' +
-          '<div class="field"><label>О себе</label><textarea rows="2" data-pf-bio>' +
-          esc(u.bio || "") + "</textarea></div>" +
+          '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">' +
           '<button class="btn btn--accent btn--sm" type="button" data-pf-save>Сохранить</button>' +
+          '<span class="form__note" data-pf-note></span></div>' +
           "</div>" +
 
           '<div class="pcard__col"><span class="kicker">Итоги</span><div class="diag">' +
@@ -2315,13 +2426,18 @@
         }
 
         $("[data-pf-save]", cardEl).addEventListener("click", function () {
+          var noteEl = $("[data-pf-note]", cardEl);
+          var nameVal = $("[data-pf-name]", cardEl).value.trim();
+          if (nameVal.length < 2) {
+            if (noteEl) noteEl.textContent = "Имя и фамилия — минимум два символа.";
+            return;
+          }
           var payload = {
-            name: $("[data-pf-name]", cardEl).value.trim(),
+            name: nameVal,
             region: $("[data-pf-region]", cardEl).value,
             access: $("[data-pf-access]", cardEl).value,
-            role: $("[data-pf-role]", cardEl).value.trim(),
-            bio: $("[data-pf-bio]", cardEl).value.trim(),
           };
+          if (noteEl) noteEl.textContent = "Сохраняем…";
           Store.userUpdate(u.id, payload).then(function () {
             return Store.usersList();
           }).then(function (fresh) {
@@ -2330,7 +2446,8 @@
             draw();
             openCard(u.id);
           }, function (err) {
-            window.alert((err && err.message) || "Профиль не сохранился.");
+            if (noteEl) noteEl.textContent = (err && err.message) || "Профиль не сохранился.";
+            else window.alert((err && err.message) || "Профиль не сохранился.");
           });
         });
 
@@ -2370,6 +2487,13 @@
             });
           });
         }
+
+        var closeCard = $("[data-close-card]", cardEl);
+        if (closeCard) closeCard.addEventListener("click", function () {
+          openedId = "";
+          cardEl.innerHTML = "";
+          draw();
+        });
 
         function after() { openCard(u.id); }
 
@@ -2427,6 +2551,12 @@
       }
 
       if (searchEl) searchEl.addEventListener("input", draw);
+      $$("[data-cat]", host).forEach(function (b) {
+        b.addEventListener("click", function () {
+          cat = b.getAttribute("data-cat");
+          draw();
+        });
+      });
 
       Store.usersList().then(function (res) {
         all = res.users || [];
@@ -2849,11 +2979,23 @@
           return ia - ib;
         });
         if (!names.length) names = ["INBOX", "Sent", "Drafts", "Archive", "Junk", "Trash"];
-        foldersEl.innerHTML = names.map(function (n) {
+        function folderBtn(n) {
           var on = n === state.folder ? " is-on" : "";
           return '<button class="mail-folder' + on + '" type="button" data-folder="' + esc(n) + '">' +
             esc(folderLabel(n)) + "</button>";
-        }).join("");
+        }
+        var MAIN = ["inbox", "sent", "drafts", "archive", "junk", "trash"];
+        var mainFolders = names.filter(function (n) {
+          return MAIN.indexOf(String(n).toLowerCase()) !== -1;
+        });
+        var otherFolders = names.filter(function (n) {
+          return MAIN.indexOf(String(n).toLowerCase()) === -1;
+        });
+        foldersEl.innerHTML = mainFolders.map(folderBtn).join("") +
+          (otherFolders.length
+            ? '<details class="mail-more"><summary>Ещё папки · ' + otherFolders.length + "</summary>" +
+              otherFolders.map(folderBtn).join("") + "</details>"
+            : "");
         $$("[data-folder]", foldersEl).forEach(function (b) {
           b.addEventListener("click", function () {
             state.folder = b.getAttribute("data-folder");
@@ -3160,14 +3302,14 @@
       }
 
       function openTemplates() {
-        templatesEl.innerHTML = '<p class="form__note">Загружаем шаблоны…</p>';
+        readEl.innerHTML = '<div class="mail-sheet"><p class="form__note">Загружаем шаблоны…</p></div>';
         Store.mailTemplates().then(function (res) {
-          templatesEl.innerHTML =
-            '<div class="panel" style="padding:20px"><span class="kicker">Письма проекта</span>' +
-            '<h3 style="margin:6px 0 10px">Шаблоны</h3>' +
+          readEl.innerHTML =
+            '<div class="mail-sheet"><div class="mail-sheet__head"><span class="kicker">Письма проекта</span>' +
+            '<h3>Шаблоны</h3>' +
             '<p class="form__note">Фирменный макет один для всех писем: логотип, заголовок, кнопка, ' +
             "колонтитул и причина получения. Текст можно поправить без правки кода.</p>" +
-            '<div class="mail-template-list">' + res.templates.map(function (t) {
+            "</div>" + '<div class="mail-template-list">' + res.templates.map(function (t) {
               return '<div class="mail-template-row" data-tpl="' + esc(t.key) + '"><div>' +
                 "<b>" + esc(t.name) + "</b><br><span class=\"form__note\">" + esc(t.subject) + "</span></div>" +
                 '<div class="row" style="gap:6px"><button class="btn btn--ghost btn--sm" type="button" data-tpl-preview="' +
@@ -3177,17 +3319,17 @@
             }).join("") + "</div>" +
             '<div data-tpl-preview-box style="margin-top:14px"></div>' +
             '<div data-tpl-log style="margin-top:18px"></div></div>';
-          $$("[data-tpl-preview]", templatesEl).forEach(function (b) {
+          $$("[data-tpl-preview]", readEl).forEach(function (b) {
             b.addEventListener("click", function () {
               Store.mailTemplatePreview(b.getAttribute("data-tpl-preview")).then(function (res) {
-                $("[data-tpl-preview-box]", templatesEl).innerHTML =
+                $("[data-tpl-preview-box]", readEl).innerHTML =
                   '<p class="form__note">Тема: ' + esc(res.subject) + "</p>" +
                   '<iframe sandbox="" title="Предпросмотр письма" style="width:100%;height:560px;border:1px solid #ddd;border-radius:10px;background:#fff" ' +
                   "srcdoc=\"" + String(res.html).replace(/"/g, "&quot;") + "\"></iframe>";
               }, function (err) { note(err.message, true); });
             });
           });
-          $$("[data-tpl-test]", templatesEl).forEach(function (b) {
+          $$("[data-tpl-test]", readEl).forEach(function (b) {
             b.addEventListener("click", function () {
               b.disabled = true;
               Store.mailTemplateTest(b.getAttribute("data-tpl-test")).then(function (res) {
@@ -3196,28 +3338,41 @@
               }, function (err) { b.disabled = false; note(err.message, true); });
             });
           });
-        }, function (err) { templatesEl.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>"; });
+        }, function (err) {
+          readEl.innerHTML = '<div class="mail-sheet"><p class="form__note">' + esc(err.message) + "</p></div>";
+        });
       }
 
       function openDrafts() {
+        readEl.innerHTML = '<div class="mail-sheet"><div class="mail-sheet__head">' +
+          '<span class="kicker">Почта</span><h3>Черновики</h3>' +
+          '<p class="form__note">Письма, которые вы начали и не отправили.</p></div>' +
+          '<p class="form__note">Загружаем…</p></div>';
         Store.mailDrafts().then(function (res) {
-          templatesEl.innerHTML = '<div class="panel" style="padding:20px"><h3 style="margin:0 0 10px">Черновики</h3>' +
-            (res.drafts.length ? res.drafts.map(function (d) {
-              return '<div class="mail-template-row"><div><b>' + esc(d.subject || "(без темы)") + "</b><br>" +
-                '<span class="form__note">' + esc(d.to || "получатель не указан") + " · " + esc(fmtMailDate(d.updatedAt)) +
-                "</span></div><div class=\"row\" style=\"gap:6px\">" +
-                '<button class="btn btn--ghost btn--sm" type="button" data-draft-open="' + esc(d.id) + '">Открыть</button>' +
-                '<button class="btn btn--ghost btn--sm" type="button" data-draft-del="' + esc(d.id) + '">Удалить</button>' +
-                "</div></div>";
-            }).join("") : '<p class="form__note">Черновиков нет.</p>') + "</div>";
-          $$("[data-draft-open]", templatesEl).forEach(function (b) {
+          readEl.innerHTML = '<div class="mail-sheet"><div class="mail-sheet__head">' +
+            '<span class="kicker">Почта</span><h3>Черновики</h3>' +
+            '<p class="form__note">Письма, которые вы начали и не отправили.</p></div>' +
+            (res.drafts.length
+              ? '<div class="mail-sheet__list">' + res.drafts.map(function (d) {
+                  return '<div class="mail-sheet__row"><div class="mail-sheet__main">' +
+                    "<b>" + esc(d.subject || "(без темы)") + "</b>" +
+                    '<span class="form__note">' + esc(d.to || "получатель не указан") + " · " +
+                    esc(fmtMailDate(d.updatedAt)) + "</span></div>" +
+                    '<div class="row" style="gap:6px">' +
+                    '<button class="btn btn--ghost btn--sm" type="button" data-draft-open="' + esc(d.id) + '">Открыть</button>' +
+                    '<button class="btn btn--ghost btn--sm" type="button" data-draft-del="' + esc(d.id) + '">Удалить</button>' +
+                    "</div></div>";
+                }).join("") + "</div>"
+              : '<div class="mail-empty"><b>Черновиков нет</b><p>Начните письмо — оно появится здесь, ' +
+                "если вы закроете его, не отправив.</p></div>") + "</div>";
+          $$("[data-draft-open]", readEl).forEach(function (b) {
             b.addEventListener("click", function () {
               var id = b.getAttribute("data-draft-open");
               var d = res.drafts.filter(function (x) { return x.id === id; })[0];
               if (d) openCompose({ to: d.to, subject: d.subject, text: d.text, draftId: d.id });
             });
           });
-          $$("[data-draft-del]", templatesEl).forEach(function (b) {
+          $$("[data-draft-del]", readEl).forEach(function (b) {
             b.addEventListener("click", function () {
               Store.mailDraftDelete(b.getAttribute("data-draft-del")).then(function () { openDrafts(); }, function (e) { note(e.message, true); });
             });

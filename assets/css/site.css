@@ -7776,3 +7776,100 @@ body.is-maint { overflow: hidden; }
 @media (max-width: 620px) {
   .pass-change { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------------------
+   Люди: категории, карточка участника и чат команды.
+   --------------------------------------------------------------------------- */
+.people-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.people-cat {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 8px 15px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.18s var(--ease), color 0.18s var(--ease);
+}
+.people-cat:hover { border-color: var(--ink); }
+.people-cat.is-on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.chat {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: clamp(16px, 2vw, 22px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 940px;
+}
+.chat__head h2 { margin: 4px 0 6px; }
+.chat__hint { margin: 0; font-size: 0.86rem; color: var(--ink-soft); }
+.chat__log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  min-height: 120px;
+  overflow: auto;
+  padding: 4px 2px;
+}
+.chat__msg {
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  border-radius: 12px;
+  padding: 9px 12px;
+  max-width: 78%;
+  font-size: 0.92rem;
+}
+.chat__msg.is-mine {
+  margin-left: auto;
+  background: rgba(255, 92, 26, 0.12);
+  border-color: rgba(255, 92, 26, 0.45);
+}
+.chat__msg b { font-size: 0.84rem; }
+.chat__role { font-size: 0.7rem; opacity: 0.6; margin-left: 6px; }
+.chat__text { margin-top: 3px; white-space: pre-wrap; line-height: 1.45; }
+.chat__msg time { display: block; font-size: 0.7rem; opacity: 0.55; margin-top: 5px; }
+.chat__form { display: flex; gap: 8px; align-items: flex-end; }
+.chat__form textarea { flex: 1; min-height: 46px; resize: vertical; }
+.chat__empty {
+  border: 1px dashed var(--line-strong);
+  padding: 18px;
+  text-align: center;
+  font-size: 0.88rem;
+  opacity: 0.7;
+}
+
+/* почта: черновики и шаблоны внутри правой колонки */
+.mail-sheet { display: flex; flex-direction: column; gap: 10px; }
+.mail-sheet__head h3 { margin: 4px 0 4px; }
+.mail-sheet__list { display: flex; flex-direction: column; }
+.mail-sheet__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.mail-sheet__main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mail-sheet iframe { width: 100%; }
+.mail-more summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 8px 10px;
+  opacity: 0.7;
+}
+.mail-more[open] summary { opacity: 1; }

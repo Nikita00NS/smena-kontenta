@@ -210,7 +210,9 @@ function mail_layout($tpl, $vars) {
     $body = mail_escape(mail_vars_fill($tpl['body'], $vars));
     $why = mail_escape(mail_vars_fill($tpl['why'], $vars));
     $site = MAIL_SITE;
-    $logo = $site . '/assets/img/logo-light.png';
+    /* логотип в письме: тёмный вариант на белом фоне письма
+       (файла logo-light.png в проекте нет — из-за этого письма приходили без логотипа) */
+    $logo = $site . '/assets/img/logo-dark.png';
 
     $code = '';
     if (!empty($tpl['code']) && !empty($vars['code'])) {
@@ -239,7 +241,8 @@ function mail_layout($tpl, $vars) {
         . 'style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden;'
         . 'border:1px solid #e6e6e6">'
         . '<tr><td style="padding:26px 28px 0">'
-        . '<img src="' . $logo . '" alt="Смена контента" width="150" style="display:block;border:0;height:auto">'
+        . '<img src="' . $logo . '" alt="Смена контента" width="170" height="31" '
+        . 'style="display:block;border:0;height:auto;max-width:170px;width:170px">'
         . '<div style="font:600 12px/1 Arial,Helvetica,sans-serif;letter-spacing:2px;color:#8a8a8a;'
         . 'margin:14px 0 0;text-transform:uppercase">Смена контента</div>'
         . '</td></tr>'
