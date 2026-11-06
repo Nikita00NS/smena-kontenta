@@ -120,6 +120,10 @@ function body() {
 /* отправка писем: свой SMTP-клиент без сторонних библиотек */
 define('SMENA_API', true);
 require __DIR__ . '/smtp.php';
+/* новые подсистемы: права, резервные копии, журнал баллов */
+require __DIR__ . '/lib/permissions.php';
+require __DIR__ . '/lib/backup.php';
+require __DIR__ . '/lib/points.php';
 
 function action() {
     if (isset($_GET['action'])) return (string) $_GET['action'];
@@ -489,6 +493,26 @@ function user_by_token($dir, $token) {
     return null;
 }
 
+/* Когда человек последний раз заходил. Пишем не чаще раза в полчаса,
+   чтобы файл не переписывался на каждый запрос. */
+function activity_file($dir) { return $dir . '/activity.json'; }
+
+function touch_activity($dir, $userId) {
+    $all = read_json(activity_file($dir), array());
+    if (!is_array($all)) $all = array();
+    $last = isset($all[$userId]) ? (int) $all[$userId] : 0;
+    if (time() - $last < 1800) return;
+    $all[$userId] = time();
+    if (count($all) > 5000) $all = array_slice($all, -5000, true);
+    write_json(activity_file($dir), $all);
+}
+
+function last_seen_of($dir, $userId, $all = null) {
+    if ($all === null) $all = read_json(activity_file($dir), array());
+    if (!is_array($all) || !isset($all[$userId])) return '';
+    return date('c', (int) $all[$userId]);
+}
+
 function norm_email($value) {
     $email = strtolower(trim((string) $value));
     if (!preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u', $email)) return '';
@@ -677,7 +701,8 @@ function public_recovery_request($r) {
 /* mail_send() живёт в smtp.php: SMTP, а не локальный sendmail */
 
 function is_top_admin($user) {
-    return $user && in_array(isset($user['access']) ? $user['access'] : '', array('Директор', 'Администрация'), true);
+    return $user && in_array(isset($user['access']) ? $user['access'] : '',
+        array('Сооснователь', 'Директор', 'Главный администратор', 'Администрация'), true);
 }
 
 /* ------------------------------------------------- редакции в регионах */
@@ -814,6 +839,9 @@ if (!ensure_dir($DATA_DIR)) {
    владельцу нечего вводить — файл с паролем появлялся бы только после
    первой неудачной попытки входа. */
 editor_hash($DATA_DIR);
+
+/* раз в сутки — копия данных: случайную правку всегда можно откатить */
+backup_maybe_run($DATA_DIR);
 
 $act = action();
 
@@ -1020,6 +1048,9 @@ if ($act === 'submit') {
     $authorName = text(isset($in['authorName']) ? $in['authorName'] : '', 120);
     $authorKey = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : ''));
     $authorKey = substr($authorKey, 0, 64);
+    /* кто именно отправил: по токену, если он есть. Нужно, чтобы баллы
+       за публикацию начислялись конкретному аккаунту, а не «какому-то». */
+    $authorUser = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
 
     if (slen($title) < 8) fail('Заголовок короче восьми символов.');
     if (slen($excerpt) < 20) fail('Описание короче двадцати символов.');
@@ -1045,6 +1076,7 @@ if ($act === 'submit') {
     $post = array(
         'id' => $id,
         'authorKey' => $authorKey,
+        'authorId' => $authorUser ? $authorUser['id'] : '',
         'authorName' => $authorName,
         'authorRole' => text(isset($in['authorRole']) ? $in['authorRole'] : '', 80),
         'authorRegion' => text(isset($in['authorRegion']) ? $in['authorRegion'] : '', 80),
@@ -1390,6 +1422,11 @@ if ($act === 'review') {
     if ($decision === 'approve') $posts[$id]['date'] = date('c');
 
     if (!write_json($DATA_DIR . '/posts.json', $posts)) fail('Не удалось сохранить решение.', 500);
+    if ($decision === 'approve' && !empty($posts[$id]['authorId'])) {
+        $rule = 'post.' . (isset($posts[$id]['format']) ? $posts[$id]['format'] : 'Статья');
+        points_award_rule($DATA_DIR, $posts[$id]['authorId'], $rule, 'редакция',
+            'Материал «' . $posts[$id]['title'] . '»', 'post:' . $id);
+    }
     audit_log($DATA_DIR, 'пароль редакции', 'review',
         ($decision === 'approve' ? 'опубликован' : 'отклонён') . ' материал ' . $id . ' — ' . $posts[$id]['title']);
     respond(array('ok' => true, 'post' => public_post($posts[$id])));
@@ -2103,7 +2140,7 @@ if ($act === 'recovery-queue') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Заявки видит только директор и администрация.', 403);
+    if (!can($user, 'recovery.issue')) fail('Заявки видит только директор и администрация.', 403);
     $out = array();
     foreach (read_recovery_requests($DATA_DIR) as $r) {
         if ($r['status'] !== 'open') continue;
@@ -2117,7 +2154,7 @@ if ($act === 'recovery-issue') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Код выдаёт только директор и администрация.', 403);
+    if (!can($user, 'recovery.issue')) fail('Код выдаёт только директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
 
     $list = read_recovery_requests($DATA_DIR);
@@ -2167,7 +2204,7 @@ if ($act === 'recovery-close') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Закрывает заявку только директор и администрация.', 403);
+    if (!can($user, 'recovery.issue')) fail('Закрывает заявку только директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
     $note = text(isset($in['note']) ? $in['note'] : '', 300);
     if (slen($note) < 5) fail('Причина закрытия обязательна: минимум пять символов.');
@@ -2213,7 +2250,7 @@ if ($act === 'site-save') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Состояние сайта меняет только директор и администрация.', 403);
+    if (!can($me, 'site.manage')) fail('Состояние сайта меняет только директор и администрация.', 403);
 
     $state = array(
         'maintenance' => !empty($in['maintenance']),
@@ -2259,7 +2296,7 @@ if ($act === 'founders-save') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Основателей правит только директор и администрация.', 403);
+    if (!can($me, 'site.manage')) fail('Основателей правит только директор и администрация.', 403);
 
     $raw = isset($in['founders']) && is_array($in['founders']) ? $in['founders'] : array();
     if (!$raw) fail('Список пустой.');
@@ -2380,11 +2417,76 @@ function card_number_next($cards, $year) {
     return 'СК-' . $year . '-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
 }
 
+function person_notes_of($dir, $userId) {
+    $list = read_json(notes_file($dir), array());
+    if (!is_array($list)) return array();
+    $out = array();
+    foreach ($list as $row) {
+        if (isset($row['userId']) && $row['userId'] === $userId) $out[] = $row;
+    }
+    usort($out, function ($a, $b) { return strcmp((string) $b['at'], (string) $a['at']); });
+    return array_slice($out, 0, 100);
+}
+
+/* Хронология человека: одно место, где видно всё, что с ним происходило. */
+function person_timeline($dir, $target, $posts, $cards, $consents, $apps, $messages) {
+    $events = array();
+    if (!empty($target['createdAt'])) {
+        $events[] = array('at' => $target['createdAt'], 'kind' => 'account', 'text' => 'Регистрация на сайте');
+    }
+    foreach ((array) $posts as $p) {
+        $events[] = array(
+            'at' => !empty($p['date']) ? $p['date'] : $target['createdAt'],
+            'kind' => 'post',
+            'text' => 'Материал «' . $p['title'] . '» — ' . (isset($p['status']) ? $p['status'] : ''),
+        );
+    }
+    foreach ((array) $cards as $c) {
+        $events[] = array(
+            'at' => $c['createdAt'],
+            'kind' => 'card',
+            'text' => 'Пресс-карта: ' . (isset($c['status']) ? $c['status'] : '') .
+                (!empty($c['number']) ? ' ' . $c['number'] : ''),
+        );
+    }
+    foreach ((array) $consents as $c) {
+        $events[] = array(
+            'at' => !empty($c['createdAt']) ? $c['createdAt'] : $target['createdAt'],
+            'kind' => 'consent',
+            'text' => 'Согласие на обработку ПД: ' . (isset($c['status']) ? $c['status'] : ''),
+        );
+    }
+    foreach ((array) $apps as $a) {
+        $events[] = array(
+            'at' => !empty($a['createdAt']) ? $a['createdAt'] : $target['createdAt'],
+            'kind' => 'editorial',
+            'text' => 'Заявка в редакцию: ' . (isset($a['status']) ? $a['status'] : ''),
+        );
+    }
+    foreach (points_history($dir, $target['id'], 100) as $row) {
+        $events[] = array(
+            'at' => $row['at'],
+            'kind' => 'points',
+            'text' => ((int) $row['delta'] > 0 ? '+' : '') . $row['delta'] . ' баллов — ' .
+                (isset($row['note']) && $row['note'] !== '' ? $row['note'] : $row['reason']),
+        );
+    }
+    foreach ((array) $messages as $m) {
+        $events[] = array(
+            'at' => $m['createdAt'],
+            'kind' => 'message',
+            'text' => 'Сообщение от редакции: ' . $m['text'],
+        );
+    }
+    usort($events, function ($a, $b) { return strcmp((string) $b['at'], (string) $a['at']); });
+    return array_slice($events, 0, 150);
+}
+
 if ($act === 'user-card') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Карточку участника видит только директор и администрация.', 403);
+    if (!can($me, 'people.view')) fail('Карточку участника видит только директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
 
     $target = null;
@@ -2483,6 +2585,15 @@ if ($act === 'user-card') {
         'messages' => $messages,
         'cardNumberNext' => card_number_next(read_cards($DATA_DIR), date('Y')),
         'cardMinPosts' => card_min_posts(),
+        'status' => isset($target['status']) ? $target['status'] : 'active',
+        'statusReason' => isset($target['statusReason']) ? $target['statusReason'] : '',
+        'lastSeen' => last_seen_of($DATA_DIR, $id),
+        'points' => points_balance($DATA_DIR, $id),
+        'pointsHistory' => points_history($DATA_DIR, $id, 100),
+        'pointsRules' => points_rules($DATA_DIR)['rules'],
+        'notes' => person_notes_of($DATA_DIR, $id),
+        'caps' => user_caps($me),
+        'timeline' => person_timeline($DATA_DIR, $target, $posts, $cards, $consents, $editorialApps, $messages),
     ));
 }
 
@@ -2490,7 +2601,7 @@ if ($act === 'user-update') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Профиль участника правит только директор и администрация.', 403);
+    if (!can($me, 'people.edit')) fail('Профиль участника правит только директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
 
     $users = read_users($DATA_DIR);
@@ -2498,6 +2609,9 @@ if ($act === 'user-update') {
     $updated = null;
     foreach ($users as $i => $u) {
         if ($u['id'] !== $id) continue;
+        if (!can_manage_user($me, $u)) {
+            fail('Этот участник не ниже вас по роли — профиль правит старший.', 403);
+        }
         if (isset($in['name'])) {
             $name = text($in['name'], 80);
             if (slen($name) < 2) fail('Имя — минимум два символа.');
@@ -2527,8 +2641,7 @@ if ($act === 'card-grant') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    $role = isset($me['access']) ? $me['access'] : '';
-    if (!in_array($role, array('Директор', 'Администрация', 'Редакционный администратор региона'), true)) {
+    if (!can($me, 'cards.issue')) {
         fail('Карту выдаёт директор, администрация или редакционный администратор региона.', 403);
     }
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
@@ -2580,7 +2693,7 @@ if ($act === 'user-message') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Писать участникам может только директор и администрация.', 403);
+    if (!can($me, 'people.edit')) fail('Писать участникам может только директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
     $text = text(isset($in['text']) ? $in['text'] : '', 2000);
     if (slen($text) < 3) fail('Сообщение слишком короткое.');
@@ -2648,7 +2761,7 @@ if ($act === 'consent-decide') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Решение по согласию принимает директор и администрация.', 403);
+    if (!can($me, 'people.edit')) fail('Решение по согласию принимает директор и администрация.', 403);
     $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
     $note = text(isset($in['note']) ? $in['note'] : '', 400);
@@ -2674,7 +2787,7 @@ if ($act === 'portfolio-decide') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Решение по портфолио принимает директор и администрация.', 403);
+    if (!can($me, 'posts.review')) fail('Решение по портфолио принимает директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
     $note = text(isset($in['note']) ? $in['note'] : '', 400);
@@ -2702,37 +2815,225 @@ if ($act === 'portfolio-decide') {
 /* ------------------------------------------------- права участников */
 
 function access_list() {
-    return array('Директор', 'Администрация', 'Редакционный администратор региона',
-        'Редакционный основатель', 'Пользователь');
+    return roles_list();
 }
 
 if ($act === 'users') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Список участников видит только директор и администрация.', 403);
+    if (!can($me, 'people.view')) fail('Список участников видит только директор и администрация.', 403);
+    /* Таблица участников собирается на сервере: баллы, последняя активность,
+       редакция и пресс-карта нужны все сразу, а не десятью запросами. */
+    $balances = points_balance_all($DATA_DIR);
+    $activity = read_json(activity_file($DATA_DIR), array());
+    $editorialNames = array();
+    foreach (read_editorials($DATA_DIR) as $e) $editorialNames[$e['id']] = $e['name'];
+    $cardByUser = array();
+    foreach (read_cards($DATA_DIR) as $c) {
+        if (empty($c['userId'])) continue;
+        $prev = isset($cardByUser[$c['userId']]) ? $cardByUser[$c['userId']] : null;
+        if ($prev === null || strcmp((string) $c['createdAt'], (string) $prev['createdAt']) > 0) {
+            $cardByUser[$c['userId']] = $c;
+        }
+    }
+    $consentByUser = array();
+    foreach (read_consents($DATA_DIR) as $c) {
+        if (isset($c['userId'])) $consentByUser[$c['userId']] = isset($c['status']) ? $c['status'] : 'pending';
+    }
+
     $out = array();
     foreach (read_users($DATA_DIR) as $u) {
+        $card = isset($cardByUser[$u['id']]) ? $cardByUser[$u['id']] : null;
         $out[] = array(
             'id' => $u['id'],
+            'number' => isset($u['number']) ? (int) $u['number'] : 0,
             'name' => $u['name'],
             'email' => isset($u['email']) ? $u['email'] : '',
             'region' => isset($u['region']) ? $u['region'] : '',
             'access' => isset($u['access']) ? $u['access'] : 'Пользователь',
+            'craft' => isset($u['role']) ? $u['role'] : '',
+            'level' => role_level(isset($u['access']) ? $u['access'] : ''),
+            'points' => isset($balances[$u['id']]) ? (int) $balances[$u['id']] : 0,
+            'status' => isset($u['status']) ? $u['status'] : 'active',
             'emailVerified' => !empty($u['emailVerified']),
             'createdAt' => isset($u['createdAt']) ? $u['createdAt'] : '',
+            'lastSeen' => last_seen_of($DATA_DIR, $u['id'], $activity),
             'editorialId' => isset($u['editorialId']) ? $u['editorialId'] : '',
+            'editorialName' => isset($u['editorialId'], $editorialNames[$u['editorialId']]) ? $editorialNames[$u['editorialId']] : '',
+            'cardStatus' => $card ? $card['status'] : 'none',
+            'cardNumber' => $card && !empty($card['number']) ? $card['number'] : '',
+            'consent' => isset($consentByUser[$u['id']]) ? $consentByUser[$u['id']] : 'none',
         );
     }
     usort($out, function ($a, $b) { return strcmp((string) $a['createdAt'], (string) $b['createdAt']); });
-    respond(array('ok' => true, 'users' => $out, 'roles' => access_list()));
+    respond(array('ok' => true, 'users' => $out, 'roles' => access_list(), 'caps' => user_caps($me)));
+}
+
+/* ============================================================ баллы и заметки
+
+   Журнал операций — единственный источник баланса. Никаких «полей с баллами»:
+   всё, что начислено, видно построчно, с основанием и автором операции. */
+
+if ($act === 'points-rules') {
+    respond(array('ok' => true, 'rules' => points_rules($DATA_DIR)));
+}
+
+if ($act === 'points-history') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : (isset($_GET['token']) ? (string) $_GET['token'] : ''));
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    $targetId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    if ($targetId === '' || $targetId === $me['id']) {
+        $targetId = $me['id'];
+    } else {
+        if (!can($me, 'people.view')) fail('Чужой журнал баллов доступен только редакции.', 403);
+    }
+    respond(array(
+        'ok' => true,
+        'userId' => $targetId,
+        'balance' => points_balance($DATA_DIR, $targetId),
+        'entries' => points_history($DATA_DIR, $targetId, 200),
+    ));
+}
+
+if ($act === 'points-add') {
+    $in = body();
+    $me = require_cap($DATA_DIR, $in, 'points.award');
+    $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    $delta = (int) (isset($in['delta']) ? $in['delta'] : 0);
+    $reason = text(isset($in['reason']) ? $in['reason'] : '', 60);
+    $note = text(isset($in['note']) ? $in['note'] : '', 300);
+
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ($u['id'] === $userId) $target = $u;
+    }
+    if (!$target) fail('Участник не найден.', 404);
+    /* нельзя начислять себе и людям своего уровня — только ниже */
+    if ((string) $target['id'] === (string) $me['id']) fail('Себе баллы не начисляются.', 403);
+    if (!can_manage_user($me, $target) && !can($me, 'points.rule')) {
+        fail('Этот участник не ниже вас по роли — операцию проводит старший.', 403);
+    }
+    if ($reason === '') $reason = 'manual';
+
+    $res = points_add($DATA_DIR, $userId, $delta, $reason, $me['name'], $note);
+    if (empty($res['ok'])) fail((string) $res['error']);
+    respond(array(
+        'ok' => true,
+        'skipped' => !empty($res['skipped']),
+        'entry' => isset($res['entry']) ? $res['entry'] : null,
+        'balance' => points_balance($DATA_DIR, $userId),
+    ));
+}
+
+if ($act === 'points-leaderboard') {
+    $rows = points_leaderboard($DATA_DIR, 20);
+    $users = read_users($DATA_DIR);
+    $byId = array();
+    foreach ($users as $u) $byId[$u['id']] = $u;
+    $out = array();
+    foreach ($rows as $i => $row) {
+        if (!isset($byId[$row['userId']])) continue;
+        $u = $byId[$row['userId']];
+        $out[] = array(
+            'place' => count($out) + 1,
+            'userId' => $u['id'],
+            'name' => $u['name'],
+            'region' => isset($u['region']) ? $u['region'] : '',
+            'role' => isset($u['role']) ? $u['role'] : '',
+            'points' => $row['points'],
+        );
+    }
+    respond(array('ok' => true, 'leaders' => $out));
+}
+
+/* Внутренние заметки о человеке. В публичную часть сайта не попадают. */
+function notes_file($dir) { return $dir . '/person-notes.json'; }
+
+if ($act === 'person-note') {
+    $in = body();
+    $me = require_cap($DATA_DIR, $in, 'people.note');
+    $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    $textValue = text(isset($in['text']) ? $in['text'] : '', 1000);
+    if (slen($textValue) < 5) fail('Заметка слишком короткая.');
+
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ($u['id'] === $userId) $target = $u;
+    }
+    if (!$target) fail('Участник не найден.', 404);
+
+    $list = read_json(notes_file($DATA_DIR), array());
+    if (!is_array($list)) $list = array();
+    $row = array(
+        'id' => 'pn_' . bin2hex(random_bytes(4)),
+        'userId' => $userId,
+        'text' => $textValue,
+        'by' => $me['name'],
+        'byId' => $me['id'],
+        'at' => date('c'),
+    );
+    $list[] = $row;
+    if (count($list) > 5000) $list = array_slice($list, -5000);
+    if (!write_json(notes_file($DATA_DIR), $list)) fail('Не удалось сохранить заметку.', 500);
+    audit_log($DATA_DIR, $me['name'], 'person-note', $target['name'] . ': ' . $textValue);
+    respond(array('ok' => true, 'note' => $row));
+}
+
+/* Приостановка и восстановление аккаунта. Приостановка закрывает сессии. */
+if ($act === 'person-status') {
+    $in = body();
+    $me = require_cap($DATA_DIR, $in, 'people.block');
+    $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    $status = isset($in['status']) ? (string) $in['status'] : '';
+    $reason = text(isset($in['reason']) ? $in['reason'] : '', 300);
+    if (!in_array($status, array('active', 'suspended'), true)) fail('Статус — «active» или «suspended».');
+    if ($status === 'suspended' && slen($reason) < 5) fail('Нужна причина приостановки.');
+
+    $users = read_users($DATA_DIR);
+    $target = null;
+    $found = false;
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $userId) continue;
+        $target = $u;
+        if (!can_manage_user($me, $u)) fail('Этот участник не ниже вас по роли.', 403);
+        $users[$i]['status'] = $status;
+        $users[$i]['statusChangedAt'] = date('c');
+        $users[$i]['statusReason'] = $reason;
+        $found = true;
+        break;
+    }
+    if (!$found) fail('Участник не найден.', 404);
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить статус.', 500);
+    if ($status === 'suspended') revoke_user_tokens($DATA_DIR, $userId);
+    audit_log($DATA_DIR, $me['name'], 'person-status',
+        $target['name'] . ' → ' . ($status === 'suspended' ? 'приостановлен' : 'восстановлен') .
+        ($reason !== '' ? ' (' . $reason . ')' : ''));
+    respond(array('ok' => true, 'status' => $status));
+}
+
+/* --------------------------------------------------------- резервные копии */
+
+if ($act === 'backups') {
+    $in = body();
+    require_cap($DATA_DIR, $in, 'server.diag');
+    respond(array('ok' => true, 'copies' => backup_list($DATA_DIR)));
+}
+
+if ($act === 'backup-now') {
+    $in = body();
+    $me = require_cap($DATA_DIR, $in, 'server.diag');
+    $res = backup_maybe_run($DATA_DIR, true);
+    audit_log($DATA_DIR, $me['name'], 'backup', 'копия данных: ' . (isset($res['date']) ? $res['date'] : '—'));
+    respond(array('ok' => !empty($res['ok']), 'result' => $res, 'copies' => backup_list($DATA_DIR)));
 }
 
 if ($act === 'admin-log') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Журнал действий видит только директор и администрация.', 403);
+    if (!can($me, 'audit.view')) fail('Журнал действий видит только директор и администрация.', 403);
     $rows = read_json(audit_file($DATA_DIR), array());
     if (!is_array($rows)) $rows = array();
     $rows = array_reverse($rows);
@@ -2745,7 +3046,7 @@ if ($act === 'user-access') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($me)) fail('Права меняет только директор и администрация.', 403);
+    if (!can($me, 'people.access')) fail('Права меняет только директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
     $access = text(isset($in['access']) ? $in['access'] : '', 60);
     if (!in_array($access, access_list(), true)) fail('Такой роли нет.');
@@ -2758,6 +3059,14 @@ if ($act === 'user-access') {
         if ($u['id'] === $id) $target = $u;
     }
     if (!$target) fail('Участник не найден.', 404);
+    /* нельзя менять того, кто равен или выше по роли, и нельзя выдать
+       роль выше собственной: иначе администратор поднимает себя до директора */
+    if (!can_manage_user($me, $target)) {
+        fail('Этот участник не ниже вас по роли — права меняет старший.', 403);
+    }
+    if (!can_manage_role($me, $access)) {
+        fail('Нельзя выдать роль выше своей.', 403);
+    }
     if ((isset($target['access']) ? $target['access'] : '') === 'Директор' && $access !== 'Директор' && $directors <= 1) {
         fail('Директор один: сначала назначьте другого директора, потом снимайте этого.');
     }
@@ -2778,7 +3087,7 @@ if ($act === 'mail-status') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Почту настраивает только директор и администрация.', 403);
+    if (!can($user, 'mail.manage')) fail('Почту настраивает только директор и администрация.', 403);
     respond(array('ok' => true, 'mail' => smtp_public_config($DATA_DIR)));
 }
 
@@ -2786,7 +3095,7 @@ if ($act === 'mail-save') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Почту настраивает только директор и администрация.', 403);
+    if (!can($user, 'mail.manage')) fail('Почту настраивает только директор и администрация.', 403);
 
     $cfg = smtp_config($DATA_DIR);
     $host = text(isset($in['host']) ? $in['host'] : '', 120);
@@ -2955,7 +3264,7 @@ if ($act === 'mail-test') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Проверку почты делает только директор и администрация.', 403);
+    if (!can($user, 'mail.manage')) fail('Проверку почты делает только директор и администрация.', 403);
 
     $to = norm_email(isset($in['to']) ? $in['to'] : '');
     if (!$to) $to = isset($user['email']) ? $user['email'] : '';
@@ -3134,7 +3443,7 @@ if ($act === 'support-queue') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Обращения видит только директор и администрация.', 403);
+    if (!can($user, 'support.answer')) fail('Обращения видит только директор и администрация.', 403);
     $out = array();
     foreach (read_support($DATA_DIR) as $t) {
         if ($t['status'] !== 'open') continue;
@@ -3148,7 +3457,7 @@ if ($act === 'support-close') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!is_top_admin($user)) fail('Закрывает обращения только директор и администрация.', 403);
+    if (!can($user, 'support.answer')) fail('Закрывает обращения только директор и администрация.', 403);
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
     $answer = text(isset($in['answer']) ? $in['answer'] : '', 1000);
     if (slen($answer) < 5) fail('Запишите ответ автору: минимум пять символов.');
@@ -3199,6 +3508,10 @@ if ($act === 'login') {
             if (!password_verify($pass, (string) $u['pass'])) {
                 fail('Пароль не подошёл. Проверьте раскладку и регистр.', 403);
             }
+            if (isset($u['status']) && $u['status'] === 'suspended') {
+                fail('Аккаунт приостановлен. Напишите в поддержку — разберёмся.', 403);
+            }
+            touch_activity($DATA_DIR, $u['id']);
             respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
         }
     }
@@ -3210,7 +3523,16 @@ if ($act === 'me') {
     $token = isset($in['token']) ? (string) $in['token'] : (isset($_GET['token']) ? (string) $_GET['token'] : '');
     $user = user_by_token($DATA_DIR, $token);
     if (!$user) fail('Сессии нет — нужно войти заново.', 401);
-    respond(array('ok' => true, 'user' => public_user($user)));
+    if (isset($user['status']) && $user['status'] === 'suspended') {
+        fail('Аккаунт приостановлен.', 403);
+    }
+    touch_activity($DATA_DIR, $user['id']);
+    respond(array(
+        'ok' => true,
+        'user' => public_user($user),
+        'caps' => user_caps($user),
+        'points' => points_balance($DATA_DIR, $user['id']),
+    ));
 }
 
 if ($act === 'logout') {

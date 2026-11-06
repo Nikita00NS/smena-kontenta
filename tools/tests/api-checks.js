@@ -73,8 +73,11 @@ const results = [];
 
 (async () => {
  try {
-  for (const d of ["/site", "/site/api", "/smena-data"]) {
+  for (const d of ["/site", "/site/api", "/site/api/lib", "/smena-data"]) {
     try { await php.mkdir(d); } catch (e) {}
+  }
+  for (const lib of ["permissions.php", "backup.php", "points.php"]) {
+    await push(SRC + "/lib/" + lib, "/site/api/lib/" + lib);
   }
   const srcIndex = fs.readFileSync(SRC + "/index.php", "utf8")
     .replace("$raw = file_get_contents('php://input');",
@@ -180,7 +183,76 @@ const results = [];
   check("заявка на восстановление принята", r.ok === true, r);
   check("в ответе нет имени", r.request && r.request.name === undefined, r.request);
 
-  // 11. support и state
+  // 11. баллы: журнал, права, баланс
+  r = await call("points-rules", {});
+  check("правила баллов читаются", r.ok === true && Array.isArray(r.rules.rules) && r.rules.rules.length > 5, r);
+  r = await call("points-add", { token: token2, userId: "u_x", delta: 100 });
+  check("пользователь не начисляет баллы", r.ok === false && r.code === 403, r);
+  r = await call("points-add", { token: token3, userId: "u_x", delta: 100 });
+  check("директор не может начислить неизвестному", r.ok === false && r.code === 404, r);
+
+  r = await call("users", { token: token3 });
+  const second = r.users.find((u) => u.email === "second@example.ru");
+  check("список участников отдаёт баллы и активность",
+    !!(second && typeof second.points === "number" && second.cardStatus === "none"), second);
+
+  r = await call("points-add", { token: token3, userId: second.id, delta: 25, reason: "manual", note: "Помощь с редакцией" });
+  check("начисление прошло", r.ok === true && r.balance === 25, r);
+  r = await call("points-add", { token: token3, userId: second.id, delta: -5, reason: "manual" });
+  check("списание без основания отклонено", r.ok === false, r);
+  r = await call("points-add", { token: token3, userId: second.id, delta: -5, reason: "manual", note: "Ошибочное начисление" });
+  check("списание с основанием прошло", r.ok === true && r.balance === 20, r);
+  r = await call("points-add", { token: token3, userId: second.id, delta: 900 });
+  check("слишком большая операция отклонена", r.ok === false, r);
+
+  r = await call("points-history", { token: token2 });
+  check("своя история баллов доступна", r.ok === true && r.balance === 20 && r.entries.length === 2, r);
+  r = await call("points-leaderboard", {});
+  check("рейтинг считает баллы",
+    r.ok === true && r.leaders.length === 1 && r.leaders[0].points === 20 && r.leaders[0].email === undefined, r);
+
+  // 12. заметки и приостановка аккаунта
+  r = await call("person-note", { token: token2, userId: second.id, text: "заметка от себя" });
+  check("пользователь не пишет заметки", r.ok === false && r.code === 403, r);
+  r = await call("person-note", { token: token3, userId: second.id, text: "Просили помочь с вёрсткой" });
+  check("директор пишет внутреннюю заметку", r.ok === true, r);
+  r = await call("person-status", { token: token3, userId: second.id, status: "suspended" });
+  check("приостановка требует причины", r.ok === false, r);
+  r = await call("person-status", { token: token3, userId: second.id, status: "suspended", reason: "Спам в обращениях" });
+  check("приостановка прошла", r.ok === true, r);
+  r = await call("me", { token: token2 });
+  check("приостановленный не проходит по токену", r.ok === false && (r.code === 401 || r.code === 403), r);
+  r = await call("login", { email: "second@example.ru", pass: "parol1234" });
+  check("приостановленный не входит", r.ok === false, r);
+  r = await call("person-status", { token: token3, userId: second.id, status: "active", reason: "Разобрались" });
+  check("восстановление прошло", r.ok === true, r);
+  r = await call("login", { email: "second@example.ru", pass: "parol1234" });
+  const token2b = r.token;
+  check("после восстановления вход вернулся", r.ok === true && !!token2b, r);
+
+  // 13. карточка участника: вкладки и хронология
+  r = await call("user-card", { token: token3, id: second.id });
+  check("карточка отдаёт баллы и хронологию",
+    r.ok === true && r.points === 20 && Array.isArray(r.timeline) && r.timeline.length > 0, r && r.ok);
+  check("в карточке есть заметки редакции", r.ok === true && r.notes.length === 1, r && r.notes);
+  r = await call("user-card", { token: token2b, id: second.id });
+  check("карточка закрыта обычному участнику", r.ok === false && r.code === 403, r);
+
+  // 14. резервные копии
+  r = await call("backup-now", { token: token2b });
+  check("копии делает только редакция", r.ok === false && r.code === 403, r);
+  r = await call("backup-now", { token: token3 });
+  check("копия создаётся", r.ok === true && r.result.ok === true && r.copies.length >= 1, r);
+  const backupDir = "/smena-data/backup/" + r.result.date;
+  let backed = [];
+  try { backed = await php.readdir(backupDir); } catch (e) {}
+  check("в копии лежат данные аккаунтов", backed.indexOf("users.json") !== -1, backed);
+
+  // 15. запрет на повышение выше себя
+  r = await call("user-access", { token: token3, id: "u_missing", access: "Директор" });
+  check("несуществующий участник не найден", r.ok === false && r.code === 404, r);
+
+  // 16. support и state
   r = await call("state", {});
   check("state отвечает", r.ok === true && Array.isArray(r.posts), r);
   r = await call("support-send", { name: "Гость", email: "guest@example.ru", message: "Здравствуйте, вопрос по проекту" });
