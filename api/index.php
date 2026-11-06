@@ -22,6 +22,10 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, max-age=0');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
+/* Ответы API — это только данные: никаких встраиваний и внешних загрузок.
+   Отдельные маршруты (media) переопределяют заголовки сами. */
+header('X-Frame-Options: DENY');
+header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
 
 const MAX_BODY_CHARS = 200000;   // потолок на текст одного материала
 const MAX_POSTS = 2000;          // сколько материалов храним
@@ -137,6 +141,7 @@ require __DIR__ . '/lib/points.php';
 require __DIR__ . '/lib/mailer.php';   /* фирменные письма, шаблоны, журнал доставки */
 require __DIR__ . '/lib/imap.php';     /* чтение почты с ящиков домена */
 require __DIR__ . '/lib/mailbox.php';  /* ящики домена: чтение, отправка, шаблоны */
+require __DIR__ . '/lib/tasks.php';    /* задачи команды: сотрудники, редакция, основатели */
 require __DIR__ . '/lib/hiring.php';   /* приём в команду: тест, чек-лист, согласование */
 
 function action() {
@@ -154,6 +159,19 @@ function text($value, $max) {
         return mb_substr($s, 0, $max, 'UTF-8');
     }
     return substr($s, 0, $max);
+}
+
+/* Верхний регистр без обязательного mbstring: на части сборок PHP его нет,
+   а падать на проверке слова «УДАЛИТЬ» нельзя. */
+function supper($value) {
+    if (function_exists('mb_strtoupper')) return mb_strtoupper((string) $value, 'UTF-8');
+    return strtr(strtoupper((string) $value), array(
+        'а' => 'А', 'б' => 'Б', 'в' => 'В', 'г' => 'Г', 'д' => 'Д', 'е' => 'Е', 'ё' => 'Ё',
+        'ж' => 'Ж', 'з' => 'З', 'и' => 'И', 'й' => 'Й', 'к' => 'К', 'л' => 'Л', 'м' => 'М',
+        'н' => 'Н', 'о' => 'О', 'п' => 'П', 'р' => 'Р', 'с' => 'С', 'т' => 'Т', 'у' => 'У',
+        'ф' => 'Ф', 'х' => 'Х', 'ц' => 'Ц', 'ч' => 'Ч', 'ш' => 'Ш', 'щ' => 'Щ', 'ъ' => 'Ъ',
+        'ы' => 'Ы', 'ь' => 'Ь', 'э' => 'Э', 'ю' => 'Ю', 'я' => 'Я',
+    ));
 }
 
 function slen($value) {
@@ -2900,7 +2918,11 @@ if ($act === 'users') {
     }
 
     $out = array();
+    /* Удалённые аккаунты (status = deleted) в список не попадают: персональных
+       данных в них нет. Показать их можно явно — для разбора старых материалов. */
+    $withDeleted = !empty($in['includeDeleted']);
     foreach (read_users($DATA_DIR) as $u) {
+        if (!$withDeleted && isset($u['status']) && $u['status'] === 'deleted') continue;
         $card = isset($cardByUser[$u['id']]) ? $cardByUser[$u['id']] : null;
         $out[] = array(
             'id' => $u['id'],
@@ -3653,6 +3675,116 @@ if ($act === 'logout') {
     respond(array('ok' => true));
 }
 
+/* Удаление аккаунта из личного кабинета.
+   Человек удаляет себя сам: нужен пароль и слово УДАЛИТЬ. Данные исчезают,
+   материалы остаются в проекте без привязки к человеку — иначе пропали бы
+   ссылки и чужие комментарии. Запись в журнале остаётся: факт удаления
+   фиксируется без персональных данных. */
+if ($act === 'account-delete') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    $pass = isset($in['pass']) ? (string) $in['pass'] : '';
+    if (!password_verify($pass, (string) $me['pass'])) fail('Пароль не подошёл — удаление отменено.', 403);
+    $word = supper(trim((string) (isset($in['confirm']) ? $in['confirm'] : '')));
+    if ($word !== 'УДАЛИТЬ') fail('Напишите слово УДАЛИТЬ в поле подтверждения.', 400);
+    if (!empty($me['access']) && strpos((string) $me['access'], 'Директор') !== false) {
+        $directors = 0;
+        foreach (read_users($DATA_DIR) as $u) {
+            if (!empty($u['access']) && strpos((string) $u['access'], 'Директор') !== false && empty($u['deletedAt'])) $directors++;
+        }
+        if ($directors <= 1) fail('Единственного директора удалить нельзя: сначала назначьте другого.', 409);
+    }
+
+    $email = $me['email'];
+    mail_notify($DATA_DIR, 'account_status', $email, array(
+        'name' => $me['name'], 'status' => 'аккаунт удалён по вашему запросу',
+        'reason' => 'Вы удалили аккаунт в личном кабинете.',
+    ), array('dedupe' => 'deleted:' . $me['id']));
+
+    /* токены: все сессии закрываем */
+    $tokens = read_json($DATA_DIR . '/tokens.json', array());
+    if (is_array($tokens)) {
+        $left = array();
+        foreach ($tokens as $row) {
+            if (isset($row['userId']) && $row['userId'] === $me['id']) continue;
+            $left[] = $row;
+        }
+        write_json($DATA_DIR . '/tokens.json', $left);
+    }
+
+    /* материалы остаются, но без привязки к человеку */
+    $posts = read_json($DATA_DIR . '/posts.json', array());
+    if (is_array($posts)) {
+        $changed = false;
+        foreach ($posts as $i => $post) {
+            if (!isset($post['authorId']) || $post['authorId'] !== $me['id']) continue;
+            $posts[$i]['authorId'] = '';
+            $posts[$i]['authorAccountDeleted'] = true;
+            $changed = true;
+        }
+        if ($changed) write_json($DATA_DIR . '/posts.json', $posts);
+    }
+
+    /* редакции: убираем из участников */
+    $editorials = read_json($DATA_DIR . '/editorials.json', array());
+    if (is_array($editorials)) {
+        $changed = false;
+        foreach ($editorials as $i => $e) {
+            if (!isset($e['members']) || !is_array($e['members'])) continue;
+            $members = array_values(array_filter($e['members'], function ($m) use ($me) {
+                return (is_array($m) ? (isset($m['id']) ? $m['id'] : '') : $m) !== $me['id'];
+            }));
+            if (count($members) !== count($e['members'])) {
+                $editorials[$i]['members'] = $members;
+                $changed = true;
+            }
+        }
+        if ($changed) write_json($DATA_DIR . '/editorials.json', $editorials);
+    }
+
+    /* сам аккаунт: персональные данные стираем, запись оставляем */
+    $users = read_users($DATA_DIR);
+    $number = 0;
+    foreach ($users as $i => $u) {
+        if ($u['id'] !== $me['id']) continue;
+        $number = isset($u['number']) ? (int) $u['number'] : 0;
+        $users[$i]['name'] = 'Удалённый аккаунт';
+        $users[$i]['email'] = '';
+        $users[$i]['pass'] = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
+        $users[$i]['bio'] = '';
+        $users[$i]['avatar'] = '';
+        $users[$i]['region'] = '';
+        $users[$i]['emailVerified'] = false;
+        $users[$i]['status'] = 'deleted';
+        $users[$i]['access'] = 'Пользователь';
+        $users[$i]['deletedAt'] = date('c');
+        $users[$i]['confirm'] = '';
+        $users[$i]['recovery'] = '';
+        break;
+    }
+    if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось удалить аккаунт. Напишите в поддержку.', 500);
+
+    /* очередь согласий: закрываем запросы удалённого */
+    $consents = read_json(consents_file($DATA_DIR), array());
+    if (is_array($consents)) {
+        $changed = false;
+        foreach ($consents as $i => $c) {
+            if (!isset($c['userId']) || $c['userId'] !== $me['id']) continue;
+            $consents[$i]['status'] = 'withdrawn';
+            $consents[$i]['decidedAt'] = date('c');
+            $consents[$i]['note'] = 'Аккаунт удалён';
+            $changed = true;
+        }
+        if ($changed) write_json(consents_file($DATA_DIR), $consents);
+    }
+
+    $backup = backup_maybe_run($DATA_DIR, true);
+    audit_log($DATA_DIR, 'аккаунт №' . $number, 'удаление аккаунта',
+        'по запросу владельца; материалы сохранены без привязки; копия: ' . (isset($backup['date']) ? $backup['date'] : '—'));
+    respond(array('ok' => true, 'deleted' => true, 'number' => $number));
+}
+
 if ($act === 'profile-save') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
@@ -3751,6 +3883,7 @@ if ($act === 'media') {
 /* Почта (ящики домена, чтение, отправка, шаблоны) и приём в команду живут
    в отдельных файлах, но маршруты — здесь, чтобы клиент видел один адрес API. */
 if (mailbox_routes($act, $DATA_DIR)) exit;
+if (tasks_routes($act, $DATA_DIR)) exit;
 if (hiring_routes($act, $DATA_DIR)) exit;
 
 fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, mailboxes, mail-list, mail-send, hiring-apply, selftest.', 404);
