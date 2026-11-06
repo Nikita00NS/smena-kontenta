@@ -29,6 +29,21 @@ async function push(local, remote) {
   await php.writeFile(remote, fs.readFileSync(local));
 }
 
+/* Пропуск подтверждения: код приходит письмом, а в тестовой среде почты нет.
+   Кладём готовый пропуск прямо в данные — сервер проверяет его так же, как
+   выданный после кода. */
+async function makeConfirm(token) {
+  const me = await call("me", { token });
+  const id = me && me.user ? me.user.id : "";
+  const body = Buffer.from(JSON.stringify({
+    "test-confirm": { user: id, exp: Math.floor(Date.now() / 1000) + 3600 },
+  }));
+  for (const dir of ["/smena-data", "/site/api/data"]) {
+    try { await php.writeFile(dir + "/confirm-tokens.json", body); return "test-confirm"; } catch (e) {}
+  }
+  throw new Error("нет папки данных");
+}
+
 async function call(action, body) {
   body = body || {};
   try {
@@ -162,9 +177,10 @@ const results = [];
 
   // 3. выдача директора только по паролю редакции
   r = await call("claim-director", { token: token1 });
-  check("claim-director без пароля — отказ", r.ok === false && r.code === 403, r);
-  r = await call("claim-director", { token: token1, password: editorPass });
-  check("claim-director с паролем — директор", r.ok === true && r.user.access === "Директор", r);
+  check("claim-director без подтверждения — отказ", r.ok === false && r.code === 428 && r.needConfirm === true, r);
+  const confirm1 = await makeConfirm(token1);
+  r = await call("claim-director", { token: token1, confirm: confirm1 });
+  check("claim-director после кода — директор", r.ok === true && r.user.access === "Директор", r);
 
   // 4. админские маршруты недоступны обычному пользователю
   r = await call("reg", { name: "Тест Второй", email: "second@example.ru", pass: "parol1234" });
@@ -204,13 +220,16 @@ const results = [];
 
   // 8. почтовые настройки без пароля
   r = await call("mail-setup", { host: "evil.example", user: "a", pass_smtp: "b", from: "a@b.ru" });
-  check("mail-setup без пароля закрыт", r.ok === false && r.code === 403, r);
+  check("mail-setup без подтверждения закрыт", r.ok === false && (r.code === 401 || r.code === 428), r);
 
-  // 9. редакционные очереди по паролю
+  // 9. редакционные очереди: только по коду из письма
   r = await call("queue", { password: "Redakcia-Smena-2026" });
-  check("старый пароль из репозитория не работает", r.ok === false && r.code === 403, r);
-  r = await call("queue", { password: editorPass });
-  check("очередь по новому паролю открыта", r.ok === true, r);
+  check("пароль редакции больше не открывает очередь", r.ok === false && r.code === 401, r);
+  const confirm3 = await makeConfirm(token3);
+  r = await call("queue", { token: token3, confirm: confirm3 });
+  check("очередь открыта по подтверждению", r.ok === true, r);
+  r = await call("queue", { token: token3 });
+  check("без подтверждения очередь закрыта", r.ok === false && r.code === 428, r);
 
   // 10. восстановление: нет утечки имени по чужой почте
   r = await call("recovery-request", { email: "first@example.ru", note: "не помню пароль совсем" });
