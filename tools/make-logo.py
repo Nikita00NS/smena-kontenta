@@ -17,12 +17,14 @@
 или чёрный логотип на белом. Прозрачность вычисляется автоматически.
 """
 
+import json
 import os
 import sys
 
 from PIL import Image
 
-OUT = os.path.join("assets", "img")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, "assets", "img")
 
 
 def mask_from(im):
@@ -81,6 +83,7 @@ def main():
     full = tinted(alpha, (255, 255, 255))
     full.save(os.path.join(OUT, "logo.png"), optimize=True)
     tinted(alpha, (12, 12, 12)).save(os.path.join(OUT, "logo-dark.png"), optimize=True)
+    print("logo.png       %dx%d   (полный логотип)" % full.size)
 
     # знак — первая группа столбцов слева, если частей несколько
     runs = columns(alpha)
@@ -94,23 +97,54 @@ def main():
     mark_box = mark.getbbox()
     if mark_box:
         mark = mark.crop(mark_box)
-    tinted(mark, (255, 255, 255)).save(os.path.join(OUT, "logo-mark.png"), optimize=True)
+    if "--mark-only" not in sys.argv:
+        tinted(mark, (255, 255, 255)).save(os.path.join(OUT, "logo-mark.png"), optimize=True)
 
-    for size, pad, name in ((128, 22, "favicon.png"),
-                            (32, 6, "favicon-32.png"),
-                            (180, 34, "apple-touch-icon.png")):
+    def icon(size, pad_ratio=0.17):
+        """Знак по центру тёмного квадрата: так иконка читается и на светлой,
+        и на тёмной панели браузера."""
+        pad = max(2, round(size * pad_ratio))
         inner = size - pad * 2
         mh, mw = inner, round(mark.width * inner / mark.height)
         if mw > inner:
             mw, mh = inner, round(mark.height * inner / mark.width)
         small = mark.resize((mw, mh), Image.LANCZOS)
-        icon = Image.new("RGB", (size, size), (10, 10, 10))
-        icon.paste(small, ((size - mw) // 2, (size - mh) // 2), small)
-        icon.save(os.path.join(OUT, name), optimize=True)
+        out = Image.new("RGB", (size, size), (10, 10, 10))
+        out.paste(small, ((size - mw) // 2, (size - mh) // 2), small)
+        return out
+
+    # Полный набор: поисковики просят значки, кратные 48 px, иначе иконка
+    # в выдаче не показывается. 128 и 32 оставлены для старых браузеров.
+    for size in (16, 32, 48, 96, 128, 192, 512):
+        icon(size).save(os.path.join(OUT, "favicon-%d.png" % size), optimize=True)
+    icon(128).save(os.path.join(OUT, "favicon.png"), optimize=True)
+    icon(32, 0.19).save(os.path.join(OUT, "favicon-32.png"), optimize=True)
+    icon(180, 0.2).save(os.path.join(OUT, "apple-touch-icon.png"), optimize=True)
+
+    # /favicon.ico в корне: его браузер спрашивает сам, ещё до чтения разметки
+    icon(48).save(os.path.join(ROOT, "favicon.ico"),
+                  sizes=[(16, 16), (32, 32), (48, 48)])
+
+    # манифест: иконка для «добавить на главный экран» на телефоне
+    manifest = {
+        "name": "Смена контента",
+        "short_name": "Смена",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0a0a0a",
+        "theme_color": "#0a0a0a",
+        "icons": [
+            {"src": "/assets/img/favicon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/assets/img/favicon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }
+    with open(os.path.join(ROOT, "site.webmanifest"), "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
 
     print("logo.png       %dx%d" % full.size)
     print("logo-mark.png  %dx%d" % mark.size)
-    print("фавиконки: 128, 32, 180 px")
+    print("фавиконки: 16, 32, 48, 96, 128, 192, 512, apple 180, favicon.ico, манифест")
     print("готово — можно обновлять страницы")
 
 
