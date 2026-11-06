@@ -305,13 +305,27 @@ function mailbox_routes($act, $dir) {
         $box = $boxes[$key];
         if (empty($box['pass'])) fail('Сначала впишите пароль ящика.', 409);
 
-        $error = '';
-        $folders = imapc_folders(mailbox_imap($box), $error);
-        $ok = is_array($folders) && $folders;
-        $boxes[$key]['lastTest'] = array('ok' => $ok, 'error' => $ok ? '' : $error, 'at' => date('c'));
+        /* Проверяем по шагам и сразу заводим недостающие папки: человеку не
+           нужно ничего создавать в панели хостинга. */
+        $diag = imapc_diagnose($box, true);
+        $boxes[$key]['lastTest'] = array(
+            'ok' => $diag['ok'], 'error' => $diag['error'], 'at' => date('c'),
+            'steps' => $diag['steps'], 'created' => $diag['created'],
+        );
+        if ($diag['ok']) { $boxes[$key]['folders'] = $diag['folders']; }
         mailboxes_save($dir, $boxes);
-        if (!$ok) fail('IMAP не пустил: ' . ($error !== '' ? $error : 'сервер не вернул папки') . '. Проверьте сервер, порт и пароль в панели хостинга.', 502);
-        respond(array('ok' => true, 'folders' => $folders, 'lastTest' => $boxes[$key]['lastTest']));
+        if ($diag['ok']) {
+            audit_log($dir, $me['email'], 'почта', 'ящик ' . $key . ': подключение проверено');
+        }
+        respond(array(
+            'ok' => $diag['ok'],
+            'connected' => $diag['ok'],
+            'error' => $diag['error'],
+            'folders' => $diag['folders'],
+            'created' => $diag['created'],
+            'steps' => $diag['steps'],
+            'lastTest' => $boxes[$key]['lastTest'],
+        ));
     }
 
     if ($act === 'mail-folders') {

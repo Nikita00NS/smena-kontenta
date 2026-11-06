@@ -1547,14 +1547,8 @@ window.Store = (function () {
     });
   }
 
-  function claimDirector(password) {
-    var token = readToken();
-    if (!token) return Promise.reject(new Error("Сначала войдите в аккаунт."));
-    if (String(password || "").length < 6) {
-      return Promise.reject(new Error("Нужен пароль редакции — его выдаёт владелец проекта."));
-    }
-    return api("claim-director", { token: token, password: String(password || "") })
-      .then(function (res) {
+  function claimDirector() {
+    return withToken("claim-director", { confirm: getConfirm() }).then(function (res) {
       if (res && res.ok) {
         cacheUser(res.user);
         mirrorUser(res.user);
@@ -1767,6 +1761,33 @@ window.Store = (function () {
   }
 
   /* ---------- почта проекта: ящики, письма, шаблоны ---------- */
+  /* ---------- подтверждение действий кодом из почты ---------- */
+  var CONFIRM_KEY = "smena_confirm";
+  function getConfirm() {
+    try {
+      var raw = window.localStorage.getItem(CONFIRM_KEY) || "";
+      if (!raw) return "";
+      var obj = JSON.parse(raw);
+      if (!obj || !obj.t || !obj.exp || obj.exp < Date.now()) return "";
+      return obj.t;
+    } catch (e) { return ""; }
+  }
+  function setConfirm(token, minutes) {
+    try {
+      window.localStorage.setItem(CONFIRM_KEY, JSON.stringify({
+        t: token, exp: Date.now() + (minutes || 30) * 60000,
+      }));
+    } catch (e) {}
+  }
+  function clearConfirm() { try { window.localStorage.removeItem(CONFIRM_KEY); } catch (e) {} }
+  function actionCode() { return withToken("action-code", {}); }
+  function actionConfirm(code) {
+    return withToken("action-confirm", { code: String(code || "").trim() }).then(function (res) {
+      if (res && res.confirm) setConfirm(res.confirm, res.minutes || 30);
+      return res;
+    });
+  }
+
   function withToken(action, payload) {
     var token = readToken();
     if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
@@ -2048,13 +2069,13 @@ window.Store = (function () {
     );
   }
 
-  function portfolioQueue(password) {
-    return api("portfolio-queue", { password: password });
+  function portfolioQueue() {
+    return withToken("portfolio-queue", { confirm: getConfirm() });
   }
 
-  function portfolioReview(password, id, decision, note, points, publish) {
-    return api("portfolio-review", {
-      password: password,
+  function portfolioReview(id, decision, note, points, publish) {
+    return withToken("portfolio-review", {
+      confirm: getConfirm(),
       id: id,
       decision: decision,
       note: note,
@@ -2069,13 +2090,13 @@ window.Store = (function () {
     }, 0);
   }
 
-  function consentQueue(password) {
-    return api("consent-queue", { password: password });
+  function consentQueue() {
+    return withToken("consent-queue", { confirm: getConfirm() });
   }
 
-  function consentReview(password, id, decision, note) {
-    return api("consent-review", {
-      password: password,
+  function consentReview(id, decision, note) {
+    return withToken("consent-review", {
+      confirm: getConfirm(),
       id: id,
       decision: decision,
       note: note,
@@ -2134,6 +2155,11 @@ window.Store = (function () {
     consentDecide: consentDecide,
     portfolioDecide: portfolioDecide,
     whoami: whoami,
+    actionCode: actionCode,
+    actionConfirm: actionConfirm,
+    getConfirm: getConfirm,
+    clearConfirm: clearConfirm,
+    hasConfirm: function () { return getConfirm() !== ""; },
     claimDirector: claimDirector,
     apiPendingQueue: apiPendingQueue,
     localOnlyAccounts: localOnlyAccounts,

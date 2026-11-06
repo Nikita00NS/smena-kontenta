@@ -1522,6 +1522,7 @@
   function initAdmin() {
     var host = $("[data-admin]");
     if (!host) return;
+    bindConfirmDelegation();
     var user = Store ? Store.currentUser() : null;
     if (!user) {
       window.location.replace("/join?next=admin");
@@ -1548,10 +1549,7 @@
         '<a class="btn btn--ghost btn--sm" href="/profile">В кабинет</a>' +
         '<button class="btn btn--ghost btn--sm" type="button" data-gate-logout>Выйти</button>' +
         "</div>" +
-        '<div class="field" data-gate-pass-wrap hidden style="margin:12px 0 0;max-width:320px">' +
-        '<label for="gate-pass">Пароль редакции</label>' +
-        '<input id="gate-pass" type="password" data-gate-pass autocomplete="current-password">' +
-        "</div>" +
+        '<div data-gate-confirm style="margin:12px 0 0"></div>' +
         '<p class="form__note" data-gate-status></p>' +
         '<p class="form__note">Версия интерфейса: ' + esc((SC && SC.build) || "—") + "</p>" +
         "</div></section>";
@@ -1574,8 +1572,11 @@
           (info.directorExists ? esc(info.directorName || "назначен") : "не назначен") + "</b></div>";
         if (claimBtn && info.canClaimDirector) {
           claimBtn.hidden = false;
-          var passWrap = $("[data-gate-pass-wrap]", host);
-          if (passWrap) passWrap.hidden = false;
+          var holder = $("[data-gate-confirm]", host);
+          if (holder && !holder.firstChild) {
+            holder.innerHTML = confirmRowHtml();
+            bindConfirmDelegation();
+          }
         }
       }
 
@@ -1583,9 +1584,9 @@
 
       if (claimBtn) {
         claimBtn.addEventListener("click", function () {
+          if (!confirmReady(gateStatus)) return;
           claimBtn.disabled = true;
-          var passEl = $("[data-gate-pass]", host);
-          Store.claimDirector(passEl ? passEl.value : "").then(function () {
+          Store.claimDirector().then(function () {
             gateStatus.textContent = "Права директора выданы. Перезагружаем панель…";
             window.location.reload();
           }, function (err) {
@@ -1742,16 +1743,12 @@
         "Комиссия решает, интересна ли работа, сколько баллов дать и показывать ли её на " +
         "странице аккаунта.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
-        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
-        '<label for="pf-pass">Пароль редакции</label>' +
-        '<input id="pf-pass" type="password" placeholder="Тот же пароль, что и для материалов" value="' +
-        esc(savedPass()) + '"></div>' +
+        confirmRowHtml() +
         '<button class="btn btn--sm" type="button" data-pf-load>Показать работы</button></div>' +
         '<p class="form__note" data-pf-status></p></div><div data-pf-list></div>';
       host.appendChild(section);
 
-      var passEl = $("#pf-pass", section);
-      var statusEl = $("[data-pf-status]", section);
+            var statusEl = $("[data-pf-status]", section);
       var listEl = $("[data-pf-list]", section);
 
       function row(item) {
@@ -1796,13 +1793,9 @@
       }
 
       function load() {
-        var pass = passEl.value.trim();
-        if (!pass) {
-          statusEl.textContent = "Введите пароль редакции.";
-          return;
-        }
+        if (!confirmReady(statusEl)) return;
         statusEl.textContent = "Загружаем…";
-        Store.portfolioQueue(pass).then(function (res) {
+        Store.portfolioQueue().then(function (res) {
           if (!res || !res.ok) {
             statusEl.textContent = (res && res.error) || "Сервер не ответил.";
             return;
@@ -1827,8 +1820,7 @@
                 return;
               }
               btn.disabled = true;
-              Store.portfolioReview(
-                pass, id, approve ? "approved" : "rejected", note,
+              Store.portfolioReview(id, approve ? "approved" : "rejected", note,
                 pointsEl ? Number(pointsEl.value) || 0 : 5
               ).then(function (r) {
                 btn.disabled = false;
@@ -1844,7 +1836,7 @@
       }
 
       $("[data-pf-load]", section).addEventListener("click", load);
-      if (savedPass()) load();
+      if (Store.hasConfirm && Store.hasConfirm()) load();
     }
 
     /* --- согласия на обработку ПД: проверка сканов ------------------------- */
@@ -2530,15 +2522,6 @@
         '<p class="form__note">Проверяем…</p></div>' +
         '<button class="btn btn--ghost btn--sm" type="button" data-diag-refresh ' +
         'style="margin-top:12px">Проверить снова</button>' +
-        '<div class="pass-change"><span class="kicker">Пароль редакции</span>' +
-        '<p class="form__note">По нему открываются очереди, которые не привязаны к аккаунту, ' +
-        "и служебные проверки сервера. Если не меняли — действует стандартный: " +
-        "его подсказывает проверка выше.</p>" +
-        '<div class="row" style="gap:10px;flex-wrap:wrap">' +
-        '<input type="password" data-ep-old placeholder="Текущий пароль" autocomplete="current-password">' +
-        '<input type="password" data-ep-new placeholder="Новый пароль (10+)" autocomplete="new-password">' +
-        '<button class="btn btn--sm" type="button" data-ep-save>Сменить</button></div>' +
-        '<p class="form__note" data-ep-status></p></div>' +
         '<div class="audit" style="margin-top:22px"><span class="kicker">Журнал действий</span>' +
         '<p class="form__note">Кто и когда менял роли, карты, почту и состояние сайта. ' +
         "Последние 120 записей.</p>" +
@@ -2562,8 +2545,7 @@
           listEl.innerHTML =
             row("PHP", d.php) +
             row("Аккаунтов на сервере", d.accounts, d.accounts > 0) +
-            row("Стандартный пароль редакции", d.editor_default_password ? "да — смените" : "нет",
-              d.editor_default_password === false) +
+            row("Подтверждение действий", "код на почту") +
             row("Материалов", d.posts) +
             row("Запись данных", d.data_writable ? "разрешена" : "запрещена", !!d.data_writable) +
             row("Загрузка медиа", d.uploads_writable ? "разрешена" : "запрещена", !!d.uploads_writable) +
@@ -2603,32 +2585,6 @@
       }
       loadAudit();
 
-      var epSave = $("[data-ep-save]", section);
-      if (epSave && Store.apiSetPass) {
-        epSave.addEventListener("click", function () {
-          var oldPass = ($("[data-ep-old]", section) || {}).value || "";
-          var newPass = ($("[data-ep-new]", section) || {}).value || "";
-          var status = $("[data-ep-status]", section);
-          if (newPass.length < 6) {
-            status.textContent = "Новый пароль — минимум шесть символов.";
-            return;
-          }
-          epSave.disabled = true;
-          Store.apiSetPass(oldPass, newPass).then(function (res) {
-            epSave.disabled = false;
-            if (res && res.ok) {
-              status.textContent = "Пароль редакции изменён. Сохраните его в надёжном месте.";
-              $("[data-ep-old]", section).value = "";
-              $("[data-ep-new]", section).value = "";
-            } else {
-              status.textContent = (res && res.error) || "Пароль не сменился.";
-            }
-          }, function (err) {
-            epSave.disabled = false;
-            status.textContent = (err && err.message) || "Пароль не сменился.";
-          });
-        });
-      }
       load();
     }
 
@@ -3389,9 +3345,91 @@
     }
 
     /* --- Выдача доступа по почте (для владельца проекта) ------------------ */
+
+    /* ------------------------------------------------------------------
+       ПОДТВЕРЖДЕНИЕ ДЕЙСТВИЙ КОДОМ ИЗ ПИСЬМА
+       Пароля редакции больше нет. Чувствительное действие (публикация,
+       удаление, баллы, согласия, выдача прав) подтверждается кодом на
+       почту вошедшего администратора. Подтвердил один раз — 30 минут
+       работает, дальше код не спрашивается.
+       ------------------------------------------------------------------ */
+    function confirmRowHtml() {
+      if (Store.hasConfirm && Store.hasConfirm()) {
+        return '<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 10px" data-confirm-row>' +
+          '<span class="status status--pub">действие подтверждено · ещё 30 минут</span>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-confirm-reset>Сбросить</button></div>';
+      }
+      return '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px" data-confirm-row>' +
+        '<button class="btn btn--sm" type="button" data-confirm-send>Получить код на почту</button>' +
+        '<input class="admin-review__note" type="text" inputmode="numeric" maxlength="6" ' +
+        'placeholder="Код из письма" data-confirm-code style="max-width:150px" aria-label="Код из письма">' +
+        '<button class="btn btn--sm btn--ghost" type="button" data-confirm-go>Подтвердить</button>' +
+        '<span class="form__note" data-confirm-note></span></div>';
+    }
+
+    function confirmReady(noteEl) {
+      if (Store.hasConfirm && Store.hasConfirm()) return true;
+      if (noteEl) {
+        noteEl.textContent = "Сначала подтвердите действие: «Получить код на почту» и шесть цифр из письма.";
+      }
+      return false;
+    }
+
+    /* Один обработчик на всю панель: кнопки подтверждения встречаются в
+       нескольких разделах, дублировать код незачем. */
+    function bindConfirmDelegation() {
+      if (bindConfirmDelegation.done) return;
+      bindConfirmDelegation.done = true;
+      document.addEventListener("click", function (e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        var row = t.closest("[data-confirm-row]");
+        if (!row) return;
+        var note = $("[data-confirm-note]", row);
+        if (t.closest("[data-confirm-send]")) {
+          var btn = t.closest("[data-confirm-send]");
+          btn.disabled = true;
+          if (note) note.textContent = "Отправляем код…";
+          Store.actionCode().then(function (res) {
+            btn.disabled = false;
+            if (note) note.textContent = "Код отправлен на " + (res.email || "вашу почту") + ". Введите шесть цифр.";
+          }, function (err) {
+            btn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Код не отправился.";
+          });
+          return;
+        }
+        if (t.closest("[data-confirm-go]")) {
+          var input = $("[data-confirm-code]", row);
+          var code = input ? (input.value || "").replace(/\D/g, "") : "";
+          if (code.length !== 6) { if (note) note.textContent = "Код — шесть цифр."; return; }
+          Store.actionConfirm(code).then(function () {
+            var fresh = document.createElement("div");
+            fresh.innerHTML = confirmRowHtml();
+            row.parentNode.replaceChild($("[data-confirm-row]", fresh), row);
+            $$("[data-confirm-row]:not([data-bound-note])", document).forEach(function (r) {
+              r.setAttribute("data-bound-note", "1");
+              var n = $("[data-confirm-note]", r);
+              if (n) n.textContent = "Подтверждено. Действуйте — код больше не спросим 30 минут.";
+            });
+          }, function (err) {
+            if (note) note.textContent = (err && err.message) || "Код не подошёл.";
+          });
+          return;
+        }
+        if (t.closest("[data-confirm-reset]")) {
+          Store.clearConfirm();
+          var box = document.createElement("div");
+          box.innerHTML = confirmRowHtml();
+          row.parentNode.replaceChild($("[data-confirm-row]", box), row);
+        }
+      });
+    }
+
     /* Выдача админки по почте. Доступно директору и администрации; пароль
        редакции больше не нужен — решение принимает сервер по правам. */
     function mountGrantAccess(host) {
+      bindConfirmDelegation();
       if (!Store.bossGrant) return;
       var section = document.createElement("section");
       section.className = "section wrap";
@@ -3538,6 +3576,15 @@
       draw();
     }
 
+    function stepsHtml(steps) {
+      if (!steps || !steps.length) return "";
+      return steps.map(function (st) {
+        return '<div class="diag__row"><span>' + esc(st.name) + '</span><b class="' +
+          (st.ok ? "is-good" : "is-bad") + '">' + esc(st.ok ? (st.details || "ок") : (st.details || "ошибка")) +
+          "</b></div>";
+      }).join("");
+    }
+
     /* Ящики домена: один экран, четыре карточки. Никаких «пресетов» сторонних
        сервисов — только сервер, логин и пароль, как в панели хостинга. */
     function mountMailSettings(host) {
@@ -3597,7 +3644,8 @@
           '<span class="form__note" data-box-note style="align-self:center">' +
           (b.lastTest ? (b.lastTest.ok ? "последняя проверка: успешно " + esc(fmtDate(b.lastTest.at))
             : "последняя проверка: ошибка — " + esc(b.lastTest.error))
-            : "") + "</span></div></div>";
+            : "") + "</span></div>" +
+          '<div class="diag" data-box-steps style="margin-top:8px"></div></div>';
       }
 
       function bind() {
@@ -3621,10 +3669,18 @@
           if (test) test.addEventListener("click", function () {
             test.disabled = true;
             noteEl.textContent = "Подключаемся к серверу…";
+            var stepsEl = $("[data-box-steps]", card);
             Store.mailBoxTest(key).then(function (res) {
               test.disabled = false;
-              noteEl.textContent = "Подключение работает. Папок: " + (res.folders || []).length + ".";
-            }, function (err) { test.disabled = false; noteEl.textContent = err.message; });
+              noteEl.textContent = res.ok
+                ? "Подключение работает. Папок: " + (res.folders || []).length + "." +
+                  ((res.created || []).length ? " Создано: " + res.created.join(", ") + "." : "")
+                : (res.error || "Не подключилось.");
+              if (stepsEl) stepsEl.innerHTML = stepsHtml(res.steps || []);
+            }, function (err) {
+              test.disabled = false;
+              noteEl.textContent = err.message;
+            });
           });
         });
       }
@@ -3904,16 +3960,12 @@
         '<p class="sec-head__text">Автор подписывает документ от руки и загружает фото. ' +
         "Пока скан не одобрен, публикация материалов закрыта. Для отказа нужно основание.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
-        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
-        '<label for="consent-pass">Пароль редакции</label>' +
-        '<input id="consent-pass" type="password" placeholder="Тот же пароль, что и для материалов" value="' +
-        esc(savedPass()) + '"></div>' +
+        confirmRowHtml() +
         '<button class="btn btn--sm" type="button" data-consent-load>Показать согласия</button></div>' +
         '<p class="form__note" data-consent-status></p></div><div data-consent-list></div>';
       host.appendChild(section);
 
-      var passEl = $("#consent-pass", section);
-      var statusEl = $("[data-consent-status]", section);
+            var statusEl = $("[data-consent-status]", section);
       var listEl = $("[data-consent-list]", section);
 
       var LABEL = {
@@ -3948,13 +4000,9 @@
       }
 
       function load() {
-        var pass = passEl.value.trim();
-        if (!pass) {
-          statusEl.textContent = "Введите пароль редакции.";
-          return;
-        }
+        if (!confirmReady(statusEl)) return;
         statusEl.textContent = "Загружаем…";
-        Store.consentQueue(pass).then(function (res) {
+        Store.consentQueue().then(function (res) {
           if (!res || !res.ok) {
             statusEl.textContent = (res && res.error) || "Сервер не ответил.";
             return;
@@ -3978,7 +4026,7 @@
                 return;
               }
               btn.disabled = true;
-              Store.consentReview(pass, id, approve ? "approved" : "rejected", note).then(function (r) {
+              Store.consentReview(id, approve ? "approved" : "rejected", note).then(function (r) {
                 btn.disabled = false;
                 if (!r || !r.ok) {
                   statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
@@ -3992,7 +4040,7 @@
       }
 
       $("[data-consent-load]", section).addEventListener("click", load);
-      if (savedPass()) load();
+      if (Store.hasConfirm && Store.hasConfirm()) load();
     }
 
     function mountCardQueue(host) {
@@ -4010,16 +4058,12 @@
         '<p class="sec-head__text">Автор подаёт заявку из кабинета и сразу выбирает, как получить ' +
         "карту: лично в Москве или почтой. Выдача присваивает номер, автор видит его у себя.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
-        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
-        '<label for="card-pass">Пароль редакции (нужен, только если не вошли директором)</label>' +
-        '<input id="card-pass" type="password" placeholder="Можно оставить пустым" value="' +
-        esc(savedPass()) + '"></div>' +
+        confirmRowHtml() +
         '<button class="btn btn--sm" type="button" data-card-load>Показать заявки</button></div>' +
         '<p class="form__note" data-card-status></p></div><div data-card-list></div>';
       host.appendChild(section);
 
-      var passEl = $("#card-pass", section);
-      var statusEl = $("[data-card-status]", section);
+            var statusEl = $("[data-card-status]", section);
       var listEl = $("[data-card-list]", section);
 
       function row(card) {
@@ -4081,9 +4125,9 @@
       }
 
       function load() {
-        var pass = passEl.value.trim();
+        if (!confirmReady(statusEl)) return;
         statusEl.textContent = "Загружаем…";
-        Store.apiCardQueue(pass).then(function (res) {
+        Store.apiCardQueue("").then(function (res) {
           if (!res || !res.ok) {
             statusEl.textContent = (res && res.error) || "Сервер не ответил.";
             return;
@@ -4130,182 +4174,6 @@
 
       $("[data-card-load]", section).addEventListener("click", load);
       load();
-    }
-
-    /* --- очередь материалов, присланных авторами с их устройств ------------- */
-    var SERVER_PASS = "smena_editor_pass";
-    var serverState = { pending: [], total: 0, published: 0, status: "", busy: false, loaded: false };
-
-    function savedPass() {
-      try {
-        return window.localStorage.getItem(SERVER_PASS) || "";
-      } catch (e) {
-        return "";
-      }
-    }
-
-    function rememberPass(value) {
-      try {
-        window.localStorage.setItem(SERVER_PASS, value);
-      } catch (e) {
-        /* пусто */
-      }
-    }
-
-    function serverRow(p) {
-      return (
-        '<div class="admin-review" data-server-row="' + esc(p.id) + '">' +
-        '<div class="admin-review__top"><b>' + esc(p.title) + "</b>" +
-        '<span class="status status--pending">ждёт решения</span></div>' +
-        '<div class="admin-review__meta">' + esc(p.authorName) +
-        (p.authorRole ? " · " + esc(p.authorRole) : "") +
-        " · " + esc(regionName(p.region) || "регион не выбран") +
-        " · " + esc(fmtDate(p.submittedAt || p.date)) + "</div>" +
-        '<p class="admin-review__excerpt">' + esc(p.excerpt || "") + "</p>" +
-        '<details class="admin-review__full"><summary>Показать текст</summary>' +
-        "<div>" + esc(String(p.body || "").slice(0, 6000)) + "</div></details>" +
-        '<div class="admin-review__actions">' +
-        '<input class="admin-review__note" type="text" placeholder="Замечание автору (если правки)" data-server-note="' + esc(p.id) + '">' +
-        '<button class="btn btn--sm" type="button" data-server-approve="' + esc(p.id) + '">Опубликовать</button>' +
-        '<button class="btn btn--sm btn--ghost" type="button" data-server-reject="' + esc(p.id) + '">Вернуть на правки</button>' +
-        "</div></div>"
-      );
-    }
-
-    function mountServerQueue(host) {
-      var wrap = document.createElement("section");
-      wrap.className = "section wrap";
-      wrap.setAttribute("style", "padding-top:0");
-      wrap.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left">' +
-        '<span class="kicker">С сайта</span><h2>Материалы авторов</h2>' +
-        '<p class="sec-head__text">Сюда попадают материалы, отправленные с любых устройств — ' +
-        "через общую приёмную на хостинге. Пароль редакции задаётся в файле api/index.php " +
-        "и нужен, чтобы одобрять чужие тексты.</p></div></div>" +
-        '<div class="panel"><div class="row" style="align-items:flex-end">' +
-        '<div class="field" style="margin:0;flex:1;min-width:220px">' +
-        '<label for="server-pass">Пароль редакции</label>' +
-        '<input id="server-pass" type="password" autocomplete="current-password" placeholder="Пароль доступа к очереди" value="' +
-        esc(savedPass()) + '"></div>' +
-        '<button class="btn btn--sm" type="button" data-server-load>Показать очередь</button></div>' +
-        '<p class="form__note" data-server-status></p></div>' +
-        '<div data-server-list></div>' +
-        '<details class="panel" style="margin-top:16px"><summary>Сменить пароль редакции</summary>' +
-        '<div class="row" style="margin-top:12px;align-items:flex-end">' +
-        '<div class="field" style="margin:0"><label for="server-pass-old">Текущий пароль</label>' +
-        '<input id="server-pass-old" type="password" autocomplete="current-password"></div>' +
-        '<div class="field" style="margin:0"><label for="server-pass-new">Новый пароль</label>' +
-        '<input id="server-pass-new" type="password" autocomplete="new-password" placeholder="Не короче 10 символов"></div>' +
-        '<button class="btn btn--sm" type="button" data-server-setpass>Сменить</button></div>' +
-        '<p class="form__note">Пароль по умолчанию знает только владелец проекта. Смените его ' +
-        "до того, как о панели узнают посторонние.</p></details>";
-      host.appendChild(wrap);
-
-      var passEl = $("#server-pass", wrap);
-      var statusEl = $("[data-server-status]", wrap);
-      var listEl = $("[data-server-list]", wrap);
-
-      function setStatus(text) {
-        if (statusEl) statusEl.textContent = text;
-      }
-
-      function paint() {
-        if (serverState.busy) {
-          setStatus("Загружаем…");
-          return;
-        }
-        if (serverState.status) setStatus(serverState.status);
-        if (!serverState.loaded) return;
-        listEl.innerHTML = serverState.pending.length
-          ? serverState.pending.map(serverRow).join("")
-          : '<div class="empty"><h3>Очередь пуста</h3><p>Все присланные материалы уже разобраны. ' +
-            "Опубликовано всего: " + serverState.published + " из " + serverState.total + ".</p></div>";
-      }
-
-      function load() {
-        var pass = passEl ? passEl.value.trim() : "";
-        if (!pass) {
-          setStatus("Введите пароль редакции — он задаётся в файле api/index.php.");
-          return;
-        }
-        rememberPass(pass);
-        serverState.busy = true;
-        serverState.status = "";
-        paint();
-        Store.apiQueue(pass)
-          .then(function (res) {
-            serverState.busy = false;
-            if (!res || !res.ok) {
-              serverState.loaded = false;
-              serverState.status = (res && res.error) || "Сервер не ответил. Проверьте, что PHP работает.";
-              paint();
-              return;
-            }
-            serverState.loaded = true;
-            serverState.pending = res.pending || [];
-            serverState.total = res.total || 0;
-            serverState.published = res.published || 0;
-            serverState.status = "В очереди: " + serverState.pending.length + ". Опубликовано: " +
-              serverState.published + " из " + serverState.total + ".";
-            paint();
-          })
-          .catch(function () {
-            serverState.busy = false;
-            serverState.loaded = false;
-            serverState.status = "Нет связи с сервером.";
-            paint();
-          });
-      }
-
-      $("[data-server-load]", wrap).addEventListener("click", load);
-
-      var setBtn = $("[data-server-setpass]", wrap);
-      if (setBtn)
-        setBtn.addEventListener("click", function () {
-          var oldPass = $("#server-pass-old", wrap).value.trim();
-          var newPass = $("#server-pass-new", wrap).value.trim();
-          if (newPass.length < 10) {
-            setStatus("Новый пароль должен быть не короче десяти символов.");
-            return;
-          }
-          setBtn.disabled = true;
-          Store.apiSetPass(oldPass, newPass).then(function (res) {
-            setBtn.disabled = false;
-            if (!res || !res.ok) {
-              setStatus((res && res.error) || "Не удалось сменить пароль.");
-              return;
-            }
-            if (passEl) passEl.value = newPass;
-            rememberPass(newPass);
-            setStatus("Пароль редакции изменён.");
-          });
-        });
-
-      listEl.addEventListener("click", function (e) {
-        var approve = e.target.closest("[data-server-approve]");
-        var reject = e.target.closest("[data-server-reject]");
-        var button = approve || reject;
-        if (!button) return;
-        var id = button.getAttribute(approve ? "data-server-approve" : "data-server-reject");
-        var noteEl = $('[data-server-note="' + id + '"]', listEl);
-        var note = noteEl ? noteEl.value.trim() : "";
-        button.disabled = true;
-        setStatus("Отправляем решение…");
-        Store.apiReview(passEl.value.trim(), id, approve ? "approve" : "reject", note).then(function (res) {
-          button.disabled = false;
-          if (!res || !res.ok) {
-            setStatus((res && res.error) || "Не удалось сохранить решение.");
-            return;
-          }
-          serverState.status = approve
-            ? "Материал опубликован — он уже в ленте и на странице региона."
-            : "Материал возвращён автору с замечанием.";
-          load();
-        });
-      });
-
-      // если пароль уже сохранён, очередь подтягивается сама
-      if (savedPass()) load();
     }
 
     function bind() {

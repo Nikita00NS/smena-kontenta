@@ -211,21 +211,160 @@ function mail_mime_parts($raw, $depth = 0) {
 
 /* ---------------------------------------------------------------- операции */
 
-function imapc_folders($box, &$error) {
-    $fp = imapc_open_box($box, $error);
-    if (!$fp) return null;
-    $raw = imapc_step($fp, 'a2', 'LIST "" "*"', $error);
-    imapc_close_box($fp);
-    if ($raw === null) return null;
-    $out = array();
-    foreach (explode("\n", $raw) as $line) {
-        if (strpos($line, '* LIST') !== 0 && strpos($line, '* LSUB') !== 0) continue;
-        if (!preg_match('/"([^"]*)"\s*$/', trim($line), $m)) continue;
-        $name = $m[1];
-        if ($name === '') continue;
-        $out[] = $name;
+/* Разбор строки LIST. Сервер вправе не брать имя папки в кавычки —
+   `* LIST (\HasNoChildren) "/" INBOX`. Раньше такие строки терялись, и
+   подключённый ящик выглядел как «сервер не вернул папки». */
+function imapc_folder_from_line($line) {
+    $line = rtrim($line, "\r\n");
+    if (!preg_match('/^\*\s+(LIST|LSUB)\s+\(([^)]*)\)\s+("[^"]*"|NIL)\s+(.+)$/i', $line, $m)) return null;
+    if (stripos($m[2], 'Noselect') !== false) return null;
+    $name = trim($m[4]);
+    if ($name === '' || $name === '""') return null;
+    if ($name[0] === '"') {
+        $name = substr($name, 1);
+        if (substr($name, -1) === '"') $name = substr($name, 0, -1);
+        $name = str_replace(array('\\"', '\\\\'), array('"', '\\'), $name);
     }
-    return $out;
+    if (preg_match('/^\{\d+\}(.*)$/s', $name, $mm)) $name = trim($mm[1]);
+    return $name === '' ? null : $name;
+}
+
+function imapc_folders($box, &$error) {
+    $diag = imapc_diagnose($box, false);
+    $error = $diag['error'];
+    return $diag['ok'] ? $diag['folders'] : null;
+}
+
+/* Полная проверка ящика по шагам: соединение → приветствие → вход →
+   список папок → создание недостающих. Возвращает шаги для админки,
+   чтобы было видно, где именно споткнулись, а не «не получилось». */
+function imapc_diagnose($box, $create = true) {
+    $steps = array();
+    $folders = array();
+    $created = array();
+    $host = isset($box['host']) ? trim((string) $box['host']) : '';
+    $port = isset($box['port']) ? (int) $box['port'] : 993;
+    $user = isset($box['user']) ? trim((string) $box['user']) : '';
+    $pass = isset($box['pass']) ? (string) $box['pass'] : '';
+
+    $done = function ($ok, $msg) use (&$steps, &$folders, &$created) {
+        return array('ok' => $ok, 'error' => $msg, 'folders' => $folders, 'created' => $created, 'steps' => $steps);
+    };
+
+    if ($host === '' || $user === '' || $pass === '') {
+        $steps[] = array('name' => 'Поля ящика', 'ok' => false, 'details' => 'нужны сервер, логин и пароль');
+        return $done(false, 'Ящик не настроен: нужны сервер, логин и пароль.');
+    }
+
+    /* Хостинг принимает шифрование и на 993 (сразу SSL), и на 143 (STARTTLS).
+       Если 993 не отвечает, пробуем 143 — так чаще всего и бывает. */
+    $tries = $port === 143 ? array(array($host, 143, 'starttls')) : array(array($host, $port, 'ssl'), array($host, 143, 'starttls'));
+    $fp = null;
+    $lastErr = '';
+    foreach ($tries as $try) {
+        $h = $try[0]; $p = $try[1]; $mode = $try[2];
+        $target = ($mode === 'ssl' ? 'ssl' : 'tcp') . '://' . $h . ':' . $p;
+        $ctx = stream_context_create(array('ssl' => array(
+            'verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true, 'peer_name' => $h,
+        )));
+        $errno = 0; $errstr = '';
+        $test = @stream_socket_client($target, $errno, $errstr, IMAP_TIMEOUT, STREAM_CLIENT_CONNECT, $ctx);
+        if (!$test) {
+            $lastErr = 'порт ' . $p . ': ' . ($errstr !== '' ? $errstr : 'нет соединения');
+            continue;
+        }
+        $greeting = fgets($test, 4096);
+        if ($greeting === false || (stripos($greeting, 'OK') === false && stripos($greeting, 'PREAUTH') === false)) {
+            @fclose($test);
+            $lastErr = 'порт ' . $p . ': сервер не поздоровался';
+            continue;
+        }
+        if ($mode === 'starttls') {
+            $probe = '';
+            if (imapc_step($test, 'a0', 'STARTTLS', $probe) === null) {
+                @fclose($test);
+                $lastErr = 'порт ' . $p . ': ' . $probe;
+                continue;
+            }
+            if (!@stream_socket_enable_crypto($test, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                @fclose($test);
+                $lastErr = 'порт ' . $p . ': шифрование не включилось';
+                continue;
+            }
+        }
+        $fp = $test;
+        $steps[] = array('name' => 'Соединение', 'ok' => true, 'details' => $h . ':' . $p . ($mode === 'starttls' ? ' (STARTTLS)' : ' (SSL)'));
+        break;
+    }
+    if (!$fp) {
+        $steps[] = array('name' => 'Соединение', 'ok' => false, 'details' => $lastErr);
+        return $done(false, 'Сервер почты не отвечает: ' . $lastErr . '. Проверьте адрес и порт — обычно mail.smenakontenta.ru и 993.');
+    }
+
+    $err = '';
+    if (imapc_step($fp, 'a1', 'LOGIN ' . imapc_quote($user) . ' ' . imapc_quote($pass), $err) === null) {
+        imapc_close_box($fp);
+        $steps[] = array('name' => 'Вход', 'ok' => false, 'details' => $err);
+        return $done(false, 'Сервер не пустил по логину и паролю: ' . $err . ' Логин — это полный адрес ящика. Пароль — тот, что задан в панели хостинга.');
+    }
+    $steps[] = array('name' => 'Вход', 'ok' => true, 'details' => $user);
+
+    $raw = imapc_step($fp, 'a2', 'LIST "" "*"', $err);
+    $delimiter = '/';
+    if ($raw === null) {
+        $steps[] = array('name' => 'Список папок', 'ok' => false, 'details' => $err);
+    } else {
+        foreach (explode("\n", $raw) as $line) {
+            if (preg_match('/^\*\s+LIST\s+\([^)]*\)\s+"([^"]*)"/i', trim($line), $dm)) {
+                if ($dm[1] !== '') $delimiter = $dm[1];
+            }
+            $name = imapc_folder_from_line($line);
+            if ($name !== null) $folders[] = $name;
+        }
+        $steps[] = array('name' => 'Список папок', 'ok' => true, 'details' => count($folders) . ' шт.');
+    }
+
+    $standard = array('INBOX', 'Sent', 'Drafts', 'Trash', 'Spam');
+    if (!$folders) {
+        $probe = imapc_step($fp, 'a3', 'SELECT INBOX', $err);
+        if ($probe === null) {
+            imapc_close_box($fp);
+            $steps[] = array('name' => 'Проверка INBOX', 'ok' => false, 'details' => $err);
+            return $done(false, 'Ящик открылся, но письма не читаются: ' . $err);
+        }
+        $folders = $standard;
+        $steps[] = array('name' => 'Проверка INBOX', 'ok' => true, 'details' => 'письма читаются, папки возьмём стандартные');
+    }
+
+    if ($create) {
+        $have = array_map('strtolower', $folders);
+        foreach ($standard as $name) {
+            if ($name === 'INBOX') continue;
+            $alt = str_replace('/', (string) $delimiter, $name);
+            if (in_array(strtolower($name), $have, true) || in_array(strtolower($alt), $have, true)) continue;
+            $cerr = '';
+            if (imapc_step($fp, 'a4', 'CREATE ' . imapc_quote($alt), $cerr) !== null) {
+                $created[] = $alt;
+                $folders[] = $alt;
+            }
+        }
+        $e = '';
+        $again = imapc_step($fp, 'a5', 'LIST "" "*"', $e);
+        if ($again !== null) {
+            $fresh = array();
+            foreach (explode("\n", $again) as $line) {
+                $name = imapc_folder_from_line($line);
+                if ($name !== null) $fresh[] = $name;
+            }
+            if ($fresh) $folders = array_values(array_unique(array_merge($folders, $fresh)));
+        }
+        $steps[] = array('name' => 'Папки', 'ok' => true, 'details' => $created ? 'создано: ' . implode(', ', $created) : 'всё уже было на месте');
+    }
+
+    imapc_close_box($fp);
+    $folders = array_values(array_unique($folders));
+    if (!$folders) return $done(false, 'Сервер ответил, но папок не вернул.');
+    return $done(true, '');
 }
 
 function imapc_select($fp, $folder, &$error) {

@@ -1167,11 +1167,8 @@ if ($act === 'submit') {
 /* Очередь карт открыта либо по паролю редакции, либо вошедшему директору:
    в админке человек уже вошёл, второй пароль спрашивать незачем. */
 function require_editor_or_admin($dir, $in) {
-    $pass = isset($in['password']) ? (string) $in['password'] : '';
-    if ($pass !== '' && is_editor($dir, $pass)) return;
-    $user = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
-    if ($user && is_top_admin($user)) return;
-    fail('Нужен вход директора или пароль редакции.', 403);
+    /* Код из письма или вход директора. Пароля редакции здесь больше нет. */
+    return require_confirm($dir, $in, 'cards.issue');
 }
 
 function card_min_posts() {
@@ -1444,7 +1441,7 @@ if ($act === 'mine') {
 if ($act === 'queue') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';
-    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    require_confirm($DATA_DIR, $in, 'posts.review');
     $posts = read_json($DATA_DIR . '/posts.json', array());
     $pending = array();
     $published = 0;
@@ -1461,7 +1458,7 @@ if ($act === 'queue') {
 if ($act === 'review') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';
-    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    require_confirm($DATA_DIR, $in, 'posts.review');
 
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
@@ -1491,7 +1488,8 @@ if ($act === 'setpass') {
     $in = body();
     $old = isset($in['old']) ? (string) $in['old'] : '';
     $new = isset($in['new']) ? (string) $in['new'] : '';
-    if (!is_editor($DATA_DIR, $old)) fail('Текущий пароль неверный.', 403);
+    require_confirm($DATA_DIR, $in, 'server.diag');
+    $old = '';
     if (slen($new) < 10) fail('Новый пароль короче десяти символов.');
     $cfg = read_json($DATA_DIR . '/config.json', array());
     $cfg['editor'] = password_hash($new, PASSWORD_DEFAULT);
@@ -1504,7 +1502,7 @@ if ($act === 'setpass') {
 if ($act === 'remove') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';
-    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    require_confirm($DATA_DIR, $in, 'posts.remove');
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $posts = read_json($DATA_DIR . '/posts.json', array());
     if (!isset($posts[$id])) fail('Материал не найден.', 404);
@@ -1833,7 +1831,7 @@ if ($act === 'portfolio-mine') {
 if ($act === 'portfolio-queue') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';
-    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    require_confirm($DATA_DIR, $in, 'points.award');
     $list = read_portfolio($DATA_DIR);
     usort($list, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
@@ -1846,7 +1844,7 @@ if ($act === 'portfolio-queue') {
 if ($act === 'portfolio-review') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';
-    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    require_confirm($DATA_DIR, $in, 'points.award');
 
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
@@ -1961,7 +1959,7 @@ if ($act === 'consent-status') {
 if ($act === 'consent-queue') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';
-    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    require_confirm($DATA_DIR, $in, 'docs.manage');
     $list = read_consents($DATA_DIR);
     usort($list, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
@@ -1974,7 +1972,7 @@ if ($act === 'consent-queue') {
 if ($act === 'consent-review') {
     $in = body();
     $password = isset($in['password']) ? (string) $in['password'] : '';
-    if (!is_editor($DATA_DIR, $password)) fail('Неверный пароль редакции.', 403);
+    require_confirm($DATA_DIR, $in, 'docs.manage');
 
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
@@ -2446,9 +2444,9 @@ if ($act === 'claim-director') {
     if (!$me) fail('Сначала войдите в аккаунт.', 401);
     /* без пароля редакции роль не выдаётся: иначе первый вошедший
        на пустом сервере забирал бы панель проекта */
-    if (!is_editor($DATA_DIR, isset($in['password']) ? (string) $in['password'] : '')) {
-        fail('Нужен пароль редакции: он выдаётся владельцу проекта.', 403);
-    }
+    /* первый вошедший забирает роль директора: право проверять тут нельзя,
+       его как раз и получают этим действием */
+    require_confirm($DATA_DIR, $in, '');
     $users = read_users($DATA_DIR);
     if (count($users) > 1 && !isset($in['force'])) {
         fail('На сервере уже есть аккаунты — роль назначается в панели участников.', 409);
@@ -3193,9 +3191,7 @@ if ($act === 'boss-grant') {
 
 if ($act === 'grant-admin') {
     $in = body();
-    if (!is_editor($DATA_DIR, isset($in['password']) ? (string) $in['password'] : '')) {
-        fail('Нужен пароль редакции.', 403);
-    }
+    require_confirm($DATA_DIR, $in, 'people.access');
     $email = norm_email(isset($in['email']) ? $in['email'] : '');
     if (!$email) fail('Укажите почту аккаунта.');
     $access = text(isset($in['access']) ? $in['access'] : '', 60);
@@ -3324,9 +3320,7 @@ if ($act === 'mail-save') {
    Теперь нужен пароль редакции — он есть только у владельца проекта. */
 if ($act === 'mail-setup') {
     $params = array_merge(body(), $_GET);
-    if (!is_editor($DATA_DIR, isset($params['pass']) ? (string) $params['pass'] : '')) {
-        fail('Нужен пароль редакции. Меняйте почту в /admin → «Почта».', 403);
-    }
+    require_confirm($DATA_DIR, $params, 'mail.manage');
 
     $host = text(isset($params['host']) ? $params['host'] : '', 120);
     $port = (int) (isset($params['port']) ? $params['port'] : 465);
@@ -3397,9 +3391,7 @@ if ($act === 'mail-setup') {
    неподтверждённого домена: при ошибке остаётся прежний отправитель. */
 if ($act === 'mail-from') {
     $in = array_merge(body(), $_GET);
-    if (!is_editor($DATA_DIR, isset($in['pass']) ? (string) $in['pass'] : '')) {
-        fail('Неверный пароль редакции.', 403);
-    }
+    require_confirm($DATA_DIR, $in, 'mail.manage');
     $from = norm_email(isset($in['from']) ? $in['from'] : '');
     if (!$from) fail('Укажите адрес отправителя.');
     $to = norm_email(isset($in['test']) ? $in['test'] : '');
@@ -3772,6 +3764,11 @@ if ($act === 'twofa-enable') {
     if (!password_verify((string) (isset($in['pass']) ? $in['pass'] : ''), (string) $me['pass'])) {
         fail('Пароль не подошёл.', 403);
     }
+    /* Без почты код некуда отправить — включишь проверку и не войдёшь сам. */
+    if (!mail_ready($DATA_DIR)) {
+        fail('Сначала подключите почту: вкладка «Почта» → «Ящики домена», ящик noreply. '
+            . 'Без письма код подтверждения некуда отправлять.', 409);
+    }
     $users = read_users($DATA_DIR);
     foreach ($users as $i => $u) {
         if ($u['id'] !== $me['id']) continue;
@@ -4038,6 +4035,155 @@ if ($act === 'media') {
 /* Почта (ящики домена, чтение, отправка, шаблоны) и приём в команду живут
    в отдельных файлах, но маршруты — здесь, чтобы клиент видел один адрес API. */
 if (mailbox_routes($act, $DATA_DIR)) exit;
+/* ============================================================================
+   ПОДТВЕРЖДЕНИЕ ДЕЙСТВИЙ КОДОМ ИЗ ПИСЬМА
+
+   Пароля редакции больше нет: для чувствительных действий (публикация,
+   удаление, баллы, согласия, выдача прав) администратор подтверждает себя
+   кодом, который приходит ему на почту. Один раз подтвердил — 30 минут
+   работает «пропуск», чтобы не запрашивать код на каждую кнопку.
+
+   Файлы: action-codes.json (кому какой код выдан) и confirm-tokens.json
+   (выданные пропуска). Оба лежат вне public_html, как и остальные данные.
+   ========================================================================== */
+/* Есть ли чем отправить письмо: новый ящик noreply@ или прежний SMTP. */
+function mail_ready($dir) {
+    if (smtp_configured($dir)) return true;
+    if (function_exists('mailboxes_load')) {
+        $boxes = mailboxes_load($dir);
+        if (!empty($boxes['noreply']['pass'])) return true;
+    }
+    return false;
+}
+
+function action_codes_file($dir) { return $dir . '/action-codes.json'; }
+function confirm_tokens_file($dir) { return $dir . '/confirm-tokens.json'; }
+
+function action_code_send($dir, $me) {
+    if (!mail_ready($dir)) {
+        return array('ok' => false, 'error' => 'Почта ещё не настроена: код некуда отправить. Откройте «Почта» → «Ящики домена» и подключите ящик noreply.');
+    }
+    $file = action_codes_file($dir);
+    $all = read_json($file, array());
+    if (!is_array($all)) $all = array();
+    $id = (string) $me['id'];
+    $now = time();
+
+    /* один код в минуту: иначе письма превращаются в спам самому себе */
+    if (isset($all[$id]['at']) && $now - (int) $all[$id]['at'] < 60) {
+        return array('ok' => true, 'cooldown' => 60 - ($now - (int) $all[$id]['at']));
+    }
+
+    $code = (string) random_int(100000, 999999);
+    $all[$id] = array(
+        'hash' => password_hash($code, PASSWORD_DEFAULT),
+        'exp' => $now + 15 * 60,
+        'tries' => 0,
+        'at' => $now,
+    );
+    write_json($file, $all);
+
+    $sent = mail_notify($dir, 'login_code', (string) $me['email'], array(
+        'name' => (string) $me['name'],
+        'code' => $code,
+        'minutes' => '15',
+    ), array('dedupe' => '', 'by' => (string) $me['email']));
+
+    return array('ok' => (bool) $sent, 'sent' => (bool) $sent, 'cooldown' => 60);
+}
+
+function action_code_check($dir, $me, $code) {
+    $file = action_codes_file($dir);
+    $all = read_json($file, array());
+    if (!is_array($all)) return false;
+    $id = (string) $me['id'];
+    if (!isset($all[$id])) return false;
+    $row = $all[$id];
+    if (time() > (int) $row['exp']) { unset($all[$id]); write_json($file, $all); return false; }
+    if ((int) $row['tries'] >= 5) { unset($all[$id]); write_json($file, $all); return false; }
+
+    if (!password_verify((string) $code, (string) $row['hash'])) {
+        $all[$id]['tries'] = (int) $row['tries'] + 1;
+        write_json($file, $all);
+        return false;
+    }
+    unset($all[$id]);
+    write_json($file, $all);
+    return true;
+}
+
+function confirm_issue($dir, $me) {
+    $file = confirm_tokens_file($dir);
+    $all = read_json($file, array());
+    if (!is_array($all)) $all = array();
+    $now = time();
+    foreach ($all as $token => $row) {
+        if ((int) $row['exp'] < $now) unset($all[$token]);
+    }
+    $token = bin2hex(random_bytes(16));
+    $all[$token] = array('user' => (string) $me['id'], 'exp' => $now + 30 * 60, 'at' => $now);
+    write_json($file, $all);
+    return $token;
+}
+
+function confirm_valid($dir, $me, $token) {
+    if ($token === '') return false;
+    $all = read_json(confirm_tokens_file($dir), array());
+    if (!is_array($all) || !isset($all[$token])) return false;
+    $row = $all[$token];
+    if ((int) $row['exp'] < time()) return false;
+    return (string) $row['user'] === (string) $me['id'];
+}
+
+/* Главная проверка: кто ты, есть ли право, подтверждено ли действие.
+   Возвращает пользователя. Без подтверждения отвечает 428 — интерфейс
+   на это показывает «Получить код на почту». */
+function require_confirm($dir, $in, $cap = '') {
+    $me = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Сначала войдите в аккаунт.', 401);
+    if ($cap !== '' && !can($me, $cap) && !is_top_admin($me)) {
+        fail('Для этого действия нужны права администрации.', 403);
+    }
+    $confirm = isset($in['confirm']) ? (string) $in['confirm'] : '';
+    if (confirm_valid($dir, $me, $confirm)) return $me;
+    $code = isset($in['code']) ? trim((string) $in['code']) : '';
+    if ($code !== '' && action_code_check($dir, $me, $code)) return $me;
+    respond(array(
+        'ok' => false,
+        'error' => 'Подтвердите действие: нажмите «Получить код на почту» и введите шесть цифр из письма.',
+        'code' => 428,
+        'needConfirm' => true,
+    ), 428);
+    return null;
+}
+
+/* ---- подтверждение действий кодом ---- */
+if ($act === 'action-code') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Сначала войдите в аккаунт.', 401);
+    $res = action_code_send($DATA_DIR, $me);
+    if (empty($res['ok'])) {
+        fail(isset($res['error']) && $res['error'] !== '' ? $res['error']
+            : 'Письмо с кодом не ушло. Проверьте почту в админке, раздел «Почта».', 409);
+    }
+    audit_log($DATA_DIR, (string) $me['email'], 'код подтверждения', 'запрошен');
+    respond(array('ok' => true, 'sent' => true, 'cooldown' => isset($res['cooldown']) ? $res['cooldown'] : 60,
+        'email' => (string) $me['email']));
+}
+
+if ($act === 'action-confirm') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Сначала войдите в аккаунт.', 401);
+    $code = isset($in['code']) ? trim((string) $in['code']) : '';
+    if (!preg_match('/^\d{6}$/', $code)) fail('Код — шесть цифр.');
+    if (!action_code_check($DATA_DIR, $me, $code)) {
+        fail('Код не подошёл или истёк. Запросите новый.', 403);
+    }
+    respond(array('ok' => true, 'confirm' => confirm_issue($DATA_DIR, $me), 'minutes' => 30));
+}
+
 if (tasks_routes($act, $DATA_DIR)) exit;
 if (ai_routes($act, $DATA_DIR)) exit;
 if (hiring_routes($act, $DATA_DIR)) exit;
