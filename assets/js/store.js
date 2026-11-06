@@ -1803,6 +1803,9 @@ window.Store = (function () {
   function mailBoxes() { return withToken("mailboxes"); }
   function mailBoxSave(box) { return withToken("mailboxes-save", { box: box }); }
   function mailBoxTest(key) { return withToken("mailboxes-test", { key: key }); }
+  function mailBoxSmtpTest(key, to) {
+    return withToken("mailboxes-smtp-test", { key: key, to: to || "" });
+  }
   function mailFolders(key) { return withToken("mail-folders", { key: key }); }
   function mailList(params) { return withToken("mail-list", params); }
   function mailGet(params) { return withToken("mail-get", params); }
@@ -1839,6 +1842,7 @@ window.Store = (function () {
   function aiStatus() { return withToken("ai-status"); }
   function aiSave(cfg) { return withToken("ai-save", cfg || {}); }
   function aiTest() { return withToken("ai-test"); }
+  function aiProbe() { return withToken("ai-probe"); }
   function aiAssist(payload) { return withToken("ai-assist", payload); }
 
   /* ---------- задачи команды ---------- */
@@ -2176,6 +2180,7 @@ window.Store = (function () {
     mailBoxes: mailBoxes,
     mailBoxSave: mailBoxSave,
     mailBoxTest: mailBoxTest,
+    mailBoxSmtpTest: mailBoxSmtpTest,
     mailFolders: mailFolders,
     mailList: mailList,
     mailGet: mailGet,
@@ -2205,6 +2210,7 @@ window.Store = (function () {
     aiStatus: aiStatus,
     aiSave: aiSave,
     aiTest: aiTest,
+    aiProbe: aiProbe,
     aiAssist: aiAssist,
     bossGrant: function (email, access) {
       return withToken("boss-grant", { email: email || "6804979@mail.ru", access: access || "Главный администратор" });

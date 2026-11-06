@@ -96,6 +96,7 @@ function mailbox_public($key, $box) {
         'hasPass' => !empty($box['pass']),
         'ready' => !empty($box['pass']) && !empty($box['host']) && !empty($box['user']),
         'lastTest' => isset($box['lastTest']) ? $box['lastTest'] : null,
+        'lastSmtp' => isset($box['lastSmtp']) ? $box['lastSmtp'] : null,
     );
 }
 
@@ -246,7 +247,8 @@ function mailbox_require_use($user) {
 
 function mailbox_routes($act, $dir) {
     $handled = array(
-        'mailboxes', 'mailboxes-save', 'mailboxes-test', 'mail-folders', 'mail-list',
+        'mailboxes', 'mailboxes-save', 'mailboxes-test', 'mailboxes-smtp-test',
+        'mail-folders', 'mail-list',
         'mail-get', 'mail-attachment', 'mail-flag', 'mail-move', 'mail-send',
         'mail-drafts', 'mail-draft-save', 'mail-draft-delete',
         'mail-templates', 'mail-template-save', 'mail-template-preview', 'mail-template-test',
@@ -332,6 +334,44 @@ function mailbox_routes($act, $dir) {
             'steps' => $diag['steps'],
             'login' => isset($diag['login']) ? $diag['login'] : '',
             'lastTest' => $boxes[$key]['lastTest'],
+        ));
+    }
+
+    /* Проверка отправки: письмо самому себе. Пока она не прошла, коды входа
+       и подтверждения уходить не будут — значит проверять нужно до всего. */
+    if ($act === 'mailboxes-smtp-test') {
+        if (!can($me, 'mail.manage')) fail('Проверять ящики может только администрация.', 403);
+        $key = isset($in['key']) ? (string) $in['key'] : '';
+        $boxes = mailboxes_load($dir);
+        if (!isset($boxes[$key])) fail('Такого ящика нет.', 404);
+        $box = $boxes[$key];
+        if (empty($box['pass'])) fail('Сначала впишите пароль ящика.', 409);
+        $to = isset($in['to']) ? trim((string) $in['to']) : '';
+        if ($to === '') $to = $box['address'];
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) fail('Укажите корректный адрес для проверки.');
+
+        $used = null;
+        $res = smtp_test_send($box, $to, $used);
+        if (!empty($res['ok']) && is_array($used)) {
+            $boxes[$key]['smtpHost'] = $used[0];
+            $boxes[$key]['smtpPort'] = (int) $used[1];
+            $boxes[$key]['secure'] = $used[2];
+        }
+        $boxes[$key]['lastSmtp'] = array(
+            'ok' => !empty($res['ok']),
+            'error' => (string) $res['error'],
+            'to' => $to,
+            'at' => date('c'),
+            'host' => is_array($used) ? $used[0] . ':' . $used[1] : '',
+        );
+        mailboxes_save($dir, $boxes);
+        respond(array(
+            'ok' => !empty($res['ok']),
+            'error' => (string) $res['error'],
+            'to' => $to,
+            'host' => is_array($used) ? $used[0] . ':' . $used[1] : '',
+            'tried' => isset($res['tried']) ? $res['tried'] : array(),
+            'lastSmtp' => $boxes[$key]['lastSmtp'],
         ));
     }
 
@@ -513,7 +553,31 @@ function mailbox_routes($act, $dir) {
 
         $mime = mail_build_mime($box['address'], 'Смена контента', $to, $cc, $bcc, $subject, $plain, $bodyHtml, $files, (string) (isset($in['inReplyTo']) ? $in['inReplyTo'] : ''));
         $all = array_merge($toList, $ccList, $bccList);
-        $res = smtp_deliver(mailbox_smtp($box), $all, $mime);
+        /* Сервер отправки подбираем сами: 465/SSL, 587/STARTTLS, 25. */
+        $res = array('ok' => false, 'error' => 'SMTP не ответил.');
+        $goodCand = null;
+        foreach (smtp_candidates($box) as $cand) {
+            $cfg = mailbox_smtp($box);
+            $cfg['host'] = $cand[0];
+            $cfg['port'] = (int) $cand[1];
+            $cfg['secure'] = $cand[2];
+            $try = smtp_deliver($cfg, $all, $mime);
+            if (!empty($try['ok'])) {
+                $res = $try;
+                $goodCand = $cand;
+                break;
+            }
+            $res = $try;
+        }
+        if (is_array($goodCand)) {
+            $boxesNow = mailboxes_load($dir);
+            if (isset($boxesNow[$key])) {
+                $boxesNow[$key]['smtpHost'] = $goodCand[0];
+                $boxesNow[$key]['smtpPort'] = (int) $goodCand[1];
+                $boxesNow[$key]['secure'] = $goodCand[2];
+                mailboxes_save($dir, $boxesNow);
+            }
+        }
         if (empty($res['ok'])) {
             mail_log_add($dir, array(
                 'at' => date('c'), 'template' => 'compose', 'to' => $to, 'subject' => $subject,

@@ -3604,7 +3604,8 @@
         '<div class="panel" style="padding:20px;margin-top:14px"><span class="kicker">ИИ-помощник</span>' +
         '<h3 style="margin:6px 0 8px">Помощник писем</h3>' +
         '<p class="form__note">Только бесплатные тарифы. Ключ хранится на сервере и в браузер не ' +
-        "возвращается. Помощник предлагает текст, отправка — всегда вручную.</p>" +
+        "возвращается. Можно вписать ключи нескольких сервисов: если один недоступен из России, " +
+        "помощник сам переключится на другой. Отправка писем — всегда вручную.</p>" +
         '<div class="mail-grid" style="margin-top:10px">' +
         '<div class="field"><label>Сервис</label><select data-ai-provider>' +
         '<option value="gemini">Google Gemini (бесплатно)</option>' +
@@ -3616,8 +3617,10 @@
         '<div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">' +
         '<button class="btn btn--accent btn--sm" type="button" data-ai-save>Сохранить ключ</button>' +
         '<button class="btn btn--ghost btn--sm" type="button" data-ai-test>Проверить связь</button>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-ai-probe>Проверить сервисы</button>' +
         '<button class="btn btn--ghost btn--sm" type="button" data-ai-clear>Удалить ключ</button>' +
-        '<span class="form__note" data-ai-note style="align-self:center"></span></div></div>';
+        '<span class="form__note" data-ai-note style="align-self:center"></span></div>' +
+        '<div class="diag" data-ai-probe-list style="margin-top:10px"></div></div>';
       host.appendChild(section);
 
       var editor = $("[data-box-editor]", section);
@@ -3628,7 +3631,9 @@
           '<div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap">' +
           "<div><b>" + esc(b.label) + "</b><br><span class=\"form__note\">" + esc(b.address) +
           (b.note ? " · " + esc(b.note) : "") + "</span></div>" +
-          '<span class="task-badge">' + (b.ready ? "подключён" : "нужен пароль") + "</span></div>" +
+          '<span class="task-badge">' + (b.ready ? "подключён" : "нужен пароль") +
+          (b.lastSmtp ? (b.lastSmtp.ok ? " · отправка работает" : " · отправка не проверена") : "") +
+          "</span></div>" +
           '<div class="mail-grid" style="margin-top:10px">' +
           '<div class="field"><label>Сервер IMAP</label><input type="text" data-b="host" value="' + esc(b.host) + '"></div>' +
           '<div class="field"><label>Порт IMAP</label><input type="number" data-b="port" value="' + esc(b.port) + '"></div>' +
@@ -3641,6 +3646,7 @@
           '<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">' +
           '<button class="btn btn--accent btn--sm" type="button" data-save>Сохранить</button>' +
           '<button class="btn btn--ghost btn--sm" type="button" data-test>Проверить IMAP</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-smtp>Проверить отправку</button>' +
           '<span class="form__note" data-box-note style="align-self:center">' +
           (b.lastTest ? (b.lastTest.ok ? "последняя проверка: успешно " + esc(fmtDate(b.lastTest.at))
             : "последняя проверка: ошибка — " + esc(b.lastTest.error))
@@ -3666,6 +3672,21 @@
               if (passEl) { passEl.value = ""; passEl.placeholder = "пароль задан — оставьте пустым"; }
             }, function (err) { save.disabled = false; noteEl.textContent = err.message; });
           });
+          var smtpBtn = $("[data-smtp]", card);
+          if (smtpBtn) smtpBtn.addEventListener("click", function () {
+            smtpBtn.disabled = true;
+            noteEl.textContent = "Отправляем проверочное письмо на адрес ящика…";
+            Store.mailBoxSmtpTest(key).then(function (res) {
+              smtpBtn.disabled = false;
+              noteEl.textContent = res.ok
+                ? "Письмо ушло через " + (res.host || "SMTP") + " на " + res.to + ". Проверьте ящик."
+                : (res.error || "Отправка не получилась.");
+            }, function (err) {
+              smtpBtn.disabled = false;
+              noteEl.textContent = (err && err.message) || "Отправка не получилась.";
+            });
+          });
+
           if (test) test.addEventListener("click", function () {
             test.disabled = true;
             noteEl.textContent = "Подключаемся к серверу…";
@@ -3735,6 +3756,24 @@
           testAi.disabled = false;
           aiNote.textContent = "Помощник ответил: «" + res.answer + "». Модель: " + (res.ai && res.ai.model);
         }, function (err) { testAi.disabled = false; aiNote.textContent = err.message; });
+      });
+
+      var probeAi = $("[data-ai-probe]", section);
+      if (probeAi) probeAi.addEventListener("click", function () {
+        probeAi.disabled = true;
+        aiNote.textContent = "Спрашиваем сервисы…";
+        var box = $("[data-ai-probe-list]", section);
+        Store.aiProbe().then(function (res) {
+          probeAi.disabled = false;
+          aiNote.textContent = "Проверка закончена. Подробности ниже.";
+          box.innerHTML = (res.providers || []).map(function (p) {
+            return '<div class="diag__row"><span>' + esc(p.label) + (p.hasKey ? " · ключ есть" : " · без ключа") +
+              '</span><b class="' + (p.ok ? "is-good" : "is-bad") + '">' + esc(p.message) + "</b></div>";
+          }).join("");
+        }, function (err) {
+          probeAi.disabled = false;
+          aiNote.textContent = (err && err.message) || "Проверка не удалась.";
+        });
       });
 
       var clearAi = $("[data-ai-clear]", section);
