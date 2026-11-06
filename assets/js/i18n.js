@@ -1,5 +1,5 @@
 /* ============================================================================
-   ЯЗЫКИ ИНТЕРФЕЙСА — 30 языков
+   ЯЗЫКИ ИНТЕРФЕЙСА — 55 языков
 
    Что переводится: меню, кнопки, подписи полей, служебные ссылки. Что не
    переводится: тексты материалов, документы и цитаты — это меняло бы смысл.
@@ -303,6 +303,132 @@
       "Home", "Maliwanag na tema"]],
   ];
 
+  /* Второй слой словаря: то, что видно на каждой странице — меню, подвал,
+     кнопки входа и названия цветов интерфейса. Первый слой выше — базовые
+     подписи; вместе они закрывают всю «обвязку» сайта на всех языках.
+     Материалы, документы и названия регионов не переводятся намеренно. */
+  var EXTRA_KEYS = [
+    "Материалы", "Партнёрам", "Пресс-карта", "Основатели", "Личный кабинет", "Создать аккаунт", "Вход", "Поддержка", "Проект", "Конфиденциальность", "Соглашение", "Все", "Оранжевый", "Бирюзовый", "Синий", "Фиолетовый", "Зелёный", "Розовый"
+  ];
+
+  var EXTRA = {
+    en: ["Materials", "For partners", "Press card", "Founders", "Account", "Create account", "Log in", "Support", "Project", "Privacy", "Terms", "All", "Orange", "Turquoise", "Blue", "Purple", "Green", "Pink"],
+    de: ["Materialien", "Für Partner", "Presseausweis", "Gründer", "Konto", "Konto erstellen", "Anmelden", "Support", "Projekt", "Datenschutz", "Nutzungsbedingungen", "Alle", "Orange", "Türkis", "Blau", "Violett", "Grün", "Rosa"],
+    fr: ["Articles", "Pour les partenaires", "Carte de presse", "Fondateurs", "Compte", "Créer un compte", "Connexion", "Assistance", "Projet", "Confidentialité", "Conditions", "Tous", "Orange", "Turquoise", "Bleu", "Violet", "Vert", "Rose"],
+    es: ["Materiales", "Para socios", "Credencial de prensa", "Fundadores", "Cuenta", "Crear cuenta", "Iniciar sesión", "Soporte", "Proyecto", "Privacidad", "Términos", "Todos", "Naranja", "Turquesa", "Azul", "Morado", "Verde", "Rosa"],
+    it: ["Materiali", "Per i partner", "Tesserino stampa", "Fondatori", "Account", "Crea account", "Accedi", "Assistenza", "Progetto", "Privacy", "Termini", "Tutti", "Arancione", "Turchese", "Blu", "Viola", "Verde", "Rosa"],
+    pt: ["Materiais", "Para parceiros", "Carteira de imprensa", "Fundadores", "Conta", "Criar conta", "Entrar", "Suporte", "Projeto", "Privacidade", "Termos", "Todos", "Laranja", "Turquesa", "Azul", "Roxo", "Verde", "Rosa"],
+    tr: ["Materyaller", "Ortaklar için", "Basın kartı", "Kurucular", "Hesap", "Hesap oluştur", "Giriş", "Destek", "Proje", "Gizlilik", "Kullanım koşulları", "Tümü", "Turuncu", "Turkuaz", "Mavi", "Mor", "Yeşil", "Pembe"],
+    ar: ["المواد", "للشركاء", "بطاقة صحفية", "المؤسسون", "الحساب", "إنشاء حساب", "تسجيل الدخول", "الدعم", "المشروع", "الخصوصية", "الشروط", "الكل", "برتقالي", "فيروزي", "أزرق", "بنفسجي", "أخضر", "وردي"],
+    zh: ["材料", "合作伙伴", "记者证", "创始人", "账户", "创建账户", "登录", "支持", "项目", "隐私", "条款", "全部", "橙色", "青色", "蓝色", "紫色", "绿色", "粉色"],
+    uk: ["Матеріали", "Партнерам", "Прес-картка", "Засновники", "Особистий кабінет", "Створити акаунт", "Вхід", "Підтримка", "Проєкт", "Конфіденційність", "Угода", "Усі", "Помаранчевий", "Бірюзовий", "Синій", "Фіолетовий", "Зелений", "Рожевий"],
+    kk: ["Материалдар", "Серіктестерге", "Баспасөз картасы", "Құрылтайшылар", "Жеке кабинет", "Аккаунт ашу", "Кіру", "Қолдау", "Жоба", "Құпиялылық", "Келісім", "Барлығы", "Қызғылт сары", "Көгілдір", "Көк", "Күлгін", "Жасыл", "Қызғылт"],
+    uz: ["Materiallar", "Hamkorlarga", "Matbuot kartasi", "Taʼsischilar", "Shaxsiy kabinet", "Akkaunt ochish", "Kirish", "Qoʻllab-quvvatlash", "Loyiha", "Maxfiylik", "Shartnoma", "Hammasi", "Toʻq sariq", "Feruza", "Koʻk", "Binafsha", "Yashil", "Pushti"],
+    az: ["Materiallar", "Tərəfdaşlar üçün", "Mətbuat kartı", "Təsisçilər", "Şəxsi kabinet", "Hesab yarat", "Giriş", "Dəstək", "Layihə", "Məxfilik", "Razılaşma", "Hamısı", "Narıncı", "Firuzəyi", "Mavi", "Bənövşəyi", "Yaşıl", "Çəhrayı"],
+    hy: ["Նյութեր", "Գործընկերների համար", "Մամուլի քարտ", "Հիմնադիրներ", "Անձնական էջ", "Ստեղծել հաշիվ", "Մուտք", "Աջակցություն", "Նախագիծ", "Գաղտնիություն", "Համաձայնություն", "Բոլորը", "Նարնջագույն", "Փիրուզագույն", "Կապույտ", "Մանուշակագույն", "Կանաչ", "Վարդագույն"],
+    he: ["חומרים", "לשותפים", "תעודת עיתונאי", "מייסדים", "חשבון", "יצירת חשבון", "כניסה", "תמיכה", "הפרויקט", "פרטיות", "תנאים", "הכול", "כתום", "טורקיז", "כחול", "סגול", "ירוק", "ורוד"],
+    fa: ["مطالب", "برای شرکا", "کارت خبرنگاری", "بنیانگذاران", "حساب کاربری", "ساخت حساب", "ورود", "پشتیبانی", "پروژه", "حریم خصوصی", "شرایط", "همه", "نارنجی", "فیروزه‌ای", "آبی", "بنفش", "سبز", "صورتی"],
+    hi: ["सामग्री", "साझेदारों के लिए", "प्रेस कार्ड", "संस्थापक", "खाता", "खाता बनाएँ", "लॉग इन", "सहायता", "परियोजना", "गोपनीयता", "शर्तें", "सभी", "नारंगी", "फ़िरोज़ी", "नीला", "बैंगनी", "हरा", "गुलाबी"],
+    bn: ["উপকরণ", "অংশীদারদের জন্য", "প্রেস কার্ড", "প্রতিষ্ঠাতা", "অ্যাকাউন্ট", "অ্যাকাউন্ট খুলুন", "লগ ইন", "সহায়তা", "প্রকল্প", "গোপনীয়তা", "শর্তাবলি", "সব", "কমলা", "ফিরোজা", "নীল", "বেগুনি", "সবুজ", "গোলাপি"],
+    vi: ["Bài viết", "Dành cho đối tác", "Thẻ nhà báo", "Nhà sáng lập", "Tài khoản", "Tạo tài khoản", "Đăng nhập", "Hỗ trợ", "Dự án", "Quyền riêng tư", "Điều khoản", "Tất cả", "Cam", "Ngọc lam", "Xanh dương", "Tím", "Xanh lá", "Hồng"],
+    id: ["Materi", "Untuk mitra", "Kartu pers", "Pendiri", "Akun", "Buat akun", "Masuk", "Dukungan", "Proyek", "Privasi", "Ketentuan", "Semua", "Oranye", "Toska", "Biru", "Ungu", "Hijau", "Merah muda"],
+    ms: ["Bahan", "Untuk rakan", "Kad akhbar", "Pengasas", "Akaun", "Cipta akaun", "Log masuk", "Sokongan", "Projek", "Privasi", "Terma", "Semua", "Jingga", "Turkuis", "Biru", "Ungu", "Hijau", "Merah jambu"],
+    th: ["บทความ", "สำหรับพันธมิตร", "บัตรผู้สื่อข่าว", "ผู้ก่อตั้ง", "บัญชี", "สร้างบัญชี", "เข้าสู่ระบบ", "การสนับสนุน", "โครงการ", "ความเป็นส่วนตัว", "ข้อกำหนด", "ทั้งหมด", "สีส้ม", "สีเขียวน้ำทะเล", "สีน้ำเงิน", "สีม่วง", "สีเขียว", "สีชมพู"],
+    ko: ["자료", "파트너", "프레스 카드", "창립자", "계정", "계정 만들기", "로그인", "지원", "프로젝트", "개인정보", "약관", "전체", "주황색", "청록색", "파란색", "보라색", "초록색", "분홍색"],
+    ja: ["記事", "パートナー", "プレスカード", "創設者", "アカウント", "アカウント作成", "ログイン", "サポート", "プロジェクト", "プライバシー", "規約", "すべて", "オレンジ", "ターコイズ", "青", "紫", "緑", "ピンク"],
+    sr: ["Материјали", "Партнерима", "Прес карта", "Оснивачи", "Лични профил", "Направи налог", "Пријава", "Подршка", "Пројекат", "Приватност", "Услови", "Све", "Наранџаста", "Тиризна", "Плава", "Љубичаста", "Зелена", "Розе"],
+    pl: ["Materiały", "Dla partnerów", "Legitymacja prasowa", "Założyciele", "Konto", "Utwórz konto", "Zaloguj", "Wsparcie", "Projekt", "Prywatność", "Warunki", "Wszystkie", "Pomarańczowy", "Turkusowy", "Niebieski", "Fioletowy", "Zielony", "Różowy"],
+    cs: ["Materiály", "Pro partnery", "Novinářský průkaz", "Zakladatelé", "Účet", "Vytvořit účet", "Přihlášení", "Podpora", "Projekt", "Soukromí", "Podmínky", "Vše", "Oranžová", "Tyrkysová", "Modrá", "Fialová", "Zelená", "Růžová"],
+    nl: ["Materialen", "Voor partners", "Perskaart", "Oprichters", "Account", "Account aanmaken", "Inloggen", "Ondersteuning", "Project", "Privacy", "Voorwaarden", "Alles", "Oranje", "Turquoise", "Blauw", "Paars", "Groen", "Roze"],
+    sv: ["Material", "För partner", "Presskort", "Grundare", "Konto", "Skapa konto", "Logga in", "Support", "Projekt", "Integritet", "Villkor", "Alla", "Orange", "Turkos", "Blå", "Lila", "Grön", "Rosa"],
+    ro: ["Materiale", "Pentru parteneri", "Legitimație de presă", "Fondatori", "Cont", "Creează cont", "Autentificare", "Suport", "Proiect", "Confidențialitate", "Termeni", "Toate", "Portocaliu", "Turcoaz", "Albastru", "Violet", "Verde", "Roz"],
+    el: ["Υλικό", "Για συνεργάτες", "Δημοσιογραφική ταυτότητα", "Ιδρυτές", "Λογαριασμός", "Δημιουργία λογαριασμού", "Σύνδεση", "Υποστήριξη", "Έργο", "Απόρρητο", "Όροι", "Όλα", "Πορτοκαλί", "Τιρκουάζ", "Μπλε", "Μωβ", "Πράσινο", "Ροζ"],
+    hu: ["Anyagok", "Partnereknek", "Sajtókártya", "Alapítók", "Fiók", "Fiók létrehozása", "Bejelentkezés", "Támogatás", "Projekt", "Adatvédelem", "Feltételek", "Összes", "Narancssárga", "Türkiz", "Kék", "Lila", "Zöld", "Rózsaszín"],
+    fi: ["Materiaalit", "Kumppaneille", "Lehdistökortti", "Perustajat", "Tili", "Luo tili", "Kirjaudu", "Tuki", "Hanke", "Tietosuoja", "Ehdot", "Kaikki", "Oranssi", "Turkoosi", "Sininen", "Violetti", "Vihreä", "Vaaleanpunainen"],
+    no: ["Materialer", "For partnere", "Pressekort", "Grunnleggere", "Konto", "Opprett konto", "Logg inn", "Støtte", "Prosjekt", "Personvern", "Vilkår", "Alle", "Oransje", "Turkis", "Blå", "Lilla", "Grønn", "Rosa"],
+    da: ["Materialer", "For partnere", "Pressekort", "Stiftere", "Konto", "Opret konto", "Log ind", "Support", "Projekt", "Privatliv", "Vilkår", "Alle", "Orange", "Turkis", "Blå", "Lilla", "Grøn", "Lyserød"],
+    is: ["Efni", "Fyrir samstarfsaðila", "Blaðamannaskírteini", "Stofnendur", "Reikningur", "Búa til reikning", "Innskráning", "Stuðningur", "Verkefni", "Persónuvernd", "Skilmálar", "Allt", "Appelsínugulur", "Grænblár", "Blár", "Fjólublár", "Grænn", "Bleikur"],
+    lt: ["Medžiaga", "Partneriams", "Spaudos kortelė", "Įkūrėjai", "Paskyra", "Sukurti paskyrą", "Prisijungti", "Pagalba", "Projektas", "Privatumas", "Sąlygos", "Visi", "Oranžinė", "Turkio", "Mėlyna", "Violetinė", "Žalia", "Rausva"],
+    lv: ["Materiāli", "Partneriem", "Preses karte", "Dibinātāji", "Konts", "Izveidot kontu", "Pieteikšanās", "Atbalsts", "Projekts", "Privātums", "Noteikumi", "Visi", "Oranžs", "Tirkīza", "Zils", "Violets", "Zaļš", "Rozā"],
+    et: ["Materjalid", "Partneritele", "Pressikaart", "Asutajad", "Konto", "Loo konto", "Logi sisse", "Tugi", "Projekt", "Privaatsus", "Tingimused", "Kõik", "Oranž", "Türkiissinine", "Sinine", "Lilla", "Roheline", "Roosa"],
+    sk: ["Materiály", "Pre partnerov", "Novinárska karta", "Zakladatelia", "Účet", "Vytvoriť účet", "Prihlásenie", "Podpora", "Projekt", "Súkromie", "Podmienky", "Všetko", "Oranžová", "Tyrkysová", "Modrá", "Fialová", "Zelená", "Ružová"],
+    sl: ["Gradiva", "Za partnerje", "Novinarska izkaznica", "Ustanovitelji", "Račun", "Ustvari račun", "Prijava", "Podpora", "Projekt", "Zasebnost", "Pogoji", "Vse", "Oranžna", "Turkizna", "Modra", "Vijolična", "Zelena", "Rožnata"],
+    hr: ["Materijali", "Za partnere", "Novinarska iskaznica", "Osnivači", "Račun", "Izradi račun", "Prijava", "Podrška", "Projekt", "Privatnost", "Uvjeti", "Sve", "Narančasta", "Tirkizna", "Plava", "Ljubičasta", "Zelena", "Ružičasta"],
+    bs: ["Materijali", "Za partnere", "Novinarska karta", "Osnivači", "Nalog", "Napravi nalog", "Prijava", "Podrška", "Projekat", "Privatnost", "Uslovi", "Sve", "Narandžasta", "Tirkizna", "Plava", "Ljubičasta", "Zelena", "Ružičasta"],
+    mk: ["Материјали", "За партнери", "Новинарска карта", "Основачи", "Профил", "Создај профил", "Најава", "Поддршка", "Проект", "Приватност", "Услови", "Сите", "Портокалова", "Тиризна", "Сина", "Виолетова", "Зелена", "Розова"],
+    bg: ["Материали", "За партньори", "Журналистическа карта", "Основатели", "Профил", "Създай профил", "Вход", "Поддръжка", "Проект", "Поверителност", "Условия", "Всички", "Оранжев", "Тюркоазен", "Син", "Лилав", "Зелен", "Розов"],
+    sq: ["Materialet", "Për partnerët", "Kartë shtypi", "Themeluesit", "Llogaria", "Krijo llogari", "Hyrje", "Mbështetje", "Projekti", "Privatësia", "Kushtet", "Të gjitha", "Portokalli", "Bruz", "Blu", "Vjollcë", "Gjelbër", "Rozë"],
+    ky: ["Материалдар", "Өнөктөштөргө", "Басма картасы", "Негиздөөчүлөр", "Жеке кабинет", "Аккаунт түзүү", "Кирүү", "Колдоо", "Долбоор", "Купуялуулук", "Келишим", "Баары", "Кызгылт сары", "Көгүлтүр", "Көк", "Кызгылт көк", "Жашыл", "Кызгылт"],
+    tg: ["Мавод", "Барои шарикон", "Корти матбуотӣ", "Асосгузорон", "Кабинети шахсӣ", "Сохтани ҳисоб", "Даромадан", "Дастгирӣ", "Лоиҳа", "Махфият", "Шартнома", "Ҳама", "Норанҷӣ", "Фирӯза", "Кабуд", "Бунафш", "Сабз", "Гулобӣ"],
+    tk: ["Materyallar", "Hyzmatdaşlar üçin", "Metbugat kartasy", "Döredijiler", "Şahsy kabinet", "Hasap döretmek", "Giriş", "Goldaw", "Taslama", "Gizlinlik", "Şertler", "Hemmesi", "Narynç", "Firuzey", "Gök", "Melewşe", "Ýaşyl", "Gülgün"],
+    mn: ["Материалууд", "Түншүүдэд", "Хэвлэлийн үнэмлэх", "Үүсгэн байгуулагчид", "Бүртгэл", "Бүртгэл үүсгэх", "Нэвтрэх", "Дэмжлэг", "Төсөл", "Нууцлал", "Нөхцөл", "Бүгд", "Улбар шар", "Оюу", "Хөх", "Нил ягаан", "Ногоон", "Ягаан"],
+    ka: ["მასალები", "პარტნიორებისთვის", "პრესბარათი", "დამფუძნებლები", "პირადი კაბინეტი", "ანგარიშის შექმნა", "შესვლა", "მხარდაჭერა", "პროექტი", "კონფიდენციალურობა", "შეთანხმება", "ყველა", "ნარინჯისფერი", "ფირუზისფერი", "ლურჯი", "იისფერი", "მწვანე", "ვარდისფერი"],
+    ur: ["مواد", "شراکت داروں کے لیے", "پریس کارڈ", "بانیان", "اکاؤنٹ", "اکاؤنٹ بنائیں", "لاگ ان", "معاونت", "منصوبہ", "رازداری", "شرائط", "سب", "نارنجی", "فیروزی", "نیلا", "جامنی", "سبز", "گلابی"],
+    sw: ["Maudhui", "Kwa washirika", "Kadi ya mwandishi", "Waanzilishi", "Akaunti", "Fungua akaunti", "Ingia", "Msaada", "Mradi", "Faragha", "Masharti", "Zote", "Chungwa", "Buluu la kijani", "Bluu", "Zambarau", "Kijani", "Waridi"],
+    af: ["Materiaal", "Vir vennote", "Perskaart", "Stigters", "Rekening", "Skep rekening", "Teken in", "Ondersteuning", "Projek", "Privaatheid", "Voorwaardes", "Alles", "Oranje", "Turkoois", "Blou", "Pers", "Groen", "Pienk"],
+  };
+
+  var EXTRA2_KEYS = [
+    "Место свободно", "Язык", "Цвет интерфейса", "Дальше", "Назад", "Понятно", "Открыть →", "Просто посмотреть", "Войти на сайт", "Показать список регионов"
+  ];
+
+  var EXTRA2 = {
+    en: ["Vacant spot", "Language", "Interface colour", "Next", "Back", "Got it", "Open →", "Just look around", "Go to the site", "Show the list of regions"],
+    de: ["Freier Platz", "Sprache", "Farbe der Oberfläche", "Weiter", "Zurück", "Verstanden", "Öffnen →", "Nur ansehen", "Zur Website", "Liste der Regionen"],
+    fr: ["Place libre", "Langue", "Couleur de l’interface", "Suivant", "Retour", "Compris", "Ouvrir →", "Juste regarder", "Aller au site", "Voir la liste des régions"],
+    es: ["Lugar libre", "Idioma", "Color de la interfaz", "Siguiente", "Atrás", "Entendido", "Abrir →", "Solo mirar", "Ir al sitio", "Ver la lista de regiones"],
+    it: ["Posto libero", "Lingua", "Colore dell’interfaccia", "Avanti", "Indietro", "Ho capito", "Apri →", "Solo guardare", "Vai al sito", "Mostra l’elenco delle regioni"],
+    pt: ["Lugar livre", "Idioma", "Cor da interface", "Seguinte", "Voltar", "Entendi", "Abrir →", "Só olhar", "Ir para o site", "Ver a lista de regiões"],
+    tr: ["Boş yer", "Dil", "Arayüz rengi", "İleri", "Geri", "Anladım", "Aç →", "Sadece göz at", "Siteye git", "Bölge listesini göster"],
+    ar: ["مكان شاغر", "اللغة", "لون الواجهة", "التالي", "رجوع", "فهمت", "فتح →", "أتصفح فقط", "الذهاب إلى الموقع", "عرض قائمة المناطق"],
+    zh: ["空缺职位", "语言", "界面颜色", "下一步", "返回", "明白了", "打开 →", "随便看看", "进入网站", "查看地区列表"],
+    uk: ["Місце вільне", "Мова", "Колір інтерфейсу", "Далі", "Назад", "Зрозуміло", "Відкрити →", "Просто подивитися", "Увійти на сайт", "Показати список регіонів"],
+    kk: ["Орын бос", "Тіл", "Интерфейс түсі", "Әрі қарай", "Артқа", "Түсінікті", "Ашу →", "Тек қарау", "Сайтқа кіру", "Аймақтар тізімін көрсету"],
+    uz: ["Joy boʻsh", "Til", "Interfeys rangi", "Keyingi", "Orqaga", "Tushunarli", "Ochish →", "Shunchaki koʻrish", "Saytga kirish", "Viloyatlar roʻyxatini koʻrsatish"],
+    az: ["Yer boşdur", "Dil", "İnterfeys rəngi", "İrəli", "Geri", "Aydındır", "Aç →", "Sadəcə baxmaq", "Sayta keç", "Regionların siyahısını göstər"],
+    hy: ["Տեղը ազատ է", "Լեզու", "Միջերեսի գույնը", "Հաջորդ", "Հետ", "Հասկանալի է", "Բացել →", "Ուղղակի նայել", "Անցնել կայք", "Ցույց տալ մարզերի ցանկը"],
+    he: ["מקום פנוי", "שפה", "צבע הממשק", "הבא", "חזור", "הבנתי", "פתח →", "רק להסתכל", "כניסה לאתר", "הצג רשימת אזורים"],
+    fa: ["جای خالی", "زبان", "رنگ رابط", "بعدی", "بازگشت", "متوجه شدم", "باز کردن →", "فقط تماشا", "رفتن به سایت", "نمایش فهرست مناطق"],
+    hi: ["जगह खाली है", "भाषा", "इंटरफ़ेस का रंग", "आगे", "पीछे", "समझ गया", "खोलें →", "बस देखें", "साइट पर जाएँ", "क्षेत्रों की सूची दिखाएँ"],
+    bn: ["জায়গা খালি", "ভাষা", "ইন্টারফেসের রং", "পরবর্তী", "পেছনে", "বুঝেছি", "খুলুন →", "শুধু দেখুন", "সাইটে যান", "অঞ্চলের তালিকা দেখান"],
+    vi: ["Chỗ còn trống", "Ngôn ngữ", "Màu giao diện", "Tiếp", "Quay lại", "Đã hiểu", "Mở →", "Chỉ xem qua", "Vào trang", "Xem danh sách vùng"],
+    id: ["Tempat kosong", "Bahasa", "Warna antarmuka", "Lanjut", "Kembali", "Mengerti", "Buka →", "Lihat-lihat saja", "Masuk ke situs", "Tampilkan daftar wilayah"],
+    ms: ["Tempat kosong", "Bahasa", "Warna antara muka", "Seterusnya", "Kembali", "Faham", "Buka →", "Lihat sahaja", "Pergi ke laman", "Tunjukkan senarai wilayah"],
+    th: ["ตำแหน่งว่าง", "ภาษา", "สีของอินเทอร์เฟซ", "ถัดไป", "ย้อนกลับ", "เข้าใจแล้ว", "เปิด →", "ดูเฉย ๆ", "ไปที่เว็บไซต์", "แสดงรายชื่อภูมิภาค"],
+    ko: ["빈자리", "언어", "인터페이스 색상", "다음", "뒤로", "알겠습니다", "열기 →", "그냥 둘러보기", "사이트로 이동", "지역 목록 보기"],
+    ja: ["空き枠", "言語", "画面の色", "次へ", "戻る", "了解しました", "開く →", "見るだけ", "サイトへ", "地域一覧を見る"],
+    sr: ["Место слободно", "Језик", "Боја интерфејса", "Даље", "Назад", "Разумем", "Отвори →", "Само погледати", "На сајт", "Прикажи листу региона"],
+    pl: ["Wolne miejsce", "Język", "Kolor interfejsu", "Dalej", "Wstecz", "Rozumiem", "Otwórz →", "Tylko zerknąć", "Przejdź do serwisu", "Pokaż listę regionów"],
+    cs: ["Volné místo", "Jazyk", "Barva rozhraní", "Další", "Zpět", "Rozumím", "Otevřít →", "Jen se podívat", "Na web", "Zobrazit seznam regionů"],
+    nl: ["Vrije plek", "Taal", "Kleur van de interface", "Volgende", "Terug", "Begrepen", "Openen →", "Even rondkijken", "Naar de site", "Lijst met regio’s"],
+    sv: ["Ledig plats", "Språk", "Gränssnittsfärg", "Nästa", "Tillbaka", "Uppfattat", "Öppna →", "Bara titta", "Till webbplatsen", "Visa lista över regioner"],
+    ro: ["Loc liber", "Limbă", "Culoarea interfeței", "Mai departe", "Înapoi", "Am înțeles", "Deschide →", "Doar mă uit", "Spre site", "Arată lista regiunilor"],
+    el: ["Ελεύθερη θέση", "Γλώσσα", "Χρώμα διεπαφής", "Επόμενο", "Πίσω", "Κατάλαβα", "Άνοιγμα →", "Απλώς να δω", "Μετάβαση στον ιστότοπο", "Λίστα περιοχών"],
+    hu: ["Szabad hely", "Nyelv", "A felület színe", "Tovább", "Vissza", "Értem", "Megnyitás →", "Csak körülnézek", "Az oldalra", "Régiók listája"],
+    fi: ["Vapaa paikka", "Kieli", "Käyttöliittymän väri", "Seuraava", "Takaisin", "Selvä", "Avaa →", "Vain katson", "Sivustolle", "Näytä alueiden luettelo"],
+    no: ["Ledig plass", "Språk", "Grensesnittfarge", "Neste", "Tilbake", "Skjønt", "Åpne →", "Bare se", "Til nettstedet", "Vis liste over regioner"],
+    da: ["Ledig plads", "Sprog", "Grænsefladefarve", "Næste", "Tilbage", "Forstået", "Åbn →", "Bare se", "Til webstedet", "Vis listen over regioner"],
+    is: ["Laust pláss", "Tungumál", "Litur viðmóts", "Áfram", "Til baka", "Skilið", "Opna →", "Bara skoða", "Á vefinn", "Sýna lista yfir héruð"],
+    lt: ["Laisva vieta", "Kalba", "Sąsajos spalva", "Toliau", "Atgal", "Supratau", "Atidaryti →", "Tik pažiūrėti", "Į svetainę", "Rodyti regionų sąrašą"],
+    lv: ["Brīva vieta", "Valoda", "Saskarnes krāsa", "Tālāk", "Atpakaļ", "Sapratu", "Atvērt →", "Tikai apskatīt", "Uz vietni", "Rādīt reģionu sarakstu"],
+    et: ["Vaba koht", "Keel", "Liidese värv", "Edasi", "Tagasi", "Selge", "Ava →", "Lihtsalt vaatan", "Veebilehele", "Näita piirkondade loendit"],
+    sk: ["Voľné miesto", "Jazyk", "Farba rozhrania", "Ďalej", "Späť", "Rozumiem", "Otvoriť →", "Len sa pozrieť", "Na web", "Zobraziť zoznam regiónov"],
+    sl: ["Prosto mesto", "Jezik", "Barva vmesnika", "Naprej", "Nazaj", "Razumem", "Odpri →", "Samo pogledati", "Na spletno mesto", "Prikaži seznam regij"],
+    hr: ["Slobodno mjesto", "Jezik", "Boja sučelja", "Dalje", "Natrag", "Razumijem", "Otvori →", "Samo pogledati", "Na web-mjesto", "Prikaži popis regija"],
+    bs: ["Slobodno mjesto", "Jezik", "Boja interfejsa", "Dalje", "Nazad", "Razumijem", "Otvori →", "Samo pogledati", "Na web-stranicu", "Prikaži listu regija"],
+    mk: ["Слободно место", "Јазик", "Боја на интерфејсот", "Следно", "Назад", "Разбрав", "Отвори →", "Само да погледам", "На сајтот", "Прикажи список на региони"],
+    bg: ["Свободно място", "Език", "Цвят на интерфейса", "Напред", "Назад", "Разбрах", "Отвори →", "Само да погледам", "Към сайта", "Покажи списъка с региони"],
+    sq: ["Vend i lirë", "Gjuha", "Ngjyra e ndërfaqes", "Tjetra", "Prapa", "Kuptova", "Hap →", "Vetëm të shoh", "Në faqe", "Shfaq listën e rajoneve"],
+    ky: ["Орун бош", "Тил", "Интерфейс түсү", "Кийинки", "Артка", "Түшүндүм", "Ачуу →", "Жөн эле көрүү", "Сайтка өтүү", "Региондордун тизмесин көрсөтүү"],
+    tg: ["Ҷои холӣ", "Забон", "Ранги интерфейс", "Баъдӣ", "Бозгашт", "Фаҳмо", "Кушодан →", "Танҳо тамошо", "Ба сайт", "Рӯйхати минтақаҳоро нишон диҳед"],
+    tk: ["Boş ýer", "Dil", "Interfeýs reňki", "Indiki", "Yza", "Düşündim", "Açmak →", "Diňe seretmek", "Saýta geçmek", "Sebitleriň sanawyny görkez"],
+    mn: ["Сул орон", "Хэл", "Интерфейсийн өнгө", "Дараах", "Буцах", "Ойлголоо", "Нээх →", "Зүгээр үзэх", "Сайт руу", "Бүс нутгийн жагсаалт харуулах"],
+    ka: ["თავისუფალი ადგილი", "ენა", "ინტერფეისის ფერი", "შემდეგი", "უკან", "გასაგებია", "გახსნა →", "მხოლოდ ყურება", "საიტზე", "რეგიონების სიის ჩვენება"],
+    ur: ["جگہ خالی ہے", "زبان", "انٹرفیس کا رنگ", "آگے", "پیچھے", "سمجھ گیا", "کھولیں →", "صرف دیکھنا", "سائٹ پر جائیں", "علاقوں کی فہرست دکھائیں"],
+    sw: ["Nafasi wazi", "Lugha", "Rangi ya kiolesura", "Endelea", "Rudi", "Nimeelewa", "Fungua →", "Niangalie tu", "Nenda kwenye tovuti", "Onyesha orodha ya mikoa"],
+    af: ["Oop plek", "Taal", "Koppelvlakkleur", "Volgende", "Terug", "Verstaan", "Maak oop →", "Kyk net", "Na die webwerf", "Wys lys van streke"],
+  };
+
   var STORAGE = "smena_lang";
   var current = "ru";
   var LIST = [];
@@ -314,6 +440,26 @@
       var map = {};
       for (var i = 0; i < KEYS.length; i++) map[KEYS[i]] = row[3][i];
       DICT[row[0]] = map;
+    }
+  });
+
+  /* третий слой: подсказки карты, знакомство и кнопки выбора */
+  [[EXTRA2_KEYS, EXTRA2]].forEach(function (layer) {
+    Object.keys(layer[1]).forEach(function (code) {
+      if (!DICT[code]) DICT[code] = {};
+      var values = layer[1][code];
+      for (var j = 0; j < layer[0].length; j++) {
+        if (values[j]) DICT[code][layer[0][j]] = values[j];
+      }
+    });
+  });
+
+  /* второй слой кладём поверх первого: меню, подвал, кнопки входа, цвета */
+  Object.keys(EXTRA).forEach(function (code) {
+    if (!DICT[code]) DICT[code] = {};
+    var values = EXTRA[code];
+    for (var i = 0; i < EXTRA_KEYS.length; i++) {
+      if (values[i]) DICT[code][EXTRA_KEYS[i]] = values[i];
     }
   });
 
