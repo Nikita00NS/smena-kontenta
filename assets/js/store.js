@@ -1665,6 +1665,26 @@ window.Store = (function () {
     });
   }
 
+  /* ------------------------------------------------ чат команды (редакция) */
+
+  function teamChatList() {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("team-chat-list", { token: token }).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Чат недоступен.");
+    });
+  }
+
+  function teamChatSend(text) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("team-chat-send", { token: token, text: text }).then(function (res) {
+      if (res && res.ok) return res.message;
+      throw new Error((res && res.error) || "Сообщение не отправилось.");
+    });
+  }
+
   function usersList() {
     var token = readToken();
     if (!token) return Promise.resolve({ users: [], roles: ROLES });
@@ -2171,6 +2191,8 @@ window.Store = (function () {
     diag: diag,
     adminLog: adminLog,
     usersList: usersList,
+    teamChatList: teamChatList,
+    teamChatSend: teamChatSend,
     userAccess: userAccess,
     founders: founders,
     foundersSave: foundersSave,

@@ -2806,6 +2806,52 @@ if ($act === 'user-message') {
     respond(array('ok' => true, 'message' => $msg));
 }
 
+/* ---------------------------------------------------------- чат команды */
+/* Общий чат редакции: короткие сообщения между теми, у кого есть доступ
+   к людям. Хранится одним файлом рядом с остальными данными проекта. */
+
+if ($act === 'team-chat-list') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!can($me, 'people.edit')) fail('Чат команды доступен только редакции.', 403);
+
+    $file = $DATA_DIR . '/team-chat.json';
+    $list = read_json($file, array());
+    if (!is_array($list)) $list = array();
+    respond(array(
+        'ok' => true,
+        'messages' => array_slice($list, -200),
+        'me' => $me['name'],
+        'role' => isset($me['access']) ? $me['access'] : '',
+    ));
+}
+
+if ($act === 'team-chat-send') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    if (!can($me, 'people.edit')) fail('Писать в чат может только редакция.', 403);
+
+    $message = text(isset($in['text']) ? $in['text'] : '', 1500);
+    if (slen($message) < 1) fail('Сообщение пустое.');
+
+    $file = $DATA_DIR . '/team-chat.json';
+    $list = read_json($file, array());
+    if (!is_array($list)) $list = array();
+    $row = array(
+        'id' => 'tc_' . bin2hex(random_bytes(4)),
+        'from' => $me['name'],
+        'role' => isset($me['access']) ? $me['access'] : '',
+        'text' => $message,
+        'createdAt' => date('c'),
+    );
+    $list[] = $row;
+    if (count($list) > 500) $list = array_slice($list, -500);
+    write_json($file, $list);
+    respond(array('ok' => true, 'message' => $row));
+}
+
 if ($act === 'messages-mine') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
