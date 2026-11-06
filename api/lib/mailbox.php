@@ -312,7 +312,13 @@ function mailbox_routes($act, $dir) {
             'ok' => $diag['ok'], 'error' => $diag['error'], 'at' => date('c'),
             'steps' => $diag['steps'], 'created' => $diag['created'],
         );
-        if ($diag['ok']) { $boxes[$key]['folders'] = $diag['folders']; }
+        if ($diag['ok']) {
+            $boxes[$key]['folders'] = $diag['folders'];
+            /* подобрали другую форму логина — запомним её */
+            if (!empty($diag['login']) && $diag['login'] !== $box['user']) {
+                $boxes[$key]['user'] = $diag['login'];
+            }
+        }
         mailboxes_save($dir, $boxes);
         if ($diag['ok']) {
             audit_log($dir, $me['email'], 'почта', 'ящик ' . $key . ': подключение проверено');
@@ -324,6 +330,7 @@ function mailbox_routes($act, $dir) {
             'folders' => $diag['folders'],
             'created' => $diag['created'],
             'steps' => $diag['steps'],
+            'login' => isset($diag['login']) ? $diag['login'] : '',
             'lastTest' => $boxes[$key]['lastTest'],
         ));
     }

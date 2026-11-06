@@ -3723,6 +3723,7 @@
           saveAi.disabled = false;
           $("[data-ai-key]", section).value = "";
           fillAi(res.ai);
+          if (res.note) aiNote.textContent = res.note;
         }, function (err) { saveAi.disabled = false; aiNote.textContent = err.message; });
       });
 
