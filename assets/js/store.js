@@ -237,7 +237,10 @@ window.Store = (function () {
           cacheUser(res.user);
           mirrorUser(res.user);
           emit();
-          return { ok: true, user: res.user, remote: true, recoveryCode: res.recoveryCode || "" };
+          return {
+            ok: true, user: res.user, remote: true, recoveryCode: res.recoveryCode || "",
+            pending: !!res.pending, needConfirm: res.needConfirm || "", mailSent: !!res.mailSent,
+          };
         }
         if (res && (res.offline || res.serverBroken)) {
           return {
@@ -1759,6 +1762,55 @@ window.Store = (function () {
     });
   }
 
+  /* ---------- почта проекта: ящики, письма, шаблоны ---------- */
+  function withToken(action, payload) {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    var body = Object.assign({}, payload || {}, { token: token });
+    return api(action, body).then(function (res) {
+      if (res && res.ok) return res;
+      throw new Error((res && res.error) || "Сервер не принял запрос.");
+    }, function () {
+      throw new Error("Сервер недоступен. Проверьте связь и попробуйте ещё раз.");
+    });
+  }
+
+  function mailBoxes() { return withToken("mailboxes"); }
+  function mailBoxSave(box) { return withToken("mailboxes-save", { box: box }); }
+  function mailBoxTest(key) { return withToken("mailboxes-test", { key: key }); }
+  function mailFolders(key) { return withToken("mail-folders", { key: key }); }
+  function mailList(params) { return withToken("mail-list", params); }
+  function mailGet(params) { return withToken("mail-get", params); }
+  function mailAttachment(params) { return withToken("mail-attachment", params); }
+  function mailFlag(params) { return withToken("mail-flag", params); }
+  function mailMove(params) { return withToken("mail-move", params); }
+  function mailSend(payload) { return withToken("mail-send", payload); }
+  function mailDrafts() { return withToken("mail-drafts"); }
+  function mailDraftSave(draft) { return withToken("mail-draft-save", draft); }
+  function mailDraftDelete(id) { return withToken("mail-draft-delete", { id: id }); }
+  function mailTemplates() { return withToken("mail-templates"); }
+  function mailTemplateSave(tpl) { return withToken("mail-template-save", tpl); }
+  function mailTemplatePreview(key) { return withToken("mail-template-preview", { key: key }); }
+  function mailTemplateTest(key, to) { return withToken("mail-template-test", { key: key, to: to }); }
+  function mailLog() { return withToken("mail-log"); }
+
+  /* ---------- приём в команду ---------- */
+  function hiringMine() { return withToken("hiring-mine"); }
+  function hiringApply(payload) { return withToken("hiring-apply", payload); }
+  function hiringTest() { return withToken("hiring-test"); }
+  function hiringTestSubmit(answers) { return withToken("hiring-test-submit", { answers: answers }); }
+  function hiringList(stage) { return withToken("hiring-list", { stage: stage || "" }); }
+  function hiringCheck(id, key, ok, note) {
+    return withToken("hiring-checklist", { id: id, key: key, ok: !!ok, note: note || "" });
+  }
+  function hiringDecide(id, decision, note) {
+    return withToken("hiring-decide", { id: id, decision: decision, note: note || "" });
+  }
+  /* доступ администратора по паролю редакции: владелец выдаёт роль по почте */
+  function grantAdmin(email, access, password) {
+    return api("grant-admin", { email: email, access: access, password: password });
+  }
+
   function supportSend(payload) {
     return api("support-send", {
       name: payload.name,
@@ -2053,6 +2105,32 @@ window.Store = (function () {
     foundersSave: foundersSave,
     mailStatus: mailStatus,
     mailSave: mailSave,
+    mailBoxes: mailBoxes,
+    mailBoxSave: mailBoxSave,
+    mailBoxTest: mailBoxTest,
+    mailFolders: mailFolders,
+    mailList: mailList,
+    mailGet: mailGet,
+    mailAttachment: mailAttachment,
+    mailFlag: mailFlag,
+    mailMove: mailMove,
+    mailSend: mailSend,
+    mailDrafts: mailDrafts,
+    mailDraftSave: mailDraftSave,
+    mailDraftDelete: mailDraftDelete,
+    mailTemplates: mailTemplates,
+    mailTemplateSave: mailTemplateSave,
+    mailTemplatePreview: mailTemplatePreview,
+    mailTemplateTest: mailTemplateTest,
+    mailLog: mailLog,
+    hiringMine: hiringMine,
+    hiringApply: hiringApply,
+    hiringTest: hiringTest,
+    hiringTestSubmit: hiringTestSubmit,
+    hiringList: hiringList,
+    hiringCheck: hiringCheck,
+    hiringDecide: hiringDecide,
+    grantAdmin: grantAdmin,
     mailTest: mailTest,
     confirmSend: confirmSend,
     confirmCheck: confirmCheck,
