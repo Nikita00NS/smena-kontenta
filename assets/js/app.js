@@ -1514,7 +1514,7 @@
         '<span class="kicker">Служебное</span><h1>Нужны права<br>директора</h1></div>' +
         '<div class="page-hero__aside"><p class="lead">Вы вошли как «' + esc(user.name) +
         "», роль: <b>" + esc(user.access || "Пользователь") + "</b>. Панель открывается роли " +
-        "«Директор» — она достаётся первому аккаунту на сервере.</p></div></div></section>" +
+        "«Директор» — её выдаёт владелец проекта паролем редакции.</p></div></div></section>" +
         '<section class="section wrap"><div class="panel" style="padding:24px">' +
         '<div class="diag" data-gate-list><p class="form__note">Проверяем сервер…</p></div>' +
         '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:16px">' +
@@ -1522,7 +1522,12 @@
         '<button class="btn btn--ghost btn--sm" type="button" data-gate-refresh>Обновить права</button>' +
         '<a class="btn btn--ghost btn--sm" href="/profile">В кабинет</a>' +
         '<button class="btn btn--ghost btn--sm" type="button" data-gate-logout>Выйти</button>' +
-        '</div><p class="form__note" data-gate-status></p>' +
+        "</div>" +
+        '<div class="field" data-gate-pass-wrap hidden style="margin:12px 0 0;max-width:320px">' +
+        '<label for="gate-pass">Пароль редакции</label>' +
+        '<input id="gate-pass" type="password" data-gate-pass autocomplete="current-password">' +
+        "</div>" +
+        '<p class="form__note" data-gate-status></p>' +
         '<p class="form__note">Версия интерфейса: ' + esc((SC && SC.build) || "—") + "</p>" +
         "</div></section>";
 
@@ -1544,6 +1549,8 @@
           (info.directorExists ? esc(info.directorName || "назначен") : "не назначен") + "</b></div>";
         if (claimBtn && info.canClaimDirector) {
           claimBtn.hidden = false;
+          var passWrap = $("[data-gate-pass-wrap]", host);
+          if (passWrap) passWrap.hidden = false;
         }
       }
 
@@ -1552,7 +1559,8 @@
       if (claimBtn) {
         claimBtn.addEventListener("click", function () {
           claimBtn.disabled = true;
-          Store.claimDirector().then(function () {
+          var passEl = $("[data-gate-pass]", host);
+          Store.claimDirector(passEl ? passEl.value : "").then(function () {
             gateStatus.textContent = "Права директора выданы. Перезагружаем панель…";
             window.location.reload();
           }, function (err) {
@@ -2049,8 +2057,9 @@
 
         if (!all.length) {
           listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Пока никого нет</b>' +
-            "<p>Первый зарегистрировавшийся получит права директора. После этого здесь появятся " +
-            'люди и их карточки.</p><p><a class="link-accent" href="/join">Открыть регистрацию</a></p></div>';
+            "Права выдаёт владелец проекта: первый аккаунт больше не получает роль сам. " +
+            'После регистрации здесь появятся люди и их карточки.</p>' +
+            '<p><a class="link-accent" href="/join">Открыть регистрацию</a></p></div>';
           return;
         }
         if (!list.length) {
@@ -2493,13 +2502,18 @@
         '<button class="btn btn--ghost btn--sm" type="button" data-diag-refresh ' +
         'style="margin-top:12px">Проверить снова</button>' +
         '<div class="pass-change"><span class="kicker">Пароль редакции</span>' +
-        '<p class="form__note">По нему открываются очереди, которые не привязаны к аккаунту. ' +
-        "Если не меняли — действует стандартный.</p>" +
+        '<p class="form__note">По нему открываются очереди, которые не привязаны к аккаунту, ' +
+        "и служебные проверки сервера. Если не меняли — действует стандартный: " +
+        "его подсказывает проверка выше.</p>" +
         '<div class="row" style="gap:10px;flex-wrap:wrap">' +
         '<input type="password" data-ep-old placeholder="Текущий пароль" autocomplete="current-password">' +
-        '<input type="password" data-ep-new placeholder="Новый пароль (6+)" autocomplete="new-password">' +
+        '<input type="password" data-ep-new placeholder="Новый пароль (10+)" autocomplete="new-password">' +
         '<button class="btn btn--sm" type="button" data-ep-save>Сменить</button></div>' +
-        '<p class="form__note" data-ep-status></p></div></div>';
+        '<p class="form__note" data-ep-status></p></div>' +
+        '<div class="audit" style="margin-top:22px"><span class="kicker">Журнал действий</span>' +
+        '<p class="form__note">Кто и когда менял роли, карты, почту и состояние сайта. ' +
+        "Последние 120 записей.</p>" +
+        '<div class="diag" data-audit-list><p class="form__note">Загружаем…</p></div></div></div>';
       host.appendChild(section);
 
       var listEl = $("[data-diag-list]", section);
@@ -2519,8 +2533,8 @@
           listEl.innerHTML =
             row("PHP", d.php) +
             row("Аккаунтов на сервере", d.accounts, d.accounts > 0) +
-            row("Первый аккаунт станет директором", d.first_will_be_director ? "да" : "нет",
-              d.first_will_be_director) +
+            row("Стандартный пароль редакции", d.editor_default_password ? "да — смените" : "нет",
+              d.editor_default_password === false) +
             row("Материалов", d.posts) +
             row("Запись данных", d.data_writable ? "разрешена" : "запрещена", !!d.data_writable) +
             row("Загрузка медиа", d.uploads_writable ? "разрешена" : "запрещена", !!d.uploads_writable) +
@@ -2531,8 +2545,34 @@
         });
       }
 
+      var auditEl = $("[data-audit-list]", section);
+
+      function loadAudit() {
+        if (!auditEl || !Store.adminLog) return;
+        auditEl.innerHTML = '<p class="form__note">Загружаем…</p>';
+        Store.adminLog().then(function (res) {
+          var rows = (res && res.entries) || [];
+          if (!rows.length) {
+            auditEl.innerHTML = '<p class="form__note">Пока пусто: действий ещё не было.</p>';
+            return;
+          }
+          auditEl.innerHTML = rows
+            .map(function (e) {
+              return '<div class="diag__row"><span>' + esc(fmtWhen(e.at)) + " · " + esc(e.who) +
+                "</span><b>" + esc(e.action) + (e.details ? " — " + esc(e.details) : "") + "</b></div>";
+            })
+            .join("");
+        });
+      }
+
       var btn = $("[data-diag-refresh]", section);
-      if (btn) btn.addEventListener("click", load);
+      if (btn) {
+        btn.addEventListener("click", function () {
+          load();
+          loadAudit();
+        });
+      }
+      loadAudit();
 
       var epSave = $("[data-ep-save]", section);
       if (epSave && Store.apiSetPass) {
@@ -4386,19 +4426,6 @@
       }
     }
 
-    /* первый зарегистрированный становится директором: говорим это прямо */
-    if (Store && Store.diag) {
-      Store.diag().then(function (d) {
-        if (!d || !d.first_will_be_director) return;
-        var notice = document.createElement("div");
-        notice.className = "auth-notice";
-        notice.innerHTML = "<b>Вы первый.</b> Аккаунт, созданный первым, получает права " +
-          "директора: панель проекта, права участников, выдача пресс-карт.";
-        var anchorEl = $("[data-register-form]", box);
-        if (anchorEl && anchorEl.parentNode) anchorEl.parentNode.insertBefore(notice, anchorEl);
-      }, function () {});
-    }
-
     var regionSelect = $("[data-auth-region]", box);
     if (regionSelect) {
       regionSelect.innerHTML = '<option value="">Выберите регион</option>' +
@@ -5271,7 +5298,7 @@
         '<div class="field" style="margin:0"><input name="oldPass" type="password" ' +
         'placeholder="Текущий пароль" autocomplete="current-password"></div>' +
         '<div class="field" style="margin:0"><input name="newPass" type="password" ' +
-        'placeholder="Новый пароль, от 6 символов" autocomplete="new-password"></div>' +
+        'placeholder="Новый пароль, от 8 символов" autocomplete="new-password"></div>' +
         '<button class="btn btn--sm btn--ghost" type="button" data-pass-change>Сменить пароль</button>' +
         "</div>" +
         '<p class="form__note" data-pass-note></p></div>' +
@@ -5419,8 +5446,8 @@
           var noteEl = $("[data-pass-note]", host);
           var oldPass = form.querySelector('[name="oldPass"]').value;
           var newPass = form.querySelector('[name="newPass"]').value;
-          if (newPass.length < 6) {
-            noteEl.textContent = "Новый пароль — не короче шести символов.";
+          if (newPass.length < 8) {
+            noteEl.textContent = "Новый пароль — не короче восьми символов.";
             return;
           }
           passBtn.disabled = true;

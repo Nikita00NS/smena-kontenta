@@ -4,10 +4,13 @@ AddDefaultCharset UTF-8
 
 <IfModule mod_headers.c>
   Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "DENY"
+  Header set Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+  Header set Referrer-Policy "no-referrer"
 </IfModule>
 
 # Данные лежат в api/data и закрыты отдельным .htaccess
-<FilesMatch "\.(json|tmp|log)$">
+<FilesMatch "\.(json|tmp|log|txt)$">
   Require all denied
   Deny from all
 </FilesMatch>
