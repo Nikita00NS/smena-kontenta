@@ -1283,8 +1283,11 @@ if ($act === 'card-apply') {
         return strcmp((string) (isset($b['date']) ? $b['date'] : ''), (string) (isset($a['date']) ? $a['date'] : ''));
     });
 
+    /* Сотруднику редакции карта положена по должности: пять опубликованных
+       материалов требуем только от внешних авторов. */
+    $byRole = isset($me['access']) && (string) $me['access'] !== '' && (string) $me['access'] !== 'Пользователь';
     $need = card_min_posts();
-    if (count($mine) < $need) {
+    if (!$byRole && count($mine) < $need) {
         fail('Для заявки нужно не меньше ' . $need . ' опубликованных материалов. У вас: ' . count($mine) . '.', 400);
     }
 
@@ -1339,6 +1342,7 @@ if ($act === 'card-apply') {
         'authorRegion' => isset($me['region']) ? $me['region'] : '',
         'authorRole' => isset($me['role']) ? $me['role'] : '',
         'authorEmail' => $me['email'],
+        'byRole' => $byRole,
         'posts' => $attached,
         'status' => 'pending',
         'number' => '',
@@ -1364,7 +1368,7 @@ if ($act === 'card-apply') {
 
 if ($act === 'card-queue') {
     $in = body();
-    require_editor_or_admin($DATA_DIR, $in);
+    require_staff($DATA_DIR, $in, 'cards.issue');
     $cards = read_cards($DATA_DIR);
     $out = array();
     foreach ($cards as $card) {
@@ -1378,7 +1382,7 @@ if ($act === 'card-queue') {
 
 if ($act === 'card-review') {
     $in = body();
-    require_editor_or_admin($DATA_DIR, $in);
+    $me = require_editor_or_admin($DATA_DIR, $in);
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
     $note = text(isset($in['note']) ? $in['note'] : '', 600);
@@ -1413,7 +1417,7 @@ if ($act === 'card-review') {
     $cards[$id]['note'] = $note;
     $cards[$id]['decidedAt'] = $now;
     if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить решение.', 500);
-    audit_log($DATA_DIR, 'пароль редакции', 'card-review',
+    audit_log($DATA_DIR, (string) $me['email'], 'card-review',
         ($decision === 'approve' ? 'карта выдана ' : 'в заявке отказано ') . $cards[$id]['authorName']);
     respond(array(
         'ok' => true,
@@ -1440,8 +1444,7 @@ if ($act === 'mine') {
 
 if ($act === 'queue') {
     $in = body();
-    $password = isset($in['password']) ? (string) $in['password'] : '';
-    require_confirm($DATA_DIR, $in, 'posts.review');
+    require_staff($DATA_DIR, $in, 'posts.review');
     $posts = read_json($DATA_DIR . '/posts.json', array());
     $pending = array();
     $published = 0;
@@ -1457,8 +1460,7 @@ if ($act === 'queue') {
 
 if ($act === 'review') {
     $in = body();
-    $password = isset($in['password']) ? (string) $in['password'] : '';
-    require_confirm($DATA_DIR, $in, 'posts.review');
+    $me = require_confirm($DATA_DIR, $in, 'posts.review');
 
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
@@ -1479,7 +1481,7 @@ if ($act === 'review') {
         points_award_rule($DATA_DIR, $posts[$id]['authorId'], $rule, 'редакция',
             'Материал «' . $posts[$id]['title'] . '»', 'post:' . $id);
     }
-    audit_log($DATA_DIR, 'пароль редакции', 'review',
+    audit_log($DATA_DIR, (string) $me['email'], 'review',
         ($decision === 'approve' ? 'опубликован' : 'отклонён') . ' материал ' . $id . ' — ' . $posts[$id]['title']);
     respond(array('ok' => true, 'post' => public_post($posts[$id])));
 }
@@ -1488,27 +1490,26 @@ if ($act === 'setpass') {
     $in = body();
     $old = isset($in['old']) ? (string) $in['old'] : '';
     $new = isset($in['new']) ? (string) $in['new'] : '';
-    require_confirm($DATA_DIR, $in, 'server.diag');
+    $me = require_confirm($DATA_DIR, $in, 'server.diag');
     $old = '';
     if (slen($new) < 10) fail('Новый пароль короче десяти символов.');
     $cfg = read_json($DATA_DIR . '/config.json', array());
     $cfg['editor'] = password_hash($new, PASSWORD_DEFAULT);
     $cfg['changedAt'] = date('c');
     if (!write_json($DATA_DIR . '/config.json', $cfg)) fail('Не удалось сохранить пароль.', 500);
-    audit_log($DATA_DIR, 'пароль редакции', 'setpass', 'пароль редакции изменён');
+    audit_log($DATA_DIR, (string) $me['email'], 'setpass', 'пароль редакции изменён');
     respond(array('ok' => true));
 }
 
 if ($act === 'remove') {
     $in = body();
-    $password = isset($in['password']) ? (string) $in['password'] : '';
-    require_confirm($DATA_DIR, $in, 'posts.remove');
+    $me = require_confirm($DATA_DIR, $in, 'posts.remove');
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $posts = read_json($DATA_DIR . '/posts.json', array());
     if (!isset($posts[$id])) fail('Материал не найден.', 404);
     unset($posts[$id]);
     write_json($DATA_DIR . '/posts.json', $posts);
-    audit_log($DATA_DIR, 'пароль редакции', 'remove', 'материал удалён: ' . $id);
+    audit_log($DATA_DIR, (string) $me['email'], 'remove', 'материал удалён: ' . $id);
     respond(array('ok' => true));
 }
 
@@ -1830,8 +1831,7 @@ if ($act === 'portfolio-mine') {
 
 if ($act === 'portfolio-queue') {
     $in = body();
-    $password = isset($in['password']) ? (string) $in['password'] : '';
-    require_confirm($DATA_DIR, $in, 'points.award');
+    require_staff($DATA_DIR, $in, 'points.award');
     $list = read_portfolio($DATA_DIR);
     usort($list, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
@@ -1958,8 +1958,7 @@ if ($act === 'consent-status') {
 
 if ($act === 'consent-queue') {
     $in = body();
-    $password = isset($in['password']) ? (string) $in['password'] : '';
-    require_confirm($DATA_DIR, $in, 'docs.manage');
+    require_staff($DATA_DIR, $in, 'docs.manage');
     $list = read_consents($DATA_DIR);
     usort($list, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
@@ -2465,7 +2464,7 @@ if ($act === 'claim-director') {
     }
     if (!$updated) fail('Аккаунт не найден.', 404);
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить роль.', 500);
-    audit_log($DATA_DIR, $updated['name'], 'claim-director', 'роль директора выдана по паролю редакции');
+    audit_log($DATA_DIR, (string) $updated['email'], 'claim-director', 'роль директора выдана по коду из письма');
     respond(array('ok' => true, 'user' => public_user($updated)));
 }
 
@@ -3237,7 +3236,7 @@ if ($act === 'boss-grant') {
 
 if ($act === 'grant-admin') {
     $in = body();
-    require_confirm($DATA_DIR, $in, 'people.access');
+    $me = require_confirm($DATA_DIR, $in, 'people.access');
     $email = norm_email(isset($in['email']) ? $in['email'] : '');
     if (!$email) fail('Укажите почту аккаунта.');
     $access = text(isset($in['access']) ? $in['access'] : '', 60);
@@ -3266,7 +3265,7 @@ if ($act === 'grant-admin') {
         fail('Аккаунта с такой почтой нет. Пусть человек зарегистрируется — потом выдайте доступ повторно.', 404);
     }
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось выдать доступ.', 500);
-    audit_log($DATA_DIR, 'пароль редакции', 'выдача доступа', $email . ' → ' . $access);
+    audit_log($DATA_DIR, (string) $me['email'], 'выдача доступа', $email . ' → ' . $access);
     respond(array('ok' => true, 'user' => public_user($updated)));
 }
 
@@ -3366,7 +3365,7 @@ if ($act === 'mail-save') {
    Теперь нужен пароль редакции — он есть только у владельца проекта. */
 if ($act === 'mail-setup') {
     $params = array_merge(body(), $_GET);
-    require_confirm($DATA_DIR, $params, 'mail.manage');
+    $me = require_confirm($DATA_DIR, $params, 'mail.manage');
 
     $host = text(isset($params['host']) ? $params['host'] : '', 120);
     $port = (int) (isset($params['port']) ? $params['port'] : 465);
@@ -3397,7 +3396,7 @@ if ($act === 'mail-setup') {
         'setupDone' => true,
     );
     if (!write_json(smtp_config_file($DATA_DIR), $cfg_save)) fail('Не удалось сохранить настройки почты.', 500);
-    audit_log($DATA_DIR, 'пароль редакции', 'mail-setup', 'настройки SMTP обновлены');
+    audit_log($DATA_DIR, (string) $me['email'], 'mail-setup', 'настройки SMTP обновлены');
 
     $test_to = norm_email(isset($params['test']) ? $params['test'] : '');
     $result = null;
@@ -3437,7 +3436,7 @@ if ($act === 'mail-setup') {
    неподтверждённого домена: при ошибке остаётся прежний отправитель. */
 if ($act === 'mail-from') {
     $in = array_merge(body(), $_GET);
-    require_confirm($DATA_DIR, $in, 'mail.manage');
+    $me = require_confirm($DATA_DIR, $in, 'mail.manage');
     $from = norm_email(isset($in['from']) ? $in['from'] : '');
     if (!$from) fail('Укажите адрес отправителя.');
     $to = norm_email(isset($in['test']) ? $in['test'] : '');
@@ -3470,7 +3469,7 @@ if ($act === 'mail-from') {
         $saved['setupDone'] = true;
         $saved['lastTest'] = array('ok' => true, 'error' => '', 'to' => $to, 'at' => date('c'));
         if (!write_json(smtp_config_file($DATA_DIR), $saved)) fail('Не удалось сохранить настройки.', 500);
-        audit_log($DATA_DIR, 'пароль редакции', 'mail-from', 'отправитель: ' . $from);
+        audit_log($DATA_DIR, (string) $me['email'], 'mail-from', 'отправитель: ' . $from);
         respond(array('ok' => true, 'switched' => true, 'from' => $from,
                       'mail' => smtp_public_config($DATA_DIR)));
     }
@@ -3480,7 +3479,7 @@ if ($act === 'mail-from') {
     $cfg['updatedAt'] = date('c');
     $cfg['setupDone'] = true;
     if (!write_json(smtp_config_file($DATA_DIR), $cfg)) fail('Не удалось сохранить настройки.', 500);
-    audit_log($DATA_DIR, 'пароль редакции', 'mail-from', 'отправитель: ' . $from);
+    audit_log($DATA_DIR, (string) $me['email'], 'mail-from', 'отправитель: ' . $from);
     respond(array('ok' => true, 'switched' => true, 'mail' => smtp_public_config($DATA_DIR)));
 }
 
@@ -4201,6 +4200,17 @@ function require_confirm($dir, $in, $cap = '') {
         'needConfirm' => true,
     ), 428);
     return null;
+}
+
+/* Просмотр очередей кодом из письма не запираем: вошедшему сотруднику с
+   правом достаточно входа. Код спрашиваем только за само решение. */
+function require_staff($dir, $in, $cap = '') {
+    $me = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Сначала войдите в аккаунт.', 401);
+    if ($cap !== '' && !can($me, $cap) && !is_top_admin($me)) {
+        fail('Для этого действия нужны права администрации.', 403);
+    }
+    return $me;
 }
 
 /* ---- подтверждение действий кодом ---- */

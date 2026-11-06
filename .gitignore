@@ -7,3 +7,6 @@ api/data/probe.json
 .DS_Store
 *.log
 node_modules/
+
+# локальные проверки и черновики
+.scratch/
