@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "jsdom": "^31.0.0",
     "php-parser": "^3.7.0",
     "php-wasm": "^0.2.0"
   }
