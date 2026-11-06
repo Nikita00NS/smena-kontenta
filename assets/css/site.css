@@ -4392,6 +4392,8 @@ select option {
 .btn--paper:hover {
   background: #fff;
   border-color: #fff;
+  /* цвет текста обязателен: иначе белым по белому и надпись пропадает */
+  color: #0a0a0a;
 }
 
 .btn--outline-paper {
@@ -7384,4 +7386,222 @@ html[data-theme="light"] .founder__photo--mono {
   .mail-side { position: static; }
   .mail-read { min-height: 260px; }
   .mail-list { max-height: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Пресс-карта на главной: объяснение условий и образец карты.
+   --------------------------------------------------------------------------- */
+.presscard-cta { border-top: 1px solid var(--line); }
+.presscard-cta__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: clamp(24px, 3vw, 56px);
+  align-items: center;
+}
+.presscard-cta__text .lead { margin: 12px 0 20px; }
+.presscard-cta__steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.presscard-cta__step {
+  border-top: 2px solid var(--ink);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.presscard-cta__step b {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  line-height: 1;
+}
+.presscard-cta__step span { font-size: 0.82rem; line-height: 1.35; opacity: 0.72; }
+.presscard-cta__sample {
+  position: relative;
+  aspect-ratio: 1.585;
+  background: var(--paper-2);
+  border: 1px solid var(--line-strong);
+  padding: clamp(16px, 2vw, 26px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  transform: rotate(-1.2deg);
+  transition: transform 0.4s var(--ease);
+}
+.presscard-cta__sample:hover { transform: rotate(0deg) translateY(-3px); }
+.presscard-cta__badge img { height: 20px; width: auto; filter: grayscale(1); opacity: 0.85; }
+.presscard-cta__role {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.presscard-cta__name {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.presscard-cta__meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.presscard-cta__strip { display: flex; gap: 3px; margin-top: 10px; height: 22px; align-items: flex-end; }
+.presscard-cta__strip i {
+  flex: 1;
+  background: currentColor;
+  opacity: 0.75;
+  height: 100%;
+}
+.presscard-cta__strip i:nth-child(2n) { height: 72%; }
+.presscard-cta__strip i:nth-child(3n) { height: 88%; }
+.presscard-cta__strip i:nth-child(5n) { height: 60%; }
+@media (max-width: 900px) {
+  .presscard-cta__grid { grid-template-columns: 1fr; }
+  .presscard-cta__sample { max-width: 420px; }
+  .presscard-cta__steps { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------------------------------------------------------
+   Технические работы: заглушка на весь экран. Шапку, меню и подвал прячем,
+   чтобы человек не уходил по ссылкам на закрытые разделы.
+   --------------------------------------------------------------------------- */
+body.is-maint .site-header,
+body.is-maint .site-footer,
+body.is-maint .ticker,
+body.is-maint .site-notice,
+body.is-maint #main,
+body.is-maint [data-footer],
+body.is-maint .to-top { display: none !important; }
+body.is-maint { overflow: hidden; }
+.maint-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 74, 23, 0.16), transparent 55%),
+    radial-gradient(circle at 80% 85%, rgba(255, 74, 23, 0.1), transparent 55%),
+    var(--dark, #0a0a0a);
+  color: var(--on-dark, #f4f2ed);
+  overflow: auto;
+}
+.maint-screen__glow {
+  position: absolute;
+  width: 58vmax;
+  height: 58vmax;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 74, 23, 0.18), transparent 65%);
+  animation: maint-breathe 7s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes maint-breathe {
+  0%, 100% { transform: scale(0.9); opacity: 0.55; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+.maint-screen__card {
+  position: relative;
+  max-width: 620px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.maint-screen__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(244, 242, 237, 0.28);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.maint-screen__pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #ff4a17);
+  animation: maint-pulse 1.6s ease-in-out infinite;
+}
+@keyframes maint-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.75); }
+}
+.maint-screen h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 6vw, 3.6rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  margin: 6px 0 0;
+}
+.maint-screen p {
+  font-size: clamp(0.95rem, 1.4vw, 1.08rem);
+  line-height: 1.55;
+  color: rgba(244, 242, 237, 0.74);
+  margin: 0;
+  max-width: 46ch;
+}
+.maint-screen__note {
+  border-left: 2px solid var(--accent, #ff4a17);
+  padding-left: 12px;
+  text-align: left;
+  color: rgba(244, 242, 237, 0.9) !important;
+}
+.maint-screen__bar {
+  width: min(320px, 60vw);
+  height: 3px;
+  background: rgba(244, 242, 237, 0.16);
+  overflow: hidden;
+  margin: 10px 0 4px;
+}
+.maint-screen__bar span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: var(--accent, #ff4a17);
+  animation: maint-slide 2.4s ease-in-out infinite;
+}
+@keyframes maint-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(280%); }
+}
+.maint-screen__row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+
+/* обзор админки: режим работ включается одной кнопкой */
+.overview__maint {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  padding: 14px 16px;
+  font-size: 0.9rem;
+}
+
+/* помощник письма: поле ключа спрятано, пока не понадобится */
+.ai-panel details.ai-key { margin-top: 12px; }
+.ai-panel details.ai-key summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  opacity: 0.65;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

@@ -502,6 +502,7 @@
     { href: "/media-school", label: "Медиашкола", key: "school" },
     { href: "/about", label: "О проекте", key: "about" },
     { href: "/founders", label: "Основатели", key: "founders" },
+    { href: "/#press-card", label: "Пресс-карта", key: "press" },
     { href: "/partners", label: "Партнёрам", key: "partners" },
   ];
 
@@ -716,17 +717,29 @@
       var page = document.body.getAttribute("data-page");
       if (page === "admin") return;
 
-      var host = document.getElementById("main");
-      if (!host) return;
-      host.innerHTML =
-        '<section class="section wrap"><div class="panel maint">' +
-        '<span class="kicker">Технические работы</span>' +
-        "<h1>Сайт обновляется</h1>" +
-        "<p>Мы ненадолго закрыли доступ, чтобы всё работало как надо. " +
-        "Материалы и аккаунты в порядке — вернитесь через несколько минут.</p>" +
-        (site.notice ? '<p class="maint__note">' + esc(site.notice) + "</p>" : "") +
-        '<div class="row"><a class="btn btn--ghost btn--sm" href="/join#login">Войти в кабинет</a></div>' +
-        "</div></section>";
+      document.body.classList.add("is-maint");
+      var prevScreen = document.querySelector("[data-maint-screen]");
+      if (prevScreen) prevScreen.remove();
+      var screen = document.createElement("div");
+      screen.className = "maint-screen";
+      screen.setAttribute("data-maint-screen", "");
+      screen.setAttribute("role", "alert");
+      screen.innerHTML =
+        '<div class="maint-screen__glow" aria-hidden="true"></div>' +
+        '<div class="maint-screen__card">' +
+        '<span class="maint-screen__badge"><span class="maint-screen__pulse"></span>обновляем сайт</span>' +
+        "<h1>Скоро вернёмся</h1>" +
+        "<p>Мы обновляем «Смену контента»: чиним мелочи и готовим новые разделы. " +
+        "Материалы, аккаунты и черновики в порядке — ничего не потеряется.</p>" +
+        (site.notice ? '<p class="maint-screen__note">' + esc(site.notice) + "</p>" : "") +
+        '<div class="maint-screen__bar" aria-hidden="true"><span></span></div>' +
+        '<div class="maint-screen__row">' +
+        '<a class="btn btn--accent btn--sm" href="/join#login">Войти в кабинет</a>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-maint-reload>Проверить снова</button>' +
+        "</div></div>";
+      document.body.appendChild(screen);
+      var reloadBtn = screen.querySelector("[data-maint-reload]");
+      if (reloadBtn) reloadBtn.addEventListener("click", function () { window.location.reload(); });
     }, function () {});
   }
 
@@ -1050,6 +1063,13 @@
     var state = { s: 1, tx: 0, ty: 0 };
 
     function apply() {
+      /* Карта живёт только внутри своего квадрата: при перетаскивании и
+         масштабировании подрезаем сдвиг, чтобы фон не уезжал за рамки. */
+      state.s = Math.min(6, Math.max(1, state.s));
+      var minTx = vbW - state.s * vbW;
+      var minTy = vbH - state.s * vbH;
+      state.tx = Math.min(0, Math.max(minTx, state.tx));
+      state.ty = Math.min(0, Math.max(minTy, state.ty));
       layer.setAttribute(
         "transform",
         "translate(" + state.tx + " " + state.ty + ") scale(" + state.s + ")"
@@ -1880,11 +1900,31 @@
             tile("editorials", "редакций", d.editorials || 0, "в регионах") +
             tile("cards", "заявок на карту", d.cards_pending || 0, "ждут решения") +
             tile("support", "обращений", d.support_open || 0, "открыты") +
-            tile("mail", "почта", d.mail_configured ? "есть" : "нет",
-              d.mail_configured ? d.mail_from : "настройте отправку") +
-            tile("site", "сайт", d.maintenance ? "на работах" : "открыт",
-              d.maintenance ? "включён режим работ" : "люди видят сайт") +
-            tile("server", "аккаунтов на сервере", d.accounts || 0, "PHP " + d.php);
+            '<div class="overview__maint">' +
+              "<span>Режим работ: <b>" + (d.maintenance ? "включён" : "выключен") + "</b></span>" +
+              '<button class="btn btn--sm ' + (d.maintenance ? "btn--accent" : "btn--ghost") +
+              '" type="button" data-maint-toggle>' +
+              (d.maintenance ? "Снять режим работ" : "Включить режим работ") + "</button>" +
+            "</div>";
+
+          var maintBtn = $("[data-maint-toggle]", cards);
+          if (maintBtn) maintBtn.addEventListener("click", function () {
+            var next = !d.maintenance;
+            if (next && !window.confirm("Закрыть сайт для посетителей? Редакция продолжит работать в панели.")) return;
+            maintBtn.disabled = true;
+            Store.siteStatus().then(function (site) {
+              return Store.siteSave({
+                maintenance: next,
+                noticeOn: !!(site && site.noticeOn),
+                notice: (site && site.notice) || "",
+              });
+            }).then(function () {
+              window.location.reload();
+            }, function (err) {
+              maintBtn.disabled = false;
+              maintBtn.textContent = (err && err.message) || "Не сохранилось.";
+            });
+          });
 
           $$("[data-go-tab]", cards).forEach(function (b) {
             b.addEventListener("click", function () {
@@ -3660,190 +3700,47 @@
        Никаких паролей и адресов серверов на экране: всё уже настроено
        на сервере. Здесь только статус, проверка и переход в письма.
        ------------------------------------------------------------------ */
+    /* Помощник письма. Ключ DeepSeek уже лежит на сервере: на экране только
+       состояние и кнопка проверки. Поле для замены ключа спрятано в
+       «Заменить ключ» — чтобы не выглядело, будто ключ нужно вводить заново. */
     function mountMailSettings(host) {
-      if (!Store.mailBoxes) return;
+      if (!Store.aiStatus) return;
+      var old = $("[data-mail-admin]");
+      if (old) old.remove();
+
       var section = document.createElement("section");
       section.className = "section wrap";
-      section.setAttribute("style", "padding-top:8px");
+      section.setAttribute("style", "padding-top:6px");
       section.setAttribute("data-mail-admin", "");
       section.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Почта</span>' +
-        "<h2>Ящики проекта</h2>" +
-        '<p class="sec-head__text">Четыре ящика на домене smenakontenta.ru: редакция, общие вопросы, ' +
-        "системные письма и поддержка. Всё подключено на сервере — пароли вводить не нужно. " +
-        "Проверьте чтение и отправку, дальше работайте во вкладке писем.</p></div></div>" +
-        '<div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
-        '<button class="btn btn--accent btn--sm" type="button" data-mail-check-all>Проверить все ящики</button>' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-mail-refresh-boxes>Обновить</button>' +
-        '<span class="form__note" data-mail-all-note style="align-self:center"></span></div>' +
-        '<div class="mail-boxes" data-box-editor></div>' +
-        '<div class="panel" style="padding:22px;margin-top:18px" data-ai-panel>' +
+        '<div class="panel ai-panel" style="padding:20px" data-ai-panel>' +
         '<span class="kicker">Помощник писем</span>' +
         '<h3 style="margin:6px 0 8px">DeepSeek</h3>' +
-        '<p class="form__note">Помощник предлагает текст письма: составить, улучшить, сократить, ' +
-        "поправить орфографию, ответить на обращение, перевести. Ничего не отправляет сам — " +
-        "только готовит текст. Ключ хранится на сервере и в браузер не возвращается.</p>" +
+        '<p class="form__note">Помощник составляет, сокращает и переводит текст письма. ' +
+        "Ключ уже сохранён на сервере — вводить его не нужно и в браузер он не возвращается.</p>" +
         '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">' +
-        '<input type="password" data-ai-key placeholder="Ключ DeepSeek, начинается на sk-" ' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-ai-test>Проверить связь</button>' +
+        "</div>" +
+        '<p class="form__note" data-ai-note style="margin-top:10px"></p>' +
+        '<details class="ai-key"><summary>Заменить ключ</summary>' +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">' +
+        '<input type="password" data-ai-key placeholder="Новый ключ DeepSeek, sk-…" ' +
         'autocomplete="new-password" style="flex:1;min-width:240px;max-width:420px">' +
         '<button class="btn btn--accent btn--sm" type="button" data-ai-save>Сохранить ключ</button>' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-ai-test>Проверить связь</button>' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-ai-clear>Удалить ключ</button></div>' +
-        '<p class="form__note" data-ai-note style="margin-top:10px"></p></div>';
+        "</div></details></div>";
       host.appendChild(section);
 
-      var editor = $("[data-box-editor]", section);
-      var allNote = $("[data-mail-all-note]", section);
       var aiNote = $("[data-ai-note]", section);
 
-      function boxCard(b) {
-        var ready = !!b.ready;
-        var folders = b.lastTest && b.lastTest.ok ? (b.folders || []).length : 0;
-        var readState = b.lastTest
-          ? (b.lastTest.ok ? "работает" + (folders ? " · папок " + folders : "") : "ошибка — " + b.lastTest.error)
-          : "не проверялось";
-        var sendState = b.lastSmtp
-          ? (b.lastSmtp.ok ? "проверена" + (b.lastSmtp.host ? " · " + b.lastSmtp.host : "") : "не проходит — " + b.lastSmtp.error)
-          : "не проверялась";
-        return '<div class="mail-box-card' + (ready ? "" : " mail-box-card--off") + '" data-box-card="' + esc(b.key) + '">' +
-          '<div class="mail-box-card__top">' +
-          "<div><b>" + esc(b.label || b.key) + "</b>" +
-          '<div class="form__note">' + esc(b.address) + (b.note ? " · " + esc(b.note) : "") + "</div></div>" +
-          (ready ? '<span class="status status--pub">подключён</span>'
-            : '<span class="status status--pending">нужна настройка</span>') +
-          "</div>" +
-          '<div class="diag" style="margin-top:12px">' +
-          '<div class="diag__row"><span>Чтение писем</span><b class="' +
-          (b.lastTest ? (b.lastTest.ok ? "is-good" : "is-bad") : "") + '">' + esc(readState) + "</b></div>" +
-          '<div class="diag__row"><span>Отправка</span><b class="' +
-          (b.lastSmtp ? (b.lastSmtp.ok ? "is-good" : "is-bad") : "") + '">' + esc(sendState) + "</b></div>" +
-          "</div>" +
-          '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:14px">' +
-          '<button class="btn btn--sm" type="button" data-open>Открыть ящик</button>' +
-          '<button class="btn btn--ghost btn--sm" type="button" data-check>Проверить чтение</button>' +
-          '<button class="btn btn--ghost btn--sm" type="button" data-send-test>Проверить отправку</button>' +
-          "</div>" +
-          '<p class="form__note" data-note style="margin-top:8px"></p>' +
-          "</div>";
-      }
-
-      function draw(boxes) {
-        editor.innerHTML = boxes.map(boxCard).join("");
-        bindCards();
-      }
-
-      function refresh() {
-        return Store.mailBoxes().then(function (res) {
-          draw(res.mailboxes || []);
-          return res.mailboxes || [];
-        }, function (err) {
-          editor.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>";
-          return [];
-        });
-      }
-
-      function bindCards() {
-        $$("[data-box-card]", editor).forEach(function (card) {
-          var key = card.getAttribute("data-box-card");
-          var noteEl = $("[data-note]", card);
-
-          $("[data-open]", card).addEventListener("click", function () {
-            var client = $("[data-mail-client]");
-            var btn = client ? $('[data-box="' + key + '"]', client) : null;
-            if (btn) btn.click();
-            if (client) client.scrollIntoView({ behavior: "smooth", block: "start" });
-          });
-
-          $("[data-check]", card).addEventListener("click", function () {
-            var btn = $("[data-check]", card);
-            btn.disabled = true;
-            noteEl.textContent = "Проверяем вход и папки…";
-            Store.mailBoxTest(key).then(function (res) {
-              btn.disabled = false;
-              noteEl.textContent = res.ok
-                ? "Чтение работает. Папок: " + (res.folders || []).length +
-                  ((res.created || []).length ? ". Создано: " + res.created.join(", ") : "")
-                : (res.error || "Не подключилось.");
-              refresh();
-            }, function (err) {
-              btn.disabled = false;
-              noteEl.textContent = (err && err.message) || "Не подключилось.";
-            });
-          });
-
-          $("[data-send-test]", card).addEventListener("click", function () {
-            var btn = $("[data-send-test]", card);
-            btn.disabled = true;
-            noteEl.textContent = "Отправляем проверочное письмо на адрес ящика…";
-            Store.mailBoxSmtpTest(key).then(function (res) {
-              btn.disabled = false;
-              noteEl.textContent = res.ok
-                ? "Письмо ушло через " + (res.host || "SMTP") + " на " + res.to + ". Проверьте ящик."
-                : (res.error || "Отправка не получилась.");
-              refresh();
-            }, function (err) {
-              btn.disabled = false;
-              noteEl.textContent = (err && err.message) || "Отправка не получилась.";
-            });
-          });
-        });
-      }
-
-      var checkAll = $("[data-mail-check-all]", section);
-      if (checkAll) checkAll.addEventListener("click", function () {
-        checkAll.disabled = true;
-        allNote.textContent = "Проверяем четыре ящика…";
-        var keys = [];
-        $$("[data-box-card]", editor).forEach(function (c) { keys.push(c.getAttribute("data-box-card")); });
-        var done = 0, good = 0, bad = [];
-        function step(i) {
-          if (i >= keys.length) {
-            checkAll.disabled = false;
-            allNote.textContent = "Готово: работают " + good + " из " + keys.length +
-              (bad.length ? ". Не отвечают: " + bad.join(", ") : ".");
-            refresh();
-            return;
-          }
-          Store.mailBoxTest(keys[i]).then(function (res) {
-            if (res && res.ok) good++; else bad.push(keys[i]);
-          }, function () { bad.push(keys[i]); }).then(function () {
-            done++;
-            allNote.textContent = "Проверено " + done + " из " + keys.length + "…";
-            step(i + 1);
-          });
-        }
-        step(0);
-      });
-
-      var refreshBtn = $("[data-refresh-boxes]", section);
-      if (refreshBtn) refreshBtn.addEventListener("click", refresh);
-
-      refresh();
-
-      /* --- DeepSeek: один ключ, без выбора сервисов --- */
       function fillAi(ai) {
         if (!aiNote) return;
         aiNote.textContent = ai && ai.ready
-          ? "Ключ задан. Модель: " + ai.model +
-            (ai.lastTest ? " · проверка: " + (ai.lastTest.ok ? "работает" : ai.lastTest.error) : "")
-          : "Ключ не задан — помощник в письмах будет выключен.";
+          ? "Ключ на сервере, модель " + ai.model +
+            (ai.lastTest ? " · проверка: " + (ai.lastTest.ok ? "работает" : ai.lastTest.error) : " · ещё не проверялся")
+          : "Ключ не задан — помощник в письмах выключен.";
       }
 
       Store.aiStatus().then(function (res) { fillAi(res.ai); }, function () {});
-
-      var saveAi = $("[data-ai-save]", section);
-      if (saveAi) saveAi.addEventListener("click", function () {
-        var keyEl = $("[data-ai-key]", section);
-        var key = (keyEl && keyEl.value || "").trim();
-        if (!key) { aiNote.textContent = "Вставьте ключ DeepSeek."; return; }
-        saveAi.disabled = true;
-        Store.aiSave({ key: key }).then(function (res) {
-          saveAi.disabled = false;
-          if (keyEl) keyEl.value = "";
-          fillAi(res.ai);
-          aiNote.textContent = (res.note ? res.note + " " : "") + "Ключ сохранён. Нажмите «Проверить связь».";
-        }, function (err) { saveAi.disabled = false; aiNote.textContent = err.message; });
-      });
 
       var testAi = $("[data-ai-test]", section);
       if (testAi) testAi.addEventListener("click", function () {
@@ -3852,14 +3749,25 @@
         Store.aiTest().then(function (res) {
           testAi.disabled = false;
           aiNote.textContent = "DeepSeek ответил: «" + res.answer + "». Модель: " + (res.ai && res.ai.model);
-        }, function (err) { testAi.disabled = false; aiNote.textContent = err.message; });
+        }, function (err) {
+          testAi.disabled = false;
+          aiNote.textContent = (err && err.message) || "Не ответил.";
+        });
       });
 
-      var clearAi = $("[data-ai-clear]", section);
-      if (clearAi) clearAi.addEventListener("click", function () {
-        if (!window.confirm("Удалить ключ помощника?")) return;
-        Store.aiSave({ clearKey: true }).then(function (res) { fillAi(res.ai); }, function (err) {
-          aiNote.textContent = err.message;
+      var saveAi = $("[data-ai-save]", section);
+      if (saveAi) saveAi.addEventListener("click", function () {
+        var keyEl = $("[data-ai-key]", section);
+        var key = ((keyEl && keyEl.value) || "").trim();
+        if (!key) { aiNote.textContent = "Вставьте новый ключ DeepSeek."; return; }
+        saveAi.disabled = true;
+        Store.aiSave({ key: key }).then(function (res) {
+          saveAi.disabled = false;
+          if (keyEl) keyEl.value = "";
+          fillAi(res.ai);
+        }, function (err) {
+          saveAi.disabled = false;
+          aiNote.textContent = (err && err.message) || "Не сохранилось.";
         });
       });
     }

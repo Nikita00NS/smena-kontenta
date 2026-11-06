@@ -102,6 +102,10 @@ SHORT = {
     "Ямало-Ненецкий АО": "ЯНАО",
     "Чукотский АО": "Чукотка",
     "Хабаровский край": "Хабаровский край",
+    "Донецкая Народная Республика": "ДНР",
+    "Луганская Народная Республика": "ЛНР",
+    "Запорожская область": "Запорожская обл.",
+    "Херсонская область": "Херсонская обл.",
 }
 
 TRANSLIT = {
@@ -196,9 +200,36 @@ EXTRA_REGIONS = [
 ]
 
 
+# Контуры четырёх регионов, которых нет в геоданных 2021 года. Границы областей
+# лежат отдельным репозиторием EugeneBorshch/ukraine_geojson (файлы в WGS84,
+# та же проекция, что и у остальных регионов).
+EXTRA_SHAPES = {
+    "UA_14_Donetska.geojson": "Донецкая Народная Республика",
+    "UA_09_Luhanska.geojson": "Луганская Народная Республика",
+    "UA_23_Zaporizka.geojson": "Запорожская область",
+    "UA_65_Khersonska.geojson": "Херсонская область",
+}
+
+
+def rings_of(geom, tol, min_area):
+    polys = geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]
+    rings = []
+    for poly in polys:
+        for ring in poly:
+            pts = [(lon, lat) for lon, lat in ring]
+            if ring_area(pts) < min_area:
+                continue
+            simp = simplify(pts, tol)
+            if len(simp) < 3:
+                continue
+            rings.append((ring_area(simp), simp))
+    rings.sort(key=lambda r: -r[0])
+    return rings[:6]
+
+
 def main():
     if len(sys.argv) < 2:
-        print("usage: build-map.py <ru.json>")
+        print("usage: build-map.py <ru.json> [папка с контурами новых регионов]")
         sys.exit(1)
 
     data = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -221,23 +252,23 @@ def main():
         geom = feat["geometry"]
         polys = geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]
 
-        rings = []
-        for poly in polys:
-            for ring in poly:  # внешние + дырки; дырки игнорируем визуально
-                pts = [(lon, lat) for lon, lat in ring]
-                if ring_area(pts) < MIN_AREA:
-                    continue
-                simp = simplify(pts, TOL)
-                if len(simp) < 3:
-                    continue
-                rings.append((ring_area(simp), simp))
-
+        rings = rings_of(geom, TOL, MIN_AREA)
         if not rings:
             continue
-        rings.sort(key=lambda r: -r[0])
-        rings = rings[:6]  # самое крупное + несколько островов
-
         prepared.append((name, rings))
+
+    # Четыре новых региона: берём контуры областей из отдельного набора.
+    if len(sys.argv) > 2 and os.path.isdir(sys.argv[2]):
+        for fname, region_name in EXTRA_SHAPES.items():
+            path = os.path.join(sys.argv[2], fname)
+            if not os.path.exists(path):
+                print("нет файла контура:", fname)
+                continue
+            src = json.load(open(path, encoding="utf-8"))
+            feat = src["features"][0] if src.get("type") == "FeatureCollection" else src
+            rings = rings_of(feat["geometry"], TOL, MIN_AREA)
+            if rings:
+                prepared.append((region_name, rings))
 
     # первая проекция для общего bounding box
     for name, rings in prepared:
@@ -262,7 +293,9 @@ def main():
             xy = [to_svg(x, y) for x, y in project(ring)]
             d_parts.append("M" + " ".join(
                 f"{x:.1f} {y:.1f}" for x, y in xy) + "Z")
-        district = district_of.get(name, "")
+        district = district_of.get(name) or {
+            e["name"]: e["district"] for e in EXTRA_REGIONS
+        }.get(name, "")
         if district:
             used_district.add(district)
         regions.append({
@@ -273,8 +306,8 @@ def main():
             "d": "".join(d_parts),
         })
 
-    # Регионы, которых нет в геоданных 2021 года. Контуров у них пока нет,
-    # но страницы, авторы и редакции работать должны.
+    # Регионы без контуров (например, Севастополь): страницы и редакции
+    # работают, на карте просто нет силуэта.
     for extra in EXTRA_REGIONS:
         if extra["name"] not in {r["name"] for r in regions}:
             regions.append({
