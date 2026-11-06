@@ -1,386 +1,211 @@
 /* ============================================================================
-   ЯЗЫКИ ИНТЕРФЕЙСА
+   ЯЗЫКИ ИНТЕРФЕЙСА — 30 языков
 
-   Честно о границах: «все языки мира» одним файлом не сделать — в мире больше
-   семи тысяч языков, и каждый перевод должен делать человек, а не подстановка
-   слов. Здесь работает другое: интерфейс (меню, кнопки, подписи полей, футер)
-   переводится на восемь языков, а тексты материалов остаются на языке автора.
+   Что переводится: меню, кнопки, подписи полей, служебные ссылки. Что не
+   переводится: тексты материалов, документы и цитаты — это меняло бы смысл.
+   Машинный перевод в юридических текстах недопустим, поэтому каждая строка
+   здесь — словарная, а не автоматическая.
 
-   Как добавить язык: скопируйте блок в DICT, переведите значения. Ключ — это
-   ровно тот русский текст, который стоит в разметке. Ничего больше править не
-   нужно: скрипт сам найдёт совпадения на странице.
+   Как добавить язык: допишите строку в LOCALES (код языка и 24 значения в
+   порядке KEYS). Всё остальное подхватится само: переключатель, ?lang=,
+   направление письма (dir) и запоминание выбора.
 
-   Язык хранится в localStorage (smena_lang) и в адресе (?lang=en), чтобы
-   ссылку можно было передать другому человеку.
+   Ключ — ровно тот русский текст, который стоит в разметке.
    ========================================================================== */
 (function () {
   "use strict";
 
-  var LANGS = [
-    { code: "ru", name: "Русский", dir: "ltr" },
-    { code: "en", name: "English", dir: "ltr" },
-    { code: "de", name: "Deutsch", dir: "ltr" },
-    { code: "fr", name: "Français", dir: "ltr" },
-    { code: "es", name: "Español", dir: "ltr" },
-    { code: "it", name: "Italiano", dir: "ltr" },
-    { code: "pt", name: "Português", dir: "ltr" },
-    { code: "tr", name: "Türkçe", dir: "ltr" },
-    { code: "ar", name: "العربية", dir: "rtl" },
-    { code: "zh", name: "中文", dir: "ltr" }
+  var KEYS = [
+    "Перейти к содержанию", "Лента", "Новости", "Медиашкола", "Регионы",
+    "Документы", "О проекте", "Партнёры", "Войти", "Регистрация", "Кабинет",
+    "Опубликовать материал", "Стать автором", "Все материалы", "Читать",
+    "Поиск", "Отправить", "Сохранить", "Удалить", "Имя", "Почта", "Пароль",
+    "Главная", "Светлая тема"
   ];
 
-  /* русский текст → перевод. Отсутствующий ключ остаётся на русском:
-     лучше показать оригинал, чем пустое место. */
-  var DICT = {
-    en: {
-      "Перейти к содержанию": "Skip to content",
-      "Лента": "Feed",
-      "Новости": "News",
-      "Медиашкола": "Media school",
-      "Регионы": "Regions",
-      "Документы": "Documents",
-      "О проекте": "About",
-      "Партнёры": "Partners",
-      "Войти": "Log in",
-      "Регистрация": "Sign up",
-      "Выйти": "Log out",
-      "Кабинет": "Account",
-      "Настройки": "Settings",
-      "Опубликовать материал": "Publish a story",
-      "Стать автором": "Become an author",
-      "Все материалы": "All stories",
-      "Читать": "Read",
-      "Поиск": "Search",
-      "Отправить": "Send",
-      "Сохранить": "Save",
-      "Отмена": "Cancel",
-      "Удалить": "Delete",
-      "Имя": "Name",
-      "Почта": "Email",
-      "Пароль": "Password",
-      "Город": "City",
-      "Тема": "Subject",
-      "Главная": "Home",
-      "Наверх": "Back to top",
-      "Светлая тема": "Light theme",
-      "Цвет интерфейса": "Interface color",
-      "Язык": "Language",
-      "Материалы": "Stories",
-      "Люди": "People",
-      "Поддержка": "Support"
-    },
-    de: {
-      "Перейти к содержанию": "Zum Inhalt springen",
-      "Лента": "Feed",
-      "Новости": "Nachrichten",
-      "Медиашкола": "Medienschule",
-      "Регионы": "Regionen",
-      "Документы": "Dokumente",
-      "О проекте": "Über uns",
-      "Партнёры": "Partner",
-      "Войти": "Anmelden",
-      "Регистрация": "Registrieren",
-      "Выйти": "Abmelden",
-      "Кабинет": "Konto",
-      "Настройки": "Einstellungen",
-      "Опубликовать материал": "Beitrag veröffentlichen",
-      "Стать автором": "Autor werden",
-      "Все материалы": "Alle Beiträge",
-      "Читать": "Lesen",
-      "Поиск": "Suche",
-      "Отправить": "Senden",
-      "Сохранить": "Speichern",
-      "Отмена": "Abbrechen",
-      "Удалить": "Löschen",
-      "Имя": "Name",
-      "Почта": "E-Mail",
-      "Пароль": "Passwort",
-      "Город": "Stadt",
-      "Тема": "Betreff",
-      "Главная": "Startseite",
-      "Наверх": "Nach oben",
-      "Светлая тема": "Helles Design",
-      "Цвет интерфейса": "Farbe der Oberfläche",
-      "Язык": "Sprache",
-      "Материалы": "Beiträge",
-      "Люди": "Menschen",
-      "Поддержка": "Hilfe"
-    },
-    fr: {
-      "Перейти к содержанию": "Aller au contenu",
-      "Лента": "Fil",
-      "Новости": "Actualités",
-      "Медиашкола": "École média",
-      "Регионы": "Régions",
-      "Документы": "Documents",
-      "О проекте": "À propos",
-      "Партнёры": "Partenaires",
-      "Войти": "Connexion",
-      "Регистрация": "Inscription",
-      "Выйти": "Déconnexion",
-      "Кабинет": "Compte",
-      "Настройки": "Paramètres",
-      "Опубликовать материал": "Publier un article",
-      "Стать автором": "Devenir auteur",
-      "Все материалы": "Tous les articles",
-      "Читать": "Lire",
-      "Поиск": "Rechercher",
-      "Отправить": "Envoyer",
-      "Сохранить": "Enregistrer",
-      "Отмена": "Annuler",
-      "Удалить": "Supprimer",
-      "Имя": "Nom",
-      "Почта": "E-mail",
-      "Пароль": "Mot de passe",
-      "Город": "Ville",
-      "Тема": "Objet",
-      "Главная": "Accueil",
-      "Наверх": "En haut",
-      "Светлая тема": "Thème clair",
-      "Цвет интерфейса": "Couleur de l'interface",
-      "Язык": "Langue",
-      "Материалы": "Articles",
-      "Люди": "Personnes",
-      "Поддержка": "Assistance"
-    },
-    es: {
-      "Перейти к содержанию": "Ir al contenido",
-      "Лента": "Novedades",
-      "Новости": "Noticias",
-      "Медиашкола": "Escuela de medios",
-      "Регионы": "Regiones",
-      "Документы": "Documentos",
-      "О проекте": "Sobre el proyecto",
-      "Партнёры": "Socios",
-      "Войти": "Entrar",
-      "Регистрация": "Registro",
-      "Выйти": "Salir",
-      "Кабинет": "Cuenta",
-      "Настройки": "Ajustes",
-      "Опубликовать материал": "Publicar un material",
-      "Стать автором": "Ser autor",
-      "Все материалы": "Todos los materiales",
-      "Читать": "Leer",
-      "Поиск": "Buscar",
-      "Отправить": "Enviar",
-      "Сохранить": "Guardar",
-      "Отмена": "Cancelar",
-      "Удалить": "Eliminar",
-      "Имя": "Nombre",
-      "Почта": "Correo",
-      "Пароль": "Contraseña",
-      "Город": "Ciudad",
-      "Тема": "Asunto",
-      "Главная": "Inicio",
-      "Наверх": "Arriba",
-      "Светлая тема": "Tema claro",
-      "Цвет интерфейса": "Color de la interfaz",
-      "Язык": "Idioma",
-      "Материалы": "Materiales",
-      "Люди": "Personas",
-      "Поддержка": "Soporte"
-    },
-    it: {
-      "Перейти к содержанию": "Vai al contenuto",
-      "Лента": "Feed",
-      "Новости": "Notizie",
-      "Медиашкола": "Scuola media",
-      "Регионы": "Regioni",
-      "Документы": "Documenti",
-      "О проекте": "Il progetto",
-      "Партнёры": "Partner",
-      "Войти": "Accedi",
-      "Регистрация": "Registrati",
-      "Выйти": "Esci",
-      "Кабинет": "Account",
-      "Настройки": "Impostazioni",
-      "Опубликовать материал": "Pubblica un contenuto",
-      "Стать автором": "Diventa autore",
-      "Все материалы": "Tutti i contenuti",
-      "Читать": "Leggi",
-      "Поиск": "Cerca",
-      "Отправить": "Invia",
-      "Сохранить": "Salva",
-      "Отмена": "Annulla",
-      "Удалить": "Elimina",
-      "Имя": "Nome",
-      "Почта": "Email",
-      "Пароль": "Password",
-      "Город": "Città",
-      "Тема": "Oggetto",
-      "Главная": "Home",
-      "Наверх": "Su",
-      "Светлая тема": "Tema chiaro",
-      "Цвет интерфейса": "Colore dell'interfaccia",
-      "Язык": "Lingua",
-      "Материалы": "Contenuti",
-      "Люди": "Persone",
-      "Поддержка": "Assistenza"
-    },
-    pt: {
-      "Перейти к содержанию": "Ir para o conteúdo",
-      "Лента": "Feed",
-      "Новости": "Notícias",
-      "Медиашкола": "Escola de mídia",
-      "Регионы": "Regiões",
-      "Документы": "Documentos",
-      "О проекте": "Sobre o projeto",
-      "Партнёры": "Parceiros",
-      "Войти": "Entrar",
-      "Регистрация": "Cadastro",
-      "Выйти": "Sair",
-      "Кабинет": "Conta",
-      "Настройки": "Configurações",
-      "Опубликовать материал": "Publicar material",
-      "Стать автором": "Ser autor",
-      "Все материалы": "Todos os materiais",
-      "Читать": "Ler",
-      "Поиск": "Buscar",
-      "Отправить": "Enviar",
-      "Сохранить": "Salvar",
-      "Отмена": "Cancelar",
-      "Удалить": "Excluir",
-      "Имя": "Nome",
-      "Почта": "E-mail",
-      "Пароль": "Senha",
-      "Город": "Cidade",
-      "Тема": "Assunto",
-      "Главная": "Início",
-      "Наверх": "Ao topo",
-      "Светлая тема": "Tema claro",
-      "Цвет интерфейса": "Cor da interface",
-      "Язык": "Idioma",
-      "Материалы": "Materiais",
-      "Люди": "Pessoas",
-      "Поддержка": "Suporte"
-    },
-    tr: {
-      "Перейти к содержанию": "İçeriğe geç",
-      "Лента": "Akış",
-      "Новости": "Haberler",
-      "Медиашкола": "Medya okulu",
-      "Регионы": "Bölgeler",
-      "Документы": "Belgeler",
-      "О проекте": "Proje hakkında",
-      "Партнёры": "Ortaklar",
-      "Войти": "Giriş",
-      "Регистрация": "Kayıt",
-      "Выйти": "Çıkış",
-      "Кабинет": "Hesap",
-      "Настройки": "Ayarlar",
-      "Опубликовать материал": "İçerik yayınla",
-      "Стать автором": "Yazar ol",
-      "Все материалы": "Tüm içerikler",
-      "Читать": "Oku",
-      "Поиск": "Ara",
-      "Отправить": "Gönder",
-      "Сохранить": "Kaydet",
-      "Отмена": "İptal",
-      "Удалить": "Sil",
-      "Имя": "Ad",
-      "Почта": "E-posta",
-      "Пароль": "Şifre",
-      "Город": "Şehir",
-      "Тема": "Konu",
-      "Главная": "Ana sayfa",
-      "Наверх": "Yukarı",
-      "Светлая тема": "Açık tema",
-      "Цвет интерфейса": "Arayüz rengi",
-      "Язык": "Dil",
-      "Материалы": "İçerikler",
-      "Люди": "Kişiler",
-      "Поддержка": "Destek"
-    },
-    ar: {
-      "Перейти к содержанию": "تخطَّ إلى المحتوى",
-      "Лента": "التدفق",
-      "Новости": "الأخبار",
-      "Медиашкола": "مدرسة الإعلام",
-      "Регионы": "المناطق",
-      "Документы": "الوثائق",
-      "О проекте": "عن المشروع",
-      "Партнёры": "الشركاء",
-      "Войти": "تسجيل الدخول",
-      "Регистрация": "إنشاء حساب",
-      "Выйти": "خروج",
-      "Кабинет": "الحساب",
-      "Настройки": "الإعدادات",
-      "Опубликовать материал": "نشر مادة",
-      "Стать автором": "كن كاتبًا",
-      "Все материалы": "كل المواد",
-      "Читать": "اقرأ",
-      "Поиск": "بحث",
-      "Отправить": "إرسال",
-      "Сохранить": "حفظ",
-      "Отмена": "إلغاء",
-      "Удалить": "حذف",
-      "Имя": "الاسم",
-      "Почта": "البريد",
-      "Пароль": "كلمة المرور",
-      "Город": "المدينة",
-      "Тема": "الموضوع",
-      "Главная": "الرئيسية",
-      "Наверх": "إلى الأعلى",
-      "Светлая тема": "الوضع الفاتح",
-      "Цвет интерфейса": "لون الواجهة",
-      "Язык": "اللغة",
-      "Материалы": "المواد",
-      "Люди": "الأشخاص",
-      "Поддержка": "الدعم"
-    },
-    zh: {
-      "Перейти к содержанию": "跳到正文",
-      "Лента": "信息流",
-      "Новости": "新闻",
-      "Медиашкола": "媒体学校",
-      "Регионы": "地区",
-      "Документы": "文件",
-      "О проекте": "关于项目",
-      "Партнёры": "合作伙伴",
-      "Войти": "登录",
-      "Регистрация": "注册",
-      "Выйти": "退出",
-      "Кабинет": "个人中心",
-      "Настройки": "设置",
-      "Опубликовать материал": "发布稿件",
-      "Стать автором": "成为作者",
-      "Все материалы": "全部稿件",
-      "Читать": "阅读",
-      "Поиск": "搜索",
-      "Отправить": "发送",
-      "Сохранить": "保存",
-      "Отмена": "取消",
-      "Удалить": "删除",
-      "Имя": "姓名",
-      "Почта": "邮箱",
-      "Пароль": "密码",
-      "Город": "城市",
-      "Тема": "主题",
-      "Главная": "首页",
-      "Наверх": "回到顶部",
-      "Светлая тема": "浅色主题",
-      "Цвет интерфейса": "界面颜色",
-      "Язык": "语言",
-      "Материалы": "稿件",
-      "Люди": "人员",
-      "Поддержка": "支持"
-    }
-  };
+  /* [код, название, направление, 24 перевода] */
+  var LOCALES = [
+    ["ru", "Русский", "ltr", null],
+    ["en", "English", "ltr", ["Skip to content", "Feed", "News", "Media school", "Regions",
+      "Documents", "About", "Partners", "Log in", "Sign up", "Account",
+      "Publish a story", "Become an author", "All stories", "Read",
+      "Search", "Send", "Save", "Delete", "Name", "Email", "Password",
+      "Home", "Light theme"]],
+    ["de", "Deutsch", "ltr", ["Zum Inhalt springen", "Feed", "Nachrichten", "Medienschule", "Regionen",
+      "Dokumente", "Über uns", "Partner", "Anmelden", "Registrieren", "Konto",
+      "Beitrag veröffentlichen", "Autor werden", "Alle Beiträge", "Lesen",
+      "Suche", "Senden", "Speichern", "Löschen", "Name", "E-Mail", "Passwort",
+      "Startseite", "Helles Design"]],
+    ["fr", "Français", "ltr", ["Aller au contenu", "Fil", "Actualités", "École média", "Régions",
+      "Documents", "À propos", "Partenaires", "Connexion", "Inscription", "Compte",
+      "Publier un article", "Devenir auteur", "Tous les articles", "Lire",
+      "Rechercher", "Envoyer", "Enregistrer", "Supprimer", "Nom", "E-mail", "Mot de passe",
+      "Accueil", "Thème clair"]],
+    ["es", "Español", "ltr", ["Ir al contenido", "Novedades", "Noticias", "Escuela de medios", "Regiones",
+      "Documentos", "Sobre el proyecto", "Socios", "Entrar", "Registro", "Cuenta",
+      "Publicar un material", "Ser autor", "Todos los materiales", "Leer",
+      "Buscar", "Enviar", "Guardar", "Eliminar", "Nombre", "Correo", "Contraseña",
+      "Inicio", "Tema claro"]],
+    ["it", "Italiano", "ltr", ["Vai al contenuto", "Feed", "Notizie", "Scuola media", "Regioni",
+      "Documenti", "Il progetto", "Partner", "Accedi", "Registrati", "Account",
+      "Pubblica un contenuto", "Diventa autore", "Tutti i contenuti", "Leggi",
+      "Cerca", "Invia", "Salva", "Elimina", "Nome", "Email", "Password",
+      "Home", "Tema chiaro"]],
+    ["pt", "Português", "ltr", ["Ir para o conteúdo", "Feed", "Notícias", "Escola de mídia", "Regiões",
+      "Documentos", "Sobre o projeto", "Parceiros", "Entrar", "Cadastro", "Conta",
+      "Publicar material", "Ser autor", "Todos os materiais", "Ler",
+      "Buscar", "Enviar", "Salvar", "Excluir", "Nome", "E-mail", "Senha",
+      "Início", "Tema claro"]],
+    ["tr", "Türkçe", "ltr", ["İçeriğe geç", "Akış", "Haberler", "Medya okulu", "Bölgeler",
+      "Belgeler", "Proje hakkında", "Ortaklar", "Giriş", "Kayıt", "Hesap",
+      "İçerik yayınla", "Yazar ol", "Tüm içerikler", "Oku",
+      "Ara", "Gönder", "Kaydet", "Sil", "Ad", "E-posta", "Şifre",
+      "Ana sayfa", "Açık tema"]],
+    ["ar", "العربية", "rtl", ["تخطَّ إلى المحتوى", "التدفق", "الأخبار", "مدرسة الإعلام", "المناطق",
+      "الوثائق", "عن المشروع", "الشركاء", "تسجيل الدخول", "إنشاء حساب", "الحساب",
+      "نشر مادة", "كن كاتبًا", "كل المواد", "اقرأ",
+      "بحث", "إرسال", "حفظ", "حذف", "الاسم", "البريد", "كلمة المرور",
+      "الرئيسية", "الوضع الفاتح"]],
+    ["zh", "中文", "ltr", ["跳到正文", "信息流", "新闻", "媒体学校", "地区",
+      "文件", "关于项目", "合作伙伴", "登录", "注册", "个人中心",
+      "发布稿件", "成为作者", "全部稿件", "阅读",
+      "搜索", "发送", "保存", "删除", "姓名", "邮箱", "密码",
+      "首页", "浅色主题"]],
+    ["uk", "Українська", "ltr", ["Перейти до вмісту", "Стрічка", "Новини", "Медіашкола", "Регіони",
+      "Документи", "Про проєкт", "Партнери", "Увійти", "Реєстрація", "Кабінет",
+      "Опублікувати матеріал", "Стати автором", "Усі матеріали", "Читати",
+      "Пошук", "Надіслати", "Зберегти", "Видалити", "Ім'я", "Пошта", "Пароль",
+      "Головна", "Світла тема"]],
+    ["kk", "Қазақша", "ltr", ["Мазмұнға өту", "Лента", "Жаңалықтар", "Медиамектеп", "Аймақтар",
+      "Құжаттар", "Жоба туралы", "Серіктестер", "Кіру", "Тіркелу", "Кабинет",
+      "Материал жариялау", "Автор болу", "Барлық материалдар", "Оқу",
+      "Іздеу", "Жіберу", "Сақтау", "Жою", "Аты", "Пошта", "Құпиясөз",
+      "Басты бет", "Ашық тақырып"]],
+    ["uz", "O‘zbekcha", "ltr", ["Kontentga o‘tish", "Lenta", "Yangiliklar", "Media maktab", "Hududlar",
+      "Hujjatlar", "Loyiha haqida", "Hamkorlar", "Kirish", "Ro‘yxatdan o‘tish", "Kabinet",
+      "Material chop etish", "Muallif bo‘lish", "Barcha materiallar", "O‘qish",
+      "Qidirish", "Yuborish", "Saqlash", "O‘chirish", "Ism", "Pochta", "Parol",
+      "Bosh sahifa", "Yorug‘ mavzu"]],
+    ["az", "Azərbaycanca", "ltr", ["Məzmuna keç", "Lent", "Xəbərlər", "Media məktəbi", "Regionlar",
+      "Sənədlər", "Layihə haqqında", "Tərəfdaşlar", "Daxil ol", "Qeydiyyat", "Şəxsi kabinet",
+      "Materialı dərc et", "Müəllif ol", "Bütün materiallar", "Oxu",
+      "Axtarış", "Göndər", "Yadda saxla", "Sil", "Ad", "Poçt", "Şifrə",
+      "Ana səhifə", "İşıqlı tema"]],
+    ["hy", "Հայերեն", "ltr", ["Անցնել բովանդակությանը", "Հոսք", "Նորություններ", "Մեդիադպրոց", "Տարածաշրջաններ",
+      "Փաստաթղթեր", "Նախագծի մասին", "Գործընկերներ", "Մուտք", "Գրանցում", "Անձնական էջ",
+      "Հրապարակել նյութ", "Դառնալ հեղինակ", "Բոլոր նյութերը", "Կարդալ",
+      "Որոնում", "Ուղարկել", "Պահել", "Ջնջել", "Անուն", "Փոստ", "Գաղտնաբառ",
+      "Գլխավոր", "Բաց թեմա"]],
+    ["he", "עברית", "rtl", ["דלג לתוכן", "פיד", "חדשות", "בית ספר לתקשורת", "אזורים",
+      "מסמכים", "אודות הפרויקט", "שותפים", "כניסה", "הרשמה", "אזור אישי",
+      "לפרסם חומר", "להיות מחבר", "כל החומרים", "לקרוא",
+      "חיפוש", "לשלוח", "לשמור", "למחוק", "שם", "דוא\"ל", "סיסמה",
+      "ראשי", "עיצוב בהיר"]],
+    ["fa", "فارسی", "rtl", ["رفتن به محتوا", "خوراک", "اخبار", "مدرسه رسانه", "مناطق",
+      "اسناد", "درباره پروژه", "همکاران", "ورود", "ثبت‌نام", "حساب",
+      "انتشار مطلب", "نویسنده شوید", "همه مطالب", "خواندن",
+      "جستجو", "ارسال", "ذخیره", "حذف", "نام", "ایمیل", "گذرواژه",
+      "خانه", "پوسته روشن"]],
+    ["hi", "हिन्दी", "ltr", ["सामग्री पर जाएँ", "फ़ीड", "समाचार", "मीडिया स्कूल", "क्षेत्र",
+      "दस्तावेज़", "परियोजना के बारे में", "साझेदार", "लॉग इन", "पंजीकरण", "खाता",
+      "सामग्री प्रकाशित करें", "लेखक बनें", "सभी सामग्री", "पढ़ें",
+      "खोज", "भेजें", "सहेजें", "हटाएँ", "नाम", "ईमेल", "पासवर्ड",
+      "मुख्य पृष्ठ", "हल्की थीम"]],
+    ["bn", "বাংলা", "ltr", ["বিষয়বস্তুতে যান", "ফিড", "সংবাদ", "মিডিয়া স্কুল", "অঞ্চল",
+      "নথি", "প্রকল্প সম্পর্কে", "অংশীদার", "লগ ইন", "নিবন্ধন", "অ্যাকাউন্ট",
+      "লেখা প্রকাশ করুন", "লেখক হোন", "সব লেখা", "পড়ুন",
+      "খুঁজুন", "পাঠান", "সংরক্ষণ", "মুছুন", "নাম", "ইমেল", "পাসওয়ার্ড",
+      "প্রচ্ছদ", "হালকা থিম"]],
+    ["vi", "Tiếng Việt", "ltr", ["Chuyển đến nội dung", "Bảng tin", "Tin tức", "Trường truyền thông", "Khu vực",
+      "Tài liệu", "Về dự án", "Đối tác", "Đăng nhập", "Đăng ký", "Tài khoản",
+      "Đăng bài", "Trở thành tác giả", "Tất cả bài", "Đọc",
+      "Tìm kiếm", "Gửi", "Lưu", "Xóa", "Tên", "Email", "Mật khẩu",
+      "Trang chủ", "Giao diện sáng"]],
+    ["id", "Bahasa Indonesia", "ltr", ["Lewati ke konten", "Umpan", "Berita", "Sekolah media", "Wilayah",
+      "Dokumen", "Tentang proyek", "Mitra", "Masuk", "Daftar", "Akun",
+      "Terbitkan materi", "Menjadi penulis", "Semua materi", "Baca",
+      "Cari", "Kirim", "Simpan", "Hapus", "Nama", "Email", "Kata sandi",
+      "Beranda", "Tema terang"]],
+    ["ms", "Bahasa Melayu", "ltr", ["Langkau ke kandungan", "Suapan", "Berita", "Sekolah media", "Wilayah",
+      "Dokumen", "Tentang projek", "Rakan", "Masuk", "Daftar", "Akaun",
+      "Terbitkan bahan", "Jadi penulis", "Semua bahan", "Baca",
+      "Cari", "Hantar", "Simpan", "Padam", "Nama", "E-mel", "Kata laluan",
+      "Laman utama", "Tema cerah"]],
+    ["th", "ไทย", "ltr", ["ข้ามไปยังเนื้อหา", "ฟีด", "ข่าว", "โรงเรียนสื่อ", "ภูมิภาค",
+      "เอกสาร", "เกี่ยวกับโครงการ", "พันธมิตร", "เข้าสู่ระบบ", "สมัคร", "บัญชี",
+      "เผยแพร่เนื้อหา", "เป็นนักเขียน", "เนื้อหาทั้งหมด", "อ่าน",
+      "ค้นหา", "ส่ง", "บันทึก", "ลบ", "ชื่อ", "อีเมล", "รหัสผ่าน",
+      "หน้าแรก", "ธีมสว่าง"]],
+    ["ko", "한국어", "ltr", ["본문으로 건너뛰기", "피드", "뉴스", "미디어 학교", "지역",
+      "문서", "프로젝트 소개", "파트너", "로그인", "회원가입", "내 계정",
+      "기사 발행", "작가 되기", "모든 기사", "읽기",
+      "검색", "보내기", "저장", "삭제", "이름", "이메일", "비밀번호",
+      "홈", "밝은 테마"]],
+    ["ja", "日本語", "ltr", ["本文へスキップ", "フィード", "ニュース", "メディアスクール", "地域",
+      "資料", "プロジェクトについて", "パートナー", "ログイン", "新規登録", "マイページ",
+      "記事を公開", "著者になる", "すべての記事", "読む",
+      "検索", "送信", "保存", "削除", "名前", "メール", "パスワード",
+      "ホーム", "ライトテーマ"]],
+    ["sr", "Српски", "ltr", ["Пређи на садржај", "Трака", "Вести", "Медијска школа", "Региони",
+      "Документи", "О пројекту", "Партнери", "Пријава", "Регистрација", "Кабинет",
+      "Објави материјал", "Постани аутор", "Сви материјали", "Читај",
+      "Претрага", "Пошаљи", "Сачувај", "Обриши", "Име", "Пошта", "Лозинка",
+      "Почетна", "Светла тема"]],
+    ["pl", "Polski", "ltr", ["Przejdź do treści", "Kanał", "Wiadomości", "Szkoła medialna", "Regiony",
+      "Dokumenty", "O projekcie", "Partnerzy", "Zaloguj", "Rejestracja", "Konto",
+      "Opublikuj materiał", "Zostań autorem", "Wszystkie materiały", "Czytaj",
+      "Szukaj", "Wyślij", "Zapisz", "Usuń", "Imię", "E-mail", "Hasło",
+      "Strona główna", "Jasny motyw"]],
+    ["cs", "Čeština", "ltr", ["Přejít na obsah", "Kanál", "Novinky", "Mediální škola", "Regiony",
+      "Dokumenty", "O projektu", "Partneři", "Přihlásit", "Registrace", "Účet",
+      "Publikovat materiál", "Stát se autorem", "Všechny materiály", "Číst",
+      "Hledat", "Odeslat", "Uložit", "Smazat", "Jméno", "E-mail", "Heslo",
+      "Domů", "Světlý motiv"]],
+    ["nl", "Nederlands", "ltr", ["Naar inhoud", "Feed", "Nieuws", "Mediaschool", "Regio's",
+      "Documenten", "Over het project", "Partners", "Inloggen", "Registreren", "Account",
+      "Materiaal publiceren", "Auteur worden", "Alle materialen", "Lezen",
+      "Zoeken", "Versturen", "Opslaan", "Verwijderen", "Naam", "E-mail", "Wachtwoord",
+      "Home", "Licht thema"]],
+    ["sv", "Svenska", "ltr", ["Gå till innehåll", "Flöde", "Nyheter", "Medieskola", "Regioner",
+      "Dokument", "Om projektet", "Partner", "Logga in", "Registrera", "Konto",
+      "Publicera material", "Bli författare", "Allt material", "Läs",
+      "Sök", "Skicka", "Spara", "Ta bort", "Namn", "E-post", "Lösenord",
+      "Hem", "Ljust tema"]],
+    ["ro", "Română", "ltr", ["Sari la conținut", "Flux", "Știri", "Școală media", "Regiuni",
+      "Documente", "Despre proiect", "Parteneri", "Autentificare", "Înregistrare", "Cont",
+      "Publică material", "Devino autor", "Toate materialele", "Citește",
+      "Căutare", "Trimite", "Salvează", "Șterge", "Nume", "E-mail", "Parolă",
+      "Acasă", "Temă deschisă"]],
+    ["el", "Ελληνικά", "ltr", ["Μετάβαση στο περιεχόμενο", "Ροή", "Νέα", "Σχολή μέσων", "Περιοχές",
+      "Έγγραφα", "Σχετικά με το έργο", "Συνεργάτες", "Σύνδεση", "Εγγραφή", "Λογαριασμός",
+      "Δημοσίευση υλικού", "Γίνε συγγραφέας", "Όλο το υλικό", "Ανάγνωση",
+      "Αναζήτηση", "Αποστολή", "Αποθήκευση", "Διαγραφή", "Όνομα", "Email", "Κωδικός",
+      "Αρχική", "Φωτεινό θέμα"]]
+  ];
 
   var STORAGE = "smena_lang";
   var current = "ru";
+  var LIST = [];
+  var DICT = {};   /* русский текст → перевод для текущего языка */
+
+  LOCALES.forEach(function (row) {
+    LIST.push({ code: row[0], name: row[1], dir: row[2] });
+    if (row[3]) {
+      var map = {};
+      for (var i = 0; i < KEYS.length; i++) map[KEYS[i]] = row[3][i];
+      DICT[row[0]] = map;
+    }
+  });
 
   function normalize(code) {
     code = String(code || "").toLowerCase().slice(0, 2);
-    for (var i = 0; i < LANGS.length; i++) if (LANGS[i].code === code) return code;
+    for (var i = 0; i < LIST.length; i++) if (LIST[i].code === code) return code;
     return "";
   }
 
   function readLang() {
     var fromUrl = "";
-    try {
-      fromUrl = normalize(new URLSearchParams(window.location.search).get("lang"));
-    } catch (e) {}
+    try { fromUrl = normalize(new URLSearchParams(window.location.search).get("lang")); } catch (e) {}
     if (fromUrl) return fromUrl;
     try {
       var saved = normalize(window.localStorage.getItem(STORAGE));
@@ -393,12 +218,9 @@
     var dict = DICT[lang];
     if (!dict) return null;
     var key = text.trim();
-    if (!key || !dict[key]) return null;
-    return dict[key];
+    return key && dict[key] ? dict[key] : null;
   }
 
-  /* Обходим текстовые узлы и атрибуты. Пропускаем скрипты, стили, поля ввода
-     с уже введённым значением и всё, что помечено data-no-i18n. */
   function apply(root, lang) {
     lang = lang || current;
     if (lang === "ru") return 0;
@@ -428,10 +250,7 @@
         var value = all[i].getAttribute(attrs[a]);
         if (!value) continue;
         var t = translateText(value, lang);
-        if (t !== null) {
-          all[i].setAttribute(attrs[a], t);
-          changed++;
-        }
+        if (t !== null) { all[i].setAttribute(attrs[a], t); changed++; }
       }
     }
     return changed;
@@ -442,7 +261,7 @@
     current = code;
     try { window.localStorage.setItem(STORAGE, code); } catch (e) {}
     var meta = null;
-    for (var i = 0; i < LANGS.length; i++) if (LANGS[i].code === code) meta = LANGS[i];
+    for (var i = 0; i < LIST.length; i++) if (LIST[i].code === code) meta = LIST[i];
     document.documentElement.setAttribute("lang", code);
     document.documentElement.setAttribute("dir", (meta && meta.dir) || "ltr");
     return code;
@@ -450,15 +269,16 @@
 
   function refresh() {
     apply(document.body, current);
-    /* интерфейс собирается скриптами, поэтому повторяем после отрисовки */
+    /* интерфейс собирается скриптами: повторяем после отрисовки */
     setTimeout(function () { apply(document.body, current); }, 250);
     setTimeout(function () { apply(document.body, current); }, 900);
+    setTimeout(function () { apply(document.body, current); }, 1800);
   }
 
   current = setLang(readLang());
 
   window.SmenaI18n = {
-    langs: LANGS,
+    langs: LIST,
     get lang() { return current; },
     setLang: setLang,
     t: function (ruText) { return translateText(ruText, current) || ruText; },
@@ -466,9 +286,6 @@
     refresh: refresh
   };
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", refresh);
-  } else {
-    refresh();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", refresh);
+  else refresh();
 })();

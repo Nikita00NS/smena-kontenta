@@ -385,6 +385,41 @@ const results = [];
   r = await call("tasks-list", { token: token3 });
   check("редакция видит все задачи", r.ok === true && r.tasks.some((t) => t.id === taskId), r);
 
+  // 21. ИИ-ПОМОЩНИК и ЯЩИКИ
+  r = await call("ai-status", { token: token2b });
+  check("помощник закрыт обычному участнику", r.ok === false && r.code === 403, r);
+  r = await call("ai-status", { token: token3 });
+  check("помощник отдаёт задания и состояние", r.ok === true && r.ai.hasKey === false && r.tasks.improve, r);
+  r = await call("ai-save", { token: token2b, provider: "gemini" });
+  check("ключ помощника меняет только администрация", r.ok === false && r.code === 403, r);
+  r = await call("ai-save", { token: token3, provider: "gemini", key: "test-key-not-real" });
+  check("ключ помощника сохраняется", r.ok === true && r.ai.hasKey === true, r);
+  r = await call("ai-assist", { token: token3, task: "improve", text: "текст письма" });
+  check("без настоящего ключа помощник честно падает",
+    r.ok === false && (r.code === 502 || r.code === 409), r);
+
+  // 22. ВЫДАЧА АДМИНКИ БЕЗ ПАРОЛЯ РЕДАКЦИИ
+  r = await call("boss-grant", { token: token2b, email: "boss@example.ru" });
+  check("участник не выдаёт доступ", r.ok === false && r.code === 403, r);
+  r = await call("boss-grant", { token: token3, email: "boss@example.ru", access: "Главный администратор" });
+  check("директор выдаёт доступ по почте", r.ok === true && r.access === "Главный администратор", r);
+  check("для нового человека аккаунт создаётся", r.ok === true && r.created === true, r);
+
+  // 23. ВХОД ПО КОДУ (вместо пароля редакции)
+  r = await call("reg", { name: "Двухфакторный Тест", email: "twofa@example.ru", pass: "parol1234" });
+  await verifyAll();
+  const token4 = r.token;
+  r = await call("twofa-enable", { token: token4, pass: "parol1234" });
+  check("вход по коду включается паролем", r.ok === true && r.twofa === true, r);
+  r = await call("login", { email: "twofa@example.ru", pass: "parol1234" });
+  check("вход просит код из письма", r.ok === true && r.needCode === true, r);
+  r = await call("login-2fa", { email: "twofa@example.ru", code: "000000" });
+  check("неверный код не пускает", r.ok === false && r.code === 403, r);
+  r = await call("twofa-disable", { token: token4, pass: "parol1234" });
+  check("вход по коду выключается паролем", r.ok === true && r.twofa === false, r);
+  r = await call("login", { email: "twofa@example.ru", pass: "parol1234" });
+  check("после выключения вход обычный", r.ok === true && !!r.token, r);
+
   // 20. УДАЛЕНИЕ АККАУНТА из кабинета
   r = await call("account-delete", { token: token2b, pass: "неверный", confirm: "УДАЛИТЬ" });
   check("удаление без пароля не проходит", r.ok === false && r.code === 403, r);
