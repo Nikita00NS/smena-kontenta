@@ -1081,7 +1081,7 @@
 
     host.innerHTML =
       '<div class="map-stage" data-stage>' +
-      '<svg class="map-svg" viewBox="' + MAP.viewBox + '" role="group" ' +
+      '<svg class="map-svg" viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="group" ' +
       'aria-label="Карта регионов России. Выберите регион, чтобы увидеть его материалы." ' +
       'data-svg><g data-layer>' +
       regions.filter(function (r) { return r.d; }).map(function (r, i) {
