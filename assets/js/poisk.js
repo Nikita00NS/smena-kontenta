@@ -564,6 +564,10 @@
       });
     });
 
+  }
+
+  /* полоса прогресса — один слушатель на всё время жизни страницы */
+  if (detail) {
     detail.addEventListener("scroll", function () {
       var bar = $(".ps-detail__bar i", detail);
       if (!bar) return;
