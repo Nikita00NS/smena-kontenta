@@ -111,7 +111,7 @@
   (function scene() {
     var cv = $("#ps-scene");
     if (!cv || !cv.getContext) return;
-    if (reduced) { cv.style.display = "none"; return; }
+    if (reduced || window.innerWidth < 760) { cv.style.display = "none"; return; }
 
     var ctx = null;
     try { ctx = cv.getContext("2d"); } catch (err) { ctx = null; }
@@ -429,6 +429,17 @@
     var resetBtn = $("#ps-reset");
     if (resetBtn) resetBtn.addEventListener("click", reset);
 
+    /* на телефоне направление, условия и сброс прячутся под кнопкой */
+    var moreBtn = $("#ps-more-toggle");
+    var moreBox = $("#ps-more");
+    if (moreBtn && moreBox) {
+      moreBtn.addEventListener("click", function () {
+        var open = moreBox.classList.toggle("is-open");
+        moreBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        moreBtn.innerHTML = open ? "Свернуть фильтры <span>−</span>" : "Ещё фильтры <span>+</span>";
+      });
+    }
+
     if (cardsBox) {
       var open = function (target) {
         var art = target.closest && target.closest(".ps-card");
@@ -491,6 +502,7 @@
 
     return '' +
       '<div class="ps-detail__bar"><i></i></div>' +
+      '<button type="button" class="ps-detail__close" data-close aria-label="Закрыть">×</button>' +
       '<header class="ps-detail__head">' +
         '<button type="button" class="ps-detail__back" data-close>← Ко всем возможностям</button>' +
         '<div class="ps-tags ps-detail__tags">' +

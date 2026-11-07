@@ -22,6 +22,9 @@ body.ps {
   background: #000;
   color: #fff;
   font-family: "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* размер фиксирован: у основного сайта на телефоне другой масштаб,
+     и все rem на этой странице иначе разъезжаются */
+  font-size: 16px;
   line-height: 1.5;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
@@ -354,4 +357,113 @@ body.ps.cursor-on .ps-cur { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .ps *, .ps *::before, .ps *::after { animation: none !important; transition: none !important; }
   .rv, .ps-detail, .ps-detail__head > * { opacity: 1 !important; transform: none !important; }
+}
+
+/* ============================================================================
+   Телефоны и узкие экраны: компактная шапка, фильтры в два шага,
+   крупные кнопки, страница возможности без «мышиных» мелочей
+   ========================================================================== */
+
+.ps-more__toggle { display: none; }
+
+.ps-detail__close {
+  display: none;
+  position: fixed; top: 10px; right: 10px; z-index: 960;
+  width: 44px; height: 44px; place-items: center; border-radius: 50%;
+  background: rgba(10, 14, 24, .92); border: 1px solid rgba(110, 231, 255, .35);
+  color: #fff; font-size: 22px; line-height: 1;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+
+@media (max-width: 720px) {
+  /* декоративные слои: на телефоне мешают читать и греют процессор */
+  .ps-grain, .ps-scan { display: none; }
+
+  /* шапка — полоса во всю ширину, кнопки не вылезают за экран */
+  .ps-hud {
+    top: 0; left: 0; right: 0; transform: none;
+    max-width: none; border-radius: 0 0 18px 18px;
+    padding: 8px 10px; gap: 10px; justify-content: space-between;
+  }
+  .ps-brand { padding-right: 0; margin-right: 0; border-right: 0; }
+  .ps-brand__logo { height: 18px; }
+  .ps-hud__nav { gap: 2px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .ps-hud__nav::-webkit-scrollbar { display: none; }
+  .ps-hud__nav button { padding: 9px 10px; font-size: .64rem; }
+
+  /* первый экран — не на всю высоту: до подборки один свайп */
+  .ps-hero { min-height: auto; padding: 92px 18px 34px; }
+  .ps-eyebrow { font-size: .58rem; letter-spacing: .3em; margin-bottom: 14px; }
+  .ps-hero h1 { font-size: clamp(1.85rem, 9.5vw, 2.5rem); margin-bottom: 16px; }
+  .ps-lead { font-size: .84rem; line-height: 1.6; }
+  .ps-hero__cta { margin-top: 20px; gap: 8px; }
+  .ps-btn { min-height: 44px; padding: 12px 16px; font-size: .74rem; }
+
+  .ps-wrap { padding: 40px 16px 56px; }
+  .ps-head { text-align: left; margin-bottom: 26px; }
+  .ps-head h2 { font-size: clamp(1.4rem, 7vw, 2rem); }
+  .ps-head p { margin: 0; font-size: .84rem; }
+
+  /* фильтры: сверху поиск и возраст, остальное — по кнопке */
+  .ps-layout { gap: 18px; }
+  .ps-filters { padding: 14px; border-radius: 18px; }
+  .ps-filters__title { display: none; }
+  .ps-group { margin-bottom: 14px; }
+  .ps-group__label { font-size: .6rem; margin-bottom: 8px; }
+  .ps-chip { min-height: 36px; display: inline-flex; align-items: center; padding: 8px 13px; }
+  .ps-search { min-height: 44px; font-size: .86rem; }
+  .ps-range { height: 4px; }
+  .ps-range::-webkit-slider-thumb { width: 24px; height: 24px; }
+
+  .ps-more { display: none; }
+  .ps-more.is-open { display: block; }
+  .ps-more__toggle {
+    display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px;
+    min-height: 42px; margin-bottom: 2px; border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, .12); background: rgba(255, 255, 255, .04);
+    font-size: .72rem; font-weight: 600; color: rgba(255, 255, 255, .7);
+  }
+  .ps-more__toggle span { font-size: 1rem; line-height: 1; }
+
+  .ps-res { margin-bottom: 12px; font-size: .6rem; }
+
+  /* карточки — в одну колонку, кнопки друг под другом */
+  .ps-cards { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .ps-card { padding: 18px 16px; border-radius: 16px; gap: 9px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .ps-card h3 { font-size: 1rem; }
+  .ps-card p { font-size: .8rem; }
+  .ps-meta { gap: 10px; }
+  .ps-actions { flex-direction: column; gap: 7px; }
+  .ps-actions button, .ps-actions a {
+    min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: .76rem;
+  }
+
+  /* страница возможности */
+  .ps-detail__close { display: grid; }
+  .ps-detail__head { padding: 64px 16px 22px; }
+  .ps-detail__head h1 { font-size: clamp(1.5rem, 7.5vw, 2.1rem); margin-bottom: 12px; }
+  .ps-detail__lead { font-size: .88rem; line-height: 1.6; }
+  .ps-detail__meta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 22px 0 20px; }
+  .ps-kv { padding: 11px 12px; }
+  .ps-detail__cta { flex-direction: column; }
+  .ps-detail__cta .ps-btn { width: 100%; justify-content: center; }
+  .ps-detail__body { padding: 4px 16px 88px; }
+  .ps-sec h2 { font-size: 1.1rem; gap: 10px; }
+  .ps-step-item { padding: 13px 14px; gap: 12px; }
+  .ps-step-item__t { font-size: .86rem; }
+  .ps-check, .ps-two, .ps-sims { grid-template-columns: minmax(0, 1fr); }
+
+  .ps-steps { grid-template-columns: minmax(0, 1fr); margin-top: 24px; gap: 12px; }
+  .ps-step { padding: 22px 18px; }
+  .ps-note { padding: 16px 18px; font-size: .78rem; margin-top: 26px; }
+  .ps-srcs { gap: 6px; margin-top: 22px; }
+  .ps-src { min-height: 38px; display: inline-flex; align-items: center; }
+  .ps-foot { padding: 28px 16px 48px; }
+  .ps-foot__row { gap: 10px 16px; }
+}
+
+@media (max-width: 420px) {
+  .ps-hud__nav button { font-size: .6rem; padding: 8px 8px; }
+  .ps-brand__logo { height: 16px; }
+  .ps-detail__meta { grid-template-columns: minmax(0, 1fr); }
 }

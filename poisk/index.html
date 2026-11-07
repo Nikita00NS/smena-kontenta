@@ -28,9 +28,9 @@
   <link rel="manifest" href="/site.webmanifest">
   <link rel="preload" href="/assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/assets/fonts/golos-text-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-07-8">
-  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-07-8">
-  <link rel="stylesheet" href="/assets/css/poisk.css?v=2026-11-07-8">
+  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-07-9">
+  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-07-9">
+  <link rel="stylesheet" href="/assets/css/poisk.css?v=2026-11-07-9">
 </head>
 <body class="ps" data-page="poisk">
 
@@ -76,6 +76,11 @@
           <div class="ps-filters__title">Фильтры</div>
 
           <div class="ps-group">
+            <label class="ps-group__label" for="ps-q">Поиск по словам</label>
+            <input class="ps-search" id="ps-q" type="search" placeholder="Артек, грант, медиа…" autocomplete="off">
+          </div>
+
+          <div class="ps-group">
             <label class="ps-group__label" for="ps-age">Возраст <b id="ps-age-val">до 35 лет</b></label>
             <input class="ps-range" id="ps-age" type="range" min="10" max="35" step="1" value="35">
           </div>
@@ -91,31 +96,32 @@
             </div>
           </div>
 
-          <div class="ps-group">
-            <div class="ps-group__label">Направление</div>
-            <div class="ps-chips">
-              <button type="button" class="ps-chip" data-dir="наука">Наука</button>
-              <button type="button" class="ps-chip" data-dir="IT">IT</button>
-              <button type="button" class="ps-chip" data-dir="творчество">Творчество</button>
-              <button type="button" class="ps-chip" data-dir="социальное">Социальное</button>
-              <button type="button" class="ps-chip" data-dir="медиа">Медиа</button>
+          <button type="button" class="ps-more__toggle" id="ps-more-toggle" aria-expanded="false" aria-controls="ps-more">
+            Ещё фильтры <span>+</span>
+          </button>
+
+          <div class="ps-more" id="ps-more">
+            <div class="ps-group">
+              <div class="ps-group__label">Направление</div>
+              <div class="ps-chips">
+                <button type="button" class="ps-chip" data-dir="наука">Наука</button>
+                <button type="button" class="ps-chip" data-dir="IT">IT</button>
+                <button type="button" class="ps-chip" data-dir="творчество">Творчество</button>
+                <button type="button" class="ps-chip" data-dir="социальное">Социальное</button>
+                <button type="button" class="ps-chip" data-dir="медиа">Медиа</button>
+              </div>
             </div>
-          </div>
 
-          <div class="ps-group">
-            <div class="ps-group__label">Условия</div>
-            <div class="ps-chips">
-              <button type="button" class="ps-chip" id="ps-free">Бесплатно</button>
+            <div class="ps-group">
+              <div class="ps-group__label">Условия</div>
+              <div class="ps-chips">
+                <button type="button" class="ps-chip" id="ps-free">Бесплатно</button>
+              </div>
             </div>
-          </div>
 
-          <div class="ps-group">
-            <div class="ps-group__label">Поиск по словам</div>
-            <input class="ps-search" id="ps-q" type="search" placeholder="Артек, грант, медиа…" autocomplete="off">
-          </div>
-
-          <div class="ps-group">
-            <button type="button" class="ps-btn ps-btn--ghost" id="ps-reset" style="width:100%;justify-content:center">Сбросить фильтры</button>
+            <div class="ps-group">
+              <button type="button" class="ps-btn ps-btn--ghost" id="ps-reset" style="width:100%;justify-content:center">Сбросить фильтры</button>
+            </div>
           </div>
         </aside>
 
@@ -193,8 +199,8 @@
     </div>
   </footer>
 
-  <script src="/assets/js/search-data.js?v=2026-11-07-8"></script>
-  <script src="/assets/js/poisk.js?v=2026-11-07-8"></script>
+  <script src="/assets/js/search-data.js?v=2026-11-07-9"></script>
+  <script src="/assets/js/poisk.js?v=2026-11-07-9"></script>
   <script>
     document.getElementById("ps-year").textContent = new Date().getFullYear();
     document.querySelectorAll("[data-tab-link]").forEach(function (b) {
