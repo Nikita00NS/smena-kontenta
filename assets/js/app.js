@@ -28,6 +28,26 @@
   var MAP = window.RU_MAP || { regions: [], viewBox: "0 0 1000 540" };
   var Store = window.Store || null;
 
+  /* Карточки основателей приходят с сервера (фото, город), но подписи и
+     биографии живут в data.js: это текст о людях, а не данные кабинета.
+     Запоминаем локальные версии до того, как сервер их подменит. */
+  var LOCAL_FOUNDERS = (SC.founders || []).slice();
+
+  function founderWithText(f) {
+    if (!f) return f;
+    var local = null;
+    for (var i = 0; i < LOCAL_FOUNDERS.length; i++) {
+      var l = LOCAL_FOUNDERS[i] || {};
+      if ((l.id && l.id === f.id) || (l.name && l.name === f.name)) { local = l; break; }
+    }
+    if (!local) return f;
+    var out = {};
+    for (var k in f) if (Object.prototype.hasOwnProperty.call(f, k)) out[k] = f[k];
+    if (String(local.role || "").trim()) out.role = local.role;
+    if (String(local.bio || "").trim()) out.bio = local.bio;
+    return out;
+  }
+
   /* 1. Утилиты ============================================================= */
 
   var MONTHS = [
@@ -7286,7 +7306,7 @@
   function initFoundersPage() {
     var host = $("[data-founders-page]");
     if (!host) return;
-    var list = (SC.founders || []).filter(function (f) {
+    var list = (SC.founders || []).map(founderWithText).filter(function (f) {
       return f && String(f.name || "").trim();
     });
     if (!list.length) {
@@ -7368,7 +7388,7 @@
     var section = $("[data-founders-section]");
     if (!host || !section) return;
 
-    var list = (SC.founders || []).filter(function (f) {
+    var list = (SC.founders || []).map(founderWithText).filter(function (f) {
       return f && String(f.name || "").trim();
     });
     if (!list.length) return;
