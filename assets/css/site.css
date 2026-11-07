@@ -1086,7 +1086,10 @@ p:last-child {
 
 .map-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 316px;
+  /* карта живёт в своём квадрате и больше не растягивается на всю ширину:
+     слева рамка карты (до 560 px), справа панель поиска и выбора региона */
+  grid-template-columns: minmax(0, 560px) minmax(280px, 340px);
+  justify-content: center;
   gap: clamp(18px, 2.4vw, 38px);
   align-items: start;
 }
@@ -1094,23 +1097,29 @@ p:last-child {
 .map-stage {
   position: relative;
   min-width: 0;
+  width: 100%;
+  max-width: 560px;
+  /* квадрат: карта России вписывается в него целиком и стоит по центру,
+     а не растягивается полосой на всю ширину сайта */
+  aspect-ratio: 1 / 1;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(247, 245, 239, 0.14);
   background: linear-gradient(160deg, #171614 0%, #100f0e 60%, #141210 100%);
-  padding: clamp(6px, 1.4vw, 18px);
-  /* Карта не раздувает страницу: высота ограничена долей окна, ширина
-     считается по пропорции карты (1000 × 538). Так блок целиком виден
-     на ноутбуке, и масштаб браузера трогать не нужно. */
-  max-width: min(100%, calc(min(56vh, 500px) * 1.857));
-  margin-inline: auto;
+  padding: clamp(6px, 1.2vw, 14px);
+  overflow: visible;
 }
 
 .map-svg {
   display: block;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
   touch-action: none;
   cursor: grab;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .map-svg.is-panning {
@@ -2923,6 +2932,12 @@ p:last-child {
   }
   .map-layout {
     grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+  .map-stage {
+    max-width: 100%;
+    aspect-ratio: auto;
+    min-height: 300px;
   }
   .map-panel {
     order: -1;
