@@ -1,5 +1,6 @@
 /* ============================================================================
-   «Смена контента в поиске» — сцена, курсор, вкладки, фильтры, карточки.
+   «Смена контента в поиске» — сцена, курсор, вкладки, фильтры, карточки
+   и страница возможности на весь экран.
    Всё завёрнуто в проверки: если разметки нет или браузер не даёт canvas,
    страница остаётся рабочей и ничего не падает.
    ========================================================================== */
@@ -7,6 +8,7 @@
   "use strict";
 
   var DATA = window.SC_SEARCH || { items: [], types: [], dirs: [], sources: [] };
+  var ITEMS = DATA.items || [];
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -15,6 +17,9 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+  function host(url) {
+    try { return new URL(url, location.origin).host.replace(/^www\./, ""); } catch (e) { return url; }
   }
 
   var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -29,6 +34,35 @@
     toastTimer = setTimeout(function () { toastEl.classList.remove("is-on"); }, 2400);
   }
 
+  function copy(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast("Ссылка скопирована"); },
+        function () { toast(text); });
+    } else {
+      toast(text);
+    }
+  }
+
+  /* --------------------------------------------------------- появление в кадре */
+  function watch(nodes, root, step) {
+    if (!nodes.length) return;
+    if (reduced || !("IntersectionObserver" in window)) {
+      nodes.forEach(function (n) { n.classList.add("is-in"); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var el = en.target;
+        var i = Number(el.getAttribute("data-i") || 0);
+        el.style.transitionDelay = Math.min(i, 8) * (step || 55) + "ms";
+        el.classList.add("is-in");
+        io.unobserve(el);
+      });
+    }, { root: root || null, rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+    nodes.forEach(function (n) { io.observe(n); });
+  }
+
   /* ----------------------------------------------------------------- cursor */
   (function cursor() {
     var cur = $("#ps-cur");
@@ -39,23 +73,24 @@
 
     document.body.classList.add("cursor-on");
 
-    function move(e) {
+    document.addEventListener("pointermove", function (e) {
       mx = e.clientX; my = e.clientY;
       dot.style.transform = "translate(" + mx + "px," + my + "px) translate(-50%,-50%)";
       if (!raf) raf = requestAnimationFrame(loop);
-    }
+    }, { passive: true });
+
     function loop() {
       rx += (mx - rx) * 0.16;
       ry += (my - ry) * 0.16;
       ring.style.transform = "translate(" + rx + "px," + ry + "px) translate(-50%,-50%)";
       raf = (Math.abs(mx - rx) > 0.4 || Math.abs(my - ry) > 0.4) ? requestAnimationFrame(loop) : 0;
     }
-    document.addEventListener("pointermove", move, { passive: true });
+
     document.addEventListener("pointerdown", function () { cur.classList.add("is-press"); });
     document.addEventListener("pointerup", function () { cur.classList.remove("is-press"); });
     document.addEventListener("pointerover", function (e) {
       var t = e.target;
-      var hit = t.closest && t.closest("a,button,.ps-card,.ps-chip,.ps-src,input,.ps-range");
+      var hit = t.closest && t.closest("a,button,.ps-card,.ps-chip,.ps-src,input,.ps-range,.ps-detail__back");
       cur.classList.toggle("is-hover", !!hit);
     });
   })();
@@ -63,7 +98,7 @@
   /* ------------------------------------------------------------------- scene */
   (function scene() {
     var cv = $("#ps-scene");
-    if (!cv || !cv.getContext) { return; }
+    if (!cv || !cv.getContext) return;
     if (reduced) { cv.style.display = "none"; return; }
 
     var ctx = null;
@@ -72,7 +107,7 @@
 
     var W = 0, H = 0, dpr = 1, R = 260, pts = [], stars = [];
     var tilt = { x: 0, y: 0 }, tgt = { x: 0, y: 0 }, spin = 0, scroll = 0;
-    var drag = { on: false, x: 0, y: 0, spin: 0 };
+    var drag = { on: false, x: 0, base: 0, spin: 0 };
     var ripples = [];
 
     function make() {
@@ -82,11 +117,7 @@
         var phi = (i / LAT) * Math.PI;
         for (var j = 0; j < LON; j++) {
           var theta = (j / LON) * Math.PI * 2;
-          pts.push({
-            x: Math.sin(phi) * Math.cos(theta),
-            y: Math.cos(phi),
-            z: Math.sin(phi) * Math.sin(theta)
-          });
+          pts.push({ x: Math.sin(phi) * Math.cos(theta), y: Math.cos(phi), z: Math.sin(phi) * Math.sin(theta) });
         }
       }
       stars = [];
@@ -124,7 +155,6 @@
     function draw() {
       ctx.clearRect(0, 0, W, H);
 
-      /* звёзды */
       for (var i = 0; i < stars.length; i++) {
         var st = stars[i];
         var tw = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(performance.now() / 900 + st.z * 10));
@@ -137,11 +167,9 @@
       ctx.globalAlpha = 1;
 
       var ang = spin + drag.spin;
-      var ax = tilt.x, ay = tilt.y;
       var proj = [];
-      for (var k = 0; k < pts.length; k++) proj.push(project(pts[k], ang, ax, ay));
+      for (var k = 0; k < pts.length; k++) proj.push(project(pts[k], ang, tilt.x, tilt.y));
 
-      /* каркас */
       var LON_N = 60;
       ctx.lineWidth = 0.35;
       for (var a = 0; a < proj.length; a++) {
@@ -155,21 +183,17 @@
         }
       }
 
-      /* точки */
       for (var b = 0; b < proj.length; b++) {
         var q = proj[b];
         if (q.z < -0.05) continue;
-        var alpha = (1 - q.z) * 0.85;
-        var r = Math.max(0.4, 1.5 * q.s);
-        ctx.globalAlpha = alpha * 0.75;
+        ctx.globalAlpha = (1 - q.z) * 0.6;
         ctx.fillStyle = q.z > 0.35 ? "#f472b6" : "#8fdcff";
         ctx.beginPath();
-        ctx.arc(q.x, q.y, r, 0, 7);
+        ctx.arc(q.x, q.y, Math.max(0.4, 1.5 * q.s), 0, 7);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
 
-      /* волны от клика */
       for (var w = 0; w < ripples.length; w++) {
         var rp = ripples[w];
         rp.r += 5;
@@ -203,8 +227,8 @@
 
     document.addEventListener("pointerdown", function (e) {
       if (window.innerWidth < 760) return;
-      if (e.target.closest && e.target.closest("a,button,input,.ps-modal,.ps-hud")) return;
-      drag.on = true; drag.x = e.clientX; drag.y = e.clientY; drag.base = drag.spin;
+      if (e.target.closest && e.target.closest("a,button,input,.ps-detail,.ps-hud")) return;
+      drag.on = true; drag.x = e.clientX; drag.base = drag.spin;
       ripples.push({ x: e.clientX, y: e.clientY, r: 2, life: 1 });
     });
     document.addEventListener("pointermove", function (e) {
@@ -243,6 +267,25 @@
     setTimeout(step, 420);
   })();
 
+  /* -------------------------------------------------------------- hero parallax */
+  (function heroParallax() {
+    var hero = $(".ps-hero");
+    if (!hero || reduced) return;
+    var inner = hero.firstElementChild;
+    if (!inner) return;
+    var raf = 0;
+    window.addEventListener("scroll", function () {
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        raf = 0;
+        var y = window.pageYOffset || 0;
+        var k = Math.min(y / 700, 1);
+        inner.style.transform = "translateY(" + y * 0.18 + "px) scale(" + (1 - k * 0.06) + ")";
+        inner.style.opacity = String(1 - k * 0.9);
+      });
+    }, { passive: true });
+  })();
+
   /* -------------------------------------------------------------------- tabs */
   (function tabs() {
     var btns = $$(".ps-hud__nav button");
@@ -251,10 +294,10 @@
       b.addEventListener("click", function () {
         var id = b.getAttribute("data-tab");
         btns.forEach(function (x) { x.classList.toggle("is-on", x === b); });
-        $$(".ps-view").forEach(function (v) {
-          v.classList.toggle("is-on", v.id === "ps-view-" + id);
-        });
+        $$(".ps-view").forEach(function (v) { v.classList.toggle("is-on", v.id === "ps-view-" + id); });
         window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+        $$(".ps-view.is-on .rv").forEach(function (el) { el.classList.remove("is-in"); });
+        watch($$(".ps-view.is-on .rv"), null, 60);
       });
     });
   })();
@@ -266,33 +309,32 @@
   function matches(it) {
     if (state.type && it.type !== state.type) return false;
     if (state.dir && it.dir !== state.dir) return false;
-    if (state.free && !it.free) return false;
+    if (state.free && it.free === false) return false;
     /* ползунок на максимуме — «возраст не важен», иначе отсекаем по вилке */
     if (state.age < 35 && (state.age < it.ageMin || state.age > it.ageMax)) return false;
     if (state.q) {
-      var hay = (it.title + " " + it.desc + " " + it.dir + " " + it.type + " " + it.src).toLowerCase();
+      var hay = (it.title + " " + it.desc + " " + it.org + " " + it.dir + " " + it.type).toLowerCase();
       if (hay.indexOf(state.q) === -1) return false;
     }
     return true;
   }
 
-  function card(it) {
-    var free = it.free ? '<span class="ps-tag ps-tag--dim" data-t="свободно">бесплатно</span>' : "";
+  function card(it, idx) {
     return '' +
-      '<article class="ps-card" data-id="' + it.id + '">' +
+      '<article class="ps-card rv" data-id="' + it.id + '" data-i="' + (idx || 0) + '" tabindex="0" role="button" aria-label="' + esc(it.title) + '">' +
         '<div class="ps-tags">' +
           '<span class="ps-tag" data-t="' + esc(it.type) + '">' + esc(it.type) + '</span>' +
           '<span class="ps-tag ps-tag--dim">' + esc(it.dir) + '</span>' +
-          free +
         '</div>' +
         '<h3>' + esc(it.title) + '</h3>' +
+        '<p class="ps-card__org">' + esc(it.org) + '</p>' +
         '<p>' + esc(it.desc) + '</p>' +
         '<div class="ps-meta">' +
           '<span>возраст <b>' + it.ageMin + '–' + it.ageMax + '</b></span>' +
-          '<span>дедлайн <b>' + esc(it.deadline) + '</b></span>' +
+          '<span>сроки <b>' + esc(it.deadline) + '</b></span>' +
         '</div>' +
         '<div class="ps-actions">' +
-          '<button class="ps-btn--ghost" data-act="more">Подробнее</button>' +
+          '<button class="ps-btn--ghost" data-act="more" type="button">Подробнее</button>' +
           '<a class="ps-btn--solid" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">К организатору</a>' +
         '</div>' +
       '</article>';
@@ -300,16 +342,14 @@
 
   function render() {
     if (!cardsBox) return;
-    var list = (DATA.items || []).filter(matches);
-    if (resEl) resEl.innerHTML = "найдено <b>" + list.length + "</b> из " + (DATA.items || []).length;
+    var list = ITEMS.filter(matches);
+    if (resEl) resEl.innerHTML = "найдено <b>" + list.length + "</b> из " + ITEMS.length;
 
     cardsBox.innerHTML = list.length
       ? list.map(card).join("")
       : '<div class="ps-empty">Под эти фильтры ничего не нашлось. Сдвиньте возраст или сбросьте чипсы.</div>';
 
-    $$(".ps-card", cardsBox).forEach(function (el, idx) {
-      setTimeout(function () { el.classList.add("is-in"); }, reduced ? 0 : idx * 45);
-    });
+    watch($$(".ps-card", cardsBox), null, 60);
   }
 
   function reset() {
@@ -321,8 +361,6 @@
     var q = $("#ps-q");
     if (q) q.value = "";
     $$(".ps-chip[data-type],.ps-chip[data-dir],#ps-free").forEach(function (c) { c.classList.remove("is-on"); });
-    var freeChip = $("#ps-free");
-    if (freeChip) freeChip.classList.remove("is-on");
     render();
   }
 
@@ -380,82 +418,183 @@
     if (resetBtn) resetBtn.addEventListener("click", reset);
 
     if (cardsBox) {
+      var open = function (target) {
+        var art = target.closest && target.closest(".ps-card");
+        if (!art) return;
+        var it = ITEMS.filter(function (x) { return String(x.id) === art.getAttribute("data-id"); })[0];
+        if (it) openDetail(it);
+      };
       cardsBox.addEventListener("click", function (e) {
-        var btn = e.target.closest('[data-act="more"]');
-        if (!btn) return;
-        var art = btn.closest(".ps-card");
-        var it = (DATA.items || []).filter(function (x) { return String(x.id) === art.getAttribute("data-id"); })[0];
-        if (it) openModal(it);
+        if (e.target.closest("a")) return;
+        open(e.target);
+      });
+      cardsBox.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        if (e.target.closest("a")) return;
+        e.preventDefault();
+        open(e.target);
       });
     }
   })();
 
-  /* ------------------------------------------------------------------- modal */
-  var overlay = $("#ps-overlay");
+  /* --------------------------------------------- страница возможности целиком */
+  var detail = $("#ps-detail");
 
-  function openModal(it) {
-    if (!overlay) { window.open(it.link, "_blank", "noopener"); return; }
-    var body = $("#ps-modal-body");
-    if (body) {
-      body.innerHTML = '' +
-        '<div class="ps-tags">' +
+  function section(num, title, body) {
+    return '<section class="ps-sec rv" data-i="0">' +
+      '<h2><span>' + num + '</span>' + title + '</h2>' +
+      '<div class="ps-sec__body">' + body + '</div>' +
+    '</section>';
+  }
+
+  function similar(it) {
+    var same = ITEMS.filter(function (x) {
+      return x.id !== it.id && (x.type === it.type || x.dir === it.dir);
+    });
+    var sameType = same.filter(function (x) { return x.type === it.type; });
+    var sameDir = same.filter(function (x) { return x.dir === it.dir && x.type !== it.type; });
+    return sameType.concat(sameDir).slice(0, 3);
+  }
+
+  function detailHtml(it) {
+    var steps = (it.steps || []).map(function (s, i) {
+      return '<li class="ps-step-item rv" data-i="' + i + '">' +
+        '<span class="ps-step-item__n">' + (i + 1) + '</span>' +
+        '<span class="ps-step-item__t">' + esc(s) + '</span>' +
+      '</li>';
+    }).join("");
+
+    var need = (it.need || []).map(function (s, i) {
+      return '<li class="rv" data-i="' + i + '">' + esc(s) + '</li>';
+    }).join("");
+
+    var sim = similar(it).map(function (x, i) {
+      return '<a class="ps-sim rv" data-i="' + i + '" href="#" data-id="' + x.id + '">' +
+        '<span class="ps-sim__type">' + esc(x.type) + '</span>' +
+        '<b>' + esc(x.title) + '</b>' +
+        '<span class="ps-sim__org">' + esc(x.org) + '</span>' +
+        '<span class="ps-sim__meta">' + x.ageMin + '–' + x.ageMax + ' лет · ' + esc(x.deadline) + '</span>' +
+      '</a>';
+    }).join("");
+
+    return '' +
+      '<div class="ps-detail__bar"><i></i></div>' +
+      '<header class="ps-detail__head">' +
+        '<button type="button" class="ps-detail__back" data-close>← Ко всем возможностям</button>' +
+        '<div class="ps-tags ps-detail__tags">' +
           '<span class="ps-tag" data-t="' + esc(it.type) + '">' + esc(it.type) + '</span>' +
           '<span class="ps-tag ps-tag--dim">' + esc(it.dir) + '</span>' +
         '</div>' +
-        '<h2>' + esc(it.title) + '</h2>' +
-        '<p class="ps-modal__sub">' + esc(it.desc) + '</p>' +
-        '<div class="ps-modal__meta">' +
-          '<span class="ps-kv">возраст <b>' + it.ageMin + '–' + it.ageMax + '</b></span>' +
-          '<span class="ps-kv">дедлайн <b>' + esc(it.deadline) + '</b></span>' +
-          '<span class="ps-kv">приз <b>' + esc(it.prize) + '</b></span>' +
-          '<span class="ps-kv">источник <b>' + esc(it.src) + '</b></span>' +
+        '<h1>' + esc(it.title) + '</h1>' +
+        '<p class="ps-detail__org">' + esc(it.org) + ' · <span>' + esc(host(it.link)) + '</span></p>' +
+        '<p class="ps-detail__lead">' + esc(it.desc) + '</p>' +
+        '<div class="ps-detail__meta">' +
+          '<div class="ps-kv"><span>возраст</span><b>' + it.ageMin + '–' + it.ageMax + ' лет</b></div>' +
+          '<div class="ps-kv"><span>сроки</span><b>' + esc(it.deadline) + '</b></div>' +
+          '<div class="ps-kv"><span>участие</span><b>бесплатно</b></div>' +
+          '<div class="ps-kv"><span>что получает</span><b>' + esc(it.prize) + '</b></div>' +
         '</div>' +
-        '<div class="ps-modal__actions">' +
+        '<div class="ps-detail__cta">' +
           '<a class="ps-btn ps-btn--solid" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">Открыть у организатора</a>' +
-          '<button class="ps-btn ps-btn--ghost" data-copy="' + esc(it.link) + '">Скопировать ссылку</button>' +
+          '<button type="button" class="ps-btn ps-btn--ghost" data-copy="' + esc(it.link) + '">Скопировать ссылку</button>' +
         '</div>' +
-        '<div class="ps-modal__foot">Условия, сроки и правила отбора — на стороне организатора. Мы показываем ссылку и краткое описание, приём заявок ведёт организатор.</div>';
+      '</header>' +
+      '<div class="ps-detail__body">' +
+        section("01", "Что нужно сделать", '<ol class="ps-step-list">' + steps + '</ol>') +
+        section("02", "Что понадобится", '<ul class="ps-check">' + need + '</ul>') +
+        section("03", "Кто может участвовать", '<p class="ps-text">' + esc(it.who) + '</p>') +
+        section("04", "Сроки и результат",
+          '<div class="ps-two">' +
+            '<div class="ps-info"><b>Сроки</b><p>' + esc(it.deadline) + '. Точные даты приёма заявок и этапов организатор публикует на своём сайте.</p></div>' +
+            '<div class="ps-info"><b>Что получает участник</b><p>' + esc(it.prize) + '</p></div>' +
+          '</div>' +
+          '<p class="ps-warn">Приём заявок, правила отбора и согласия на обработку данных оформляет организатор. Мы показываем только ссылку и краткое описание — участие ничем не отличается от прямого обращения к организатору.</p>') +
+        (sim ? section("05", "Похожие возможности", '<div class="ps-sims">' + sim + '</div>') : "") +
+      '</div>';
+  }
+
+  function openDetail(it) {
+    if (!detail) { window.open(it.link, "_blank", "noopener"); return; }
+    detail.innerHTML = detailHtml(it);
+    detail.scrollTop = 0;
+    detail.classList.add("is-open");
+    document.body.classList.add("ps-locked");
+
+    if (window.history && history.replaceState) {
+      try { history.replaceState({ psId: it.id }, "", "#" + it.id); } catch (e) {}
     }
-    overlay.classList.add("is-open");
-    document.body.style.overflow = "hidden";
-  }
 
-  function closeModal() {
-    if (!overlay) return;
-    overlay.classList.remove("is-open");
-    document.body.style.overflow = "";
-  }
-
-  if (overlay) {
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) closeModal();
-      var copy = e.target.closest("[data-copy]");
-      if (copy) {
-        var val = copy.getAttribute("data-copy");
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(val).then(function () { toast("Ссылка скопирована"); });
-        } else {
-          toast(val);
-        }
-      }
+    /* шапка собирается по очереди, блоки — по мере прокрутки */
+    var head = $$(".ps-detail__head > *", detail);
+    head.forEach(function (el, i) {
+      el.style.transitionDelay = reduced ? "0ms" : 90 + i * 70 + "ms";
     });
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") closeModal();
+    requestAnimationFrame(function () {
+      head.forEach(function (el) { el.classList.add("is-in"); });
     });
+
+    watch($$(".rv", detail), detail, 60);
+    bindDetail(it);
   }
 
-  var closeBtn = $("#ps-close");
-  if (closeBtn) closeBtn.addEventListener("click", closeModal);
+  function closeDetail() {
+    if (!detail || !detail.classList.contains("is-open")) return;
+    detail.classList.remove("is-open");
+    document.body.classList.remove("ps-locked");
+    if (window.history && history.replaceState) {
+      try { history.replaceState({}, "", location.pathname + location.search); } catch (e) {}
+    }
+    setTimeout(function () {
+      if (!detail.classList.contains("is-open")) detail.innerHTML = "";
+    }, 480);
+  }
+
+  function bindDetail(current) {
+    $$("[data-copy]", detail).forEach(function (b) {
+      b.addEventListener("click", function () { copy(b.getAttribute("data-copy")); });
+    });
+    $$("[data-close]", detail).forEach(function (b) {
+      b.addEventListener("click", closeDetail);
+    });
+    $$(".ps-sim", detail).forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        var it = ITEMS.filter(function (x) { return String(x.id) === a.getAttribute("data-id"); })[0];
+        if (it) openDetail(it);
+      });
+    });
+
+    detail.addEventListener("scroll", function () {
+      var bar = $(".ps-detail__bar i", detail);
+      if (!bar) return;
+      var max = detail.scrollHeight - detail.clientHeight;
+      var p = max > 0 ? detail.scrollTop / max : 0;
+      bar.style.transform = "scaleX(" + Math.min(p, 1) + ")";
+    }, { passive: true });
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeDetail();
+  });
 
   /* ---------------------------------------------------------------- sources */
   (function sources() {
     var box = $("#ps-sources");
     if (!box) return;
-    box.innerHTML = (DATA.sources || []).map(function (s) {
-      return '<a class="ps-src" href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.name) + '</a>';
+    box.innerHTML = (DATA.sources || []).map(function (s, i) {
+      return '<a class="ps-src rv" data-i="' + (i % 12) + '" href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.name) + '</a>';
     }).join("");
   })();
 
   /* -------------------------------------------------------------- first run */
   render();
+  watch($$(".ps-view .rv"), null, 70);
+
+  /* прямая ссылка на возможность: /poisk#12 */
+  (function deepLink() {
+    var id = (location.hash || "").replace("#", "");
+    if (!id) return;
+    var it = ITEMS.filter(function (x) { return String(x.id) === id; })[0];
+    if (it) setTimeout(function () { openDetail(it); }, 500);
+  })();
 })();

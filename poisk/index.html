@@ -28,9 +28,9 @@
   <link rel="manifest" href="/site.webmanifest">
   <link rel="preload" href="/assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/assets/fonts/golos-text-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-07-1">
-  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-07-1">
-  <link rel="stylesheet" href="/assets/css/poisk.css?v=2026-11-07-1">
+  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-07-2">
+  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-07-2">
+  <link rel="stylesheet" href="/assets/css/poisk.css?v=2026-11-07-2">
 </head>
 <body class="ps" data-page="poisk">
 
@@ -57,7 +57,7 @@
       <div>
         <p class="ps-eyebrow">Смена контента в поиске</p>
         <h1 id="ps-hero-title" class="ps-grad" data-text="Смена контента в поиске">Смена контента в поиске</h1>
-        <p class="ps-lead">Смены и конкурсы, гранты и олимпиады, молодёжные школы и стажировки — в одном месте. Собрано из официальных источников: лагеря, фонды, Росмолодёжь, вузы.</p>
+        <p class="ps-lead">Сорок конкретных возможностей: смены, конкурсы, олимпиады, гранты и школы. Не «организации», а сами проекты — с шагами, сроками и ссылкой на заявку.</p>
         <div class="ps-hero__cta">
           <button type="button" class="ps-btn ps-btn--solid" data-tab-link="search">Найти смену</button>
           <button type="button" class="ps-btn ps-btn--ghost" data-tab-link="how">Как это работает</button>
@@ -66,13 +66,13 @@
     </header>
 
     <main id="main" class="ps-wrap">
-      <div class="ps-head">
+      <div class="ps-head rv">
         <h2>Подберите то,<br>что подходит именно вам</h2>
         <p>Поставьте возраст — остальное отфильтруется само. Все возможности в подборке бесплатные: путёвки по квоте, гранты, конкурсы без взносов.</p>
       </div>
 
       <div class="ps-layout">
-        <aside class="ps-filters" aria-label="Фильтры">
+        <aside class="ps-filters rv" aria-label="Фильтры">
           <div class="ps-filters__title">Фильтры</div>
 
           <div class="ps-group">
@@ -120,7 +120,7 @@
         </aside>
 
         <section>
-          <div class="ps-res" id="ps-count">найдено <b>17</b> из 17</div>
+          <div class="ps-res" id="ps-count">найдено <b>40</b> из 40</div>
           <div class="ps-cards" id="ps-cards"></div>
         </section>
       </div>
@@ -129,36 +129,36 @@
 
   <div class="ps-view" id="ps-view-how">
     <main class="ps-wrap">
-      <div class="ps-head">
+      <div class="ps-head rv">
         <span class="ps-eyebrow">Как это работает</span>
         <h2>От поиска<br>до заявки</h2>
         <p>Мы не подаём заявки вместо вас и не берём денег за подборку. Задача — чтобы нужная возможность нашлась за минуту, а не за вечер в тридцати вкладках.</p>
       </div>
 
       <div class="ps-steps">
-        <div class="ps-step">
+        <div class="ps-step rv" data-i="0">
           <b>01</b>
           <h3>Ставите возраст</h3>
           <p>Ползунок от 10 до 35 лет. Всё, что младше или старше, сразу уходит из выдачи: несовершеннолетним — лагеря и конкурсы, с 14 — гранты и школы.</p>
         </div>
-        <div class="ps-step">
+        <div class="ps-step rv" data-i="1">
           <b>02</b>
           <h3>Выбираете направление</h3>
           <p>Наука, IT, творчество, социальное, медиа. Направление проставлено по описанию организатора, а не по нашим догадкам.</p>
         </div>
-        <div class="ps-step">
+        <div class="ps-step rv" data-i="2">
           <b>03</b>
           <h3>Смотрите дедлайн</h3>
           <p>У каждой карточки — срок в той формулировке, в которой его даёт организатор. Точные даты — по ссылке на его сайте.</p>
         </div>
-        <div class="ps-step">
+        <div class="ps-step rv" data-i="3">
           <b>04</b>
           <h3>Открываете у организатора</h3>
           <p>Кнопка ведёт на официальную страницу заявки. Приём заявок, правила отбора и согласия на обработку данных — на стороне организатора.</p>
         </div>
       </div>
 
-      <div class="ps-note">
+      <div class="ps-note rv">
         Подборка обновляется: смены и конкурсы приходят с официальных сайтов лагерей, фондов и олимпиад, а анонсы — из открытых каналов организаторов. Если организация объявила новый сезон, карточка обновится. Мы не обещаем участие и не влияем на отбор.
       </div>
     </main>
@@ -166,24 +166,19 @@
 
   <div class="ps-view" id="ps-view-src">
     <main class="ps-wrap">
-      <div class="ps-head">
+      <div class="ps-head rv">
         <span class="ps-eyebrow">Источники</span>
         <h2>Откуда берутся<br>возможности</h2>
         <p>Только официальные сайты организаторов и их открытые каналы. Никаких перепродаж путёвок и посредников.</p>
       </div>
       <div class="ps-srcs" id="ps-sources"></div>
-      <div class="ps-note">
+      <div class="ps-note rv">
         Список источников открытый: если вы организатор смены, конкурса или гранта и хотите попасть в подборку — напишите нам, мы добавим ссылку. Условия участия всегда читайте на сайте организатора: там же правила отбора, согласия и требования к документам.
       </div>
     </main>
   </div>
 
-  <div class="ps-overlay" id="ps-overlay" role="dialog" aria-modal="true" aria-label="Возможность">
-    <div class="ps-modal">
-      <button type="button" class="ps-modal__close" id="ps-close" aria-label="Закрыть">✕</button>
-      <div id="ps-modal-body"></div>
-    </div>
-  </div>
+  <div class="ps-detail" id="ps-detail" role="dialog" aria-modal="true" aria-label="Возможность"></div>
 
   <div class="ps-toast" id="ps-toast" role="status" aria-live="polite"></div>
 
@@ -198,8 +193,8 @@
     </div>
   </footer>
 
-  <script src="/assets/js/search-data.js?v=2026-11-07-1"></script>
-  <script src="/assets/js/poisk.js?v=2026-11-07-1"></script>
+  <script src="/assets/js/search-data.js?v=2026-11-07-2"></script>
+  <script src="/assets/js/poisk.js?v=2026-11-07-2"></script>
   <script>
     document.getElementById("ps-year").textContent = new Date().getFullYear();
     document.querySelectorAll("[data-tab-link]").forEach(function (b) {
