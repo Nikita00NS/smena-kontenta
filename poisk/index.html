@@ -28,9 +28,9 @@
   <link rel="manifest" href="/site.webmanifest">
   <link rel="preload" href="/assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/assets/fonts/golos-text-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-07-3">
-  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-07-3">
-  <link rel="stylesheet" href="/assets/css/poisk.css?v=2026-11-07-3">
+  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-07-4">
+  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-07-4">
+  <link rel="stylesheet" href="/assets/css/poisk.css?v=2026-11-07-4">
 </head>
 <body class="ps" data-page="poisk">
 
@@ -43,7 +43,7 @@
   <canvas id="ps-scene" aria-hidden="true"></canvas>
 
   <nav class="ps-hud" aria-label="Разделы поиска">
-    <a class="ps-brand" href="/"><span class="ps-brand__mark" aria-hidden="true"></span><span>Смена контента</span></a>
+    <a class="ps-brand" href="/" aria-label="Смена контента — на главную"><img class="ps-brand__logo" src="/assets/img/logo-dark.png" alt="Смена контента" width="199" height="36" decoding="async"></a>
     <div class="ps-hud__nav">
       <button type="button" class="is-on" data-tab="search">Поиск</button>
       <button type="button" data-tab="how">Как это работает</button>
@@ -57,7 +57,7 @@
       <div>
         <p class="ps-eyebrow">Смена контента в поиске</p>
         <h1 id="ps-hero-title" class="ps-grad" data-text="Смена контента в поиске">Смена контента в поиске</h1>
-        <p class="ps-lead">Сорок конкретных возможностей: смены, конкурсы, олимпиады, гранты и школы. Не «организации», а сами проекты — с шагами, сроками и ссылкой на заявку.</p>
+        <p class="ps-lead">Конкурсы, олимпиады, смены, гранты и школы — сорок позиций. Не «организации», а сами проекты: с шагами, сроками и прямой ссылкой на страницу конкурса.</p>
         <div class="ps-hero__cta">
           <button type="button" class="ps-btn ps-btn--solid" data-tab-link="search">Найти смену</button>
           <button type="button" class="ps-btn ps-btn--ghost" data-tab-link="how">Как это работает</button>
@@ -83,11 +83,11 @@
           <div class="ps-group">
             <div class="ps-group__label">Тип</div>
             <div class="ps-chips">
-              <button type="button" class="ps-chip" data-type="смена">Смена</button>
-              <button type="button" class="ps-chip" data-type="конкурс">Конкурс</button>
-              <button type="button" class="ps-chip" data-type="грант">Грант</button>
-              <button type="button" class="ps-chip" data-type="олимпиада">Олимпиада</button>
-              <button type="button" class="ps-chip" data-type="школа">Школа</button>
+              <button type="button" class="ps-chip" data-type="конкурс">Конкурсы</button>
+              <button type="button" class="ps-chip" data-type="олимпиада">Олимпиады</button>
+              <button type="button" class="ps-chip" data-type="грант">Гранты</button>
+              <button type="button" class="ps-chip" data-type="смена">Смены</button>
+              <button type="button" class="ps-chip" data-type="школа">Школы</button>
             </div>
           </div>
 
@@ -193,8 +193,8 @@
     </div>
   </footer>
 
-  <script src="/assets/js/search-data.js?v=2026-11-07-3"></script>
-  <script src="/assets/js/poisk.js?v=2026-11-07-3"></script>
+  <script src="/assets/js/search-data.js?v=2026-11-07-4"></script>
+  <script src="/assets/js/poisk.js?v=2026-11-07-4"></script>
   <script>
     document.getElementById("ps-year").textContent = new Date().getFullYear();
     document.querySelectorAll("[data-tab-link]").forEach(function (b) {
