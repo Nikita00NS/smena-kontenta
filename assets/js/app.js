@@ -7307,9 +7307,12 @@
           ? '<img class="founder__photo founder__photo--alt" src="' + esc(f.photoAlt) + '" alt="">'
           : "";
         var bio = f.bio
-          ? esc(f.bio)
-          : "Основатель проекта «Смена контента»: молодёжного медиасообщества с редакциями, " +
-            "медиашколой и картой регионов.";
+          ? String(f.bio).split(/\n{2,}/).map(function (par) {
+              return '<p class="founder__bio">' + esc(par.trim()) + "</p>";
+            }).join("")
+          : '<p class="founder__bio">' +
+            "Основатель проекта «Смена контента»: молодёжного медиасообщества с редакциями, " +
+            "медиашколой и картой регионов.</p>";
         return (
           '<article class="founder founder--page" id="' + esc(f.id || "f" + i) + '">' +
           '<div class="founder__photos">' + photo + alt + "</div>" +
@@ -7317,7 +7320,7 @@
           "<h2>" + esc(f.name) + "</h2>" +
           '<p class="founder__role">' + esc(f.role || "Основатель") +
           (f.city ? " · " + esc(f.city) : "") + "</p>" +
-          '<p class="founder__bio">' + bio + "</p>" +
+          bio +
           '<dl class="founder__facts">' +
           (f.city ? "<div><dt>Город</dt><dd>" + esc(f.city) + "</dd></div>" : "") +
           (f.role ? "<div><dt>Роль</dt><dd>" + esc(f.role) + "</dd></div>" : "") +
@@ -7386,7 +7389,9 @@
           '<div class="founder__body"><h3>' + esc(f.name) + "</h3>" +
           '<p class="founder__role">' + esc(f.role || "Основатель") +
           (f.city ? " · " + esc(f.city) : "") + "</p></div>" +
-          '<div class="founder__more"><p>' + (esc(f.bio) || "Основатель проекта «Смена контента».") +
+          /* в карточке на главной — только первый абзац, целиком биография на /founders */
+          '<div class="founder__more"><p>' +
+          (esc(String(f.bio || "").split(/\n{2,}/)[0].trim()) || "Основатель проекта «Смена контента».") +
           '</p><a class="founder__link" href="/founders#' + esc(f.id || "") + '">Подробнее →</a></div>' +
           "</article>"
         );
