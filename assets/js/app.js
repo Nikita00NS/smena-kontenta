@@ -7487,13 +7487,17 @@
     if (page === "docs") initDocs();
     if (page === "admin") initAdmin();
     if (page === "founders") {
+      /* карточки показываем сразу из данных проекта, а после ответа сервера
+         дополняем их фотографиями и городом: иначе при медленном сервере
+         блок пустой, пока не придёт ответ */
+      initFoundersPage();
       if (Store && Store.founders) {
         Store.founders().then(function (list) {
-          if (list && list.length) SC.founders = list;
-          initFoundersPage();
-        }, initFoundersPage);
-      } else {
-        initFoundersPage();
+          if (list && list.length) {
+            SC.founders = list;
+            initFoundersPage();
+          }
+        }, function () {});
       }
     }
     if (page === "support") initSupport();
@@ -7522,6 +7526,12 @@
       /* пусто */
     }
     start();
+  }
+
+  /* основатели не ждут проверки сервера: карточки видны сразу,
+     фото и город подтянутся, когда ответит сервер */
+  if (document.body && document.body.getAttribute("data-page") === "founders") {
+    initFoundersPage();
   }
 
   if (document.readyState === "loading") {
