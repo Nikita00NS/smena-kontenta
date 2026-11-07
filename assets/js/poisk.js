@@ -18,6 +18,18 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  var LINK_LABEL = {
+    "конкурс": "Страница конкурса",
+    "олимпиада": "Страница олимпиады",
+    "грант": "Страница гранта",
+    "смена": "Страница смены",
+    "школа": "Страница школы"
+  };
+  function linkLabel(it) { return LINK_LABEL[it.type] || "Открыть у организатора"; }
+
+  var LINK_GEN = { "конкурс": "конкурса", "олимпиада": "олимпиады", "грант": "гранта", "смена": "смены", "школа": "школы" };
+  function linkGenitive(it) { return LINK_GEN[it.type] || "возможности"; }
+
   function host(url) {
     try { return new URL(url, location.origin).host.replace(/^www\./, ""); } catch (e) { return url; }
   }
@@ -335,7 +347,7 @@
         '</div>' +
         '<div class="ps-actions">' +
           '<button class="ps-btn--ghost" data-act="more" type="button">Подробнее</button>' +
-          '<a class="ps-btn--solid" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">К организатору</a>' +
+          '<a class="ps-btn--solid" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">' + linkLabel(it) + '</a>' +
         '</div>' +
       '</article>';
   }
@@ -495,7 +507,7 @@
           '<div class="ps-kv"><span>что получает</span><b>' + esc(it.prize) + '</b></div>' +
         '</div>' +
         '<div class="ps-detail__cta">' +
-          '<a class="ps-btn ps-btn--solid" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">Открыть у организатора</a>' +
+          '<a class="ps-btn ps-btn--solid" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">Открыть страницу ' + esc(linkGenitive(it)) + ' у организатора</a>' +
           '<button type="button" class="ps-btn ps-btn--ghost" data-copy="' + esc(it.link) + '">Скопировать ссылку</button>' +
         '</div>' +
       '</header>' +
