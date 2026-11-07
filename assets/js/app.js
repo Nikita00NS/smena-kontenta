@@ -1285,7 +1285,7 @@
       "</div>" +
       '<div class="map-pick" data-pick>' +
       '<div class="map-pick__meta">Регион не выбран</div>' +
-      '<div class="map-pick__name">Наведите на карту</div>' +
+      '<div class="map-pick__name">Выберите регион</div>' +
       '<div class="map-pick__status">Покажем, сколько материалов вышло из этого региона ' +
       "и что делать, если их пока нет.</div>" +
       "</div>" +

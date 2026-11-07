@@ -2933,14 +2933,72 @@ p:last-child {
   .map-layout {
     grid-template-columns: minmax(0, 1fr);
     justify-content: stretch;
+    gap: 12px;
+  }
+  /* на телефоне панель раскладывается по порядку: сначала поиск,
+     потом сама карта, ниже — фильтры, выбор и список регионов */
+  .map-panel {
+    display: contents;
+  }
+  .map-search {
+    order: 1;
   }
   .map-stage {
+    order: 2;
     max-width: 100%;
-    aspect-ratio: auto;
-    min-height: 300px;
+    margin-inline: 0;
+    aspect-ratio: 16 / 11;
+    padding: 6px;
   }
-  .map-panel {
-    order: -1;
+  .district-chips {
+    order: 3;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .district-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .chip-sm {
+    flex: none;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .map-legend {
+    order: 4;
+  }
+  .map-pick {
+    order: 5;
+    min-height: 0;
+  }
+  .map-regions-toggle {
+    order: 6;
+    padding: 6px 0;
+    font-size: 13px;
+    align-self: stretch;
+    justify-content: center;
+  }
+  /* подсказки про мышь на телефоне не нужны */
+  .map-hint {
+    display: none;
+  }
+  /* свайп по карте прокручивает страницу, а не залипает в карте */
+  .map-svg {
+    touch-action: pan-y;
+  }
+  .map-zoom {
+    right: 6px;
+    bottom: 6px;
+  }
+  .map-zoom button {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+  .map-suggest button {
+    padding: 12px;
+    font-size: 0.95rem;
   }
   .article-aside {
     position: static;
