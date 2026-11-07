@@ -85,8 +85,8 @@ body.ps.cursor-on .ps-cur { display: block; }
   box-shadow: 0 0 40px rgba(110, 231, 255, .08); max-width: calc(100vw - 24px);
 }
 .ps-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: .78rem; letter-spacing: .03em; padding-right: 14px; border-right: 1px solid rgba(110, 231, 255, .15); margin-right: 4px; white-space: nowrap; }
-.ps-brand__logo { display: block; height: 20px; width: auto; filter: drop-shadow(0 0 10px rgba(110, 231, 255, .35)); transition: filter .3s, transform .3s var(--ps-ease); }
-.ps-brand:hover .ps-brand__logo { filter: drop-shadow(0 0 16px rgba(110, 231, 255, .75)); transform: scale(1.03); }
+.ps-brand__logo { display: block; height: 20px; width: auto; filter: brightness(0) invert(1) drop-shadow(0 0 10px rgba(110, 231, 255, .35)); transition: filter .3s, transform .3s var(--ps-ease); }
+.ps-brand:hover .ps-brand__logo { filter: brightness(0) invert(1) drop-shadow(0 0 16px rgba(110, 231, 255, .75)); transform: scale(1.03); }
 @keyframes ps-spin { to { transform: rotate(360deg); } }
 .ps-hud__nav { display: flex; gap: 2px; }
 .ps-hud__nav button { padding: 8px 14px; color: rgba(255, 255, 255, .5); font-size: .75rem; font-weight: 600; border-radius: 999px; transition: .3s; white-space: nowrap; }
