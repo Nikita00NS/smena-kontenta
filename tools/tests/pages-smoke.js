@@ -6,7 +6,14 @@ const path = require("node:path");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
 const ROOT = "/home/user/smena-kontenta";
-const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html"];
+/* jsdom не умеет часть браузерных API (навигация, canvas, matchMedia).
+   Такие сообщения — артефакт стенда, а не ошибка страницы: их отсекаем,
+   иначе на «дым» уходят настоящие ошибки. */
+const ARTIFACT = /Not implemented/i;
+/* Страницы со своим каркасом: у них нет шапки и подвала сайта — это норма. */
+const standalone = ["poisk/index.html"];
+
+const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html", "poisk/index.html", "docs/index.html", "media-school/index.html", "about/index.html", "partners/index.html", "founders/index.html"];
 
 function inline(html) {
   return html
@@ -26,8 +33,9 @@ function inline(html) {
     if (!fs.existsSync(file)) { console.log("НЕТ ФАЙЛА", rel); continue; }
     const errors = [];
     const vc = new VirtualConsole();
-    vc.on("jsdomError", (e) => errors.push("jsdomError: " + (e.detail || e.message || e)));
-    vc.on("error", (...a) => errors.push("console.error: " + a.map(String).join(" ")));
+    const push = (msg) => { if (!ARTIFACT.test(msg)) errors.push(msg); };
+    vc.on("jsdomError", (e) => push("jsdomError: " + (e.detail || e.message || e)));
+    vc.on("error", (...a) => push("console.error: " + a.map(String).join(" ")));
     const dom = new JSDOM(inline(fs.readFileSync(file, "utf8")), {
       url: "https://smenakontenta.ru/" + rel.replace(/index\.html$/, ""),
       runScripts: "dangerously",
@@ -47,7 +55,9 @@ function inline(html) {
     const main = doc.getElementById("main") || doc.body;
     const status = errors.length ? "ОШИБКИ" : "ok";
     if (errors.length) bad++;
-    console.log(status, rel, "| шапка:", !!doc.querySelector(".site-header"), "| подвал:", !!doc.querySelector(".site-footer"),
+    const own = standalone.indexOf(rel) !== -1;
+    console.log(status, rel, "| шапка:", own ? "свой каркас" : !!doc.querySelector(".site-header"),
+      "| подвал:", own ? "свой подвал" : !!doc.querySelector(".site-footer"),
       "| main:", main.innerHTML.length);
     errors.slice(0, 4).forEach((e) => console.log("    ", String(e).slice(0, 400)));
     dom.window.close();
