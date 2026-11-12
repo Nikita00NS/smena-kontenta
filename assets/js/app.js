@@ -3896,7 +3896,7 @@
           return '<div class="editorial-card"><div class="editorial-card__top"><b>' + esc(e.name) +
             "</b><span>" + (e.members || 0) + " в штате</span></div>" +
             (e.about ? "<p>" + esc(e.about) + "</p>" : "") +
-            '<div class="editorial-card__meta">Руководитель: ' + esc(e.founderName) +
+            '<div class="editorial-card__meta">Руководитель: ' + esc(e.founderName || "назначается") +
             " · " + esc(fmtDate(e.createdAt)) + "</div></div>";
         })
         .join("");

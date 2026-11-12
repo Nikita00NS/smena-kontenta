@@ -662,6 +662,7 @@
         rejected: ["отказ", "status--bad"],
         left: ["вы вышли", "status--draft"],
         excluded: ["исключены", "status--bad"],
+        closed: ["редакция закрыта", "status--draft"],
       };
 
       function reload(note) {

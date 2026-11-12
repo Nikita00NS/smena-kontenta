@@ -233,12 +233,132 @@ function eo_owned_editorial($dir, $userId) {
 function editorial_open_routes($act, $dir) {
     $handled = array('editorial-open-save', 'editorial-open-mine', 'editorial-open-withdraw',
         'editorial-open-get', 'editorial-open-queue', 'editorial-open-received',
-        'editorial-open-return', 'editorial-open-decide', 'editorial-create');
+        'editorial-open-return', 'editorial-open-decide', 'editorial-create',
+        'editorial-all', 'editorial-head', 'editorial-close');
     if (!in_array($act, $handled, true)) return false;
 
     $in = body();
     $me = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
+
+    /* ---------------------------------------------- действующие редакции */
+
+    /* Список всех редакций со штатом — для директора и центральной редакции. */
+    if ($act === 'editorial-all') {
+        if (!can_any($me, array('editorials.open', 'editorials.appoint')) || staff_scope($me) !== null) {
+            fail('Список редакций видит руководство проекта.', 403);
+        }
+        $users = read_users($dir);
+        $out = array();
+        foreach (read_editorials($dir) as $e) {
+            $roster = array();
+            foreach ($users as $u) {
+                if (!isset($u['editorialId']) || (string) $u['editorialId'] !== (string) $e['id']) continue;
+                if (isset($u['status']) && $u['status'] === 'deleted') continue;
+                $roster[] = array('id' => $u['id'], 'name' => $u['name'], 'head' => $u['id'] === $e['founderId'],
+                    'access' => isset($u['access']) ? $u['access'] : 'Пользователь');
+            }
+            $out[] = array(
+                'id' => $e['id'], 'name' => $e['name'], 'region' => $e['region'],
+                'headId' => $e['founderId'], 'headName' => $e['founderName'],
+                'createdAt' => $e['createdAt'], 'roster' => $roster,
+            );
+        }
+        usort($out, function ($a, $b) { return strcmp((string) $a['name'], (string) $b['name']); });
+        respond(array('ok' => true, 'editorials' => $out, 'canDecide' => can($me, 'editorials.open')));
+    }
+
+    /* Смена руководителя и закрытие редакции — решение директора, под код из письма. */
+    if ($act === 'editorial-head' || $act === 'editorial-close') {
+        $me = require_confirm($dir, $in, 'editorials.open');
+        $id = text(isset($in['id']) ? $in['id'] : '', 60);
+        $editorials = read_editorials($dir);
+        $index = -1;
+        foreach ($editorials as $i => $e) {
+            if ((string) $e['id'] === $id) $index = $i;
+        }
+        if ($index < 0) fail('Редакция не найдена.', 404);
+        $ed = $editorials[$index];
+        $now = date('c');
+
+        if ($act === 'editorial-head') {
+            $userId = text(isset($in['userId']) ? $in['userId'] : '', 60);
+            if ($userId === (string) $ed['founderId']) fail('Этот человек уже руководит редакцией.', 409);
+            $users = read_users($dir);
+            $newIndex = -1; $oldIndex = -1;
+            foreach ($users as $i => $u) {
+                if ((string) $u['id'] === $userId) $newIndex = $i;
+                if ((string) $u['id'] === (string) $ed['founderId']) $oldIndex = $i;
+            }
+            if ($newIndex < 0 || (isset($users[$newIndex]['status']) && $users[$newIndex]['status'] !== 'active')) {
+                fail('Участник не найден.', 404);
+            }
+            if (!isset($users[$newIndex]['editorialId']) || (string) $users[$newIndex]['editorialId'] !== $id) {
+                fail('Руководителем можно назначить участника этой редакции.', 409);
+            }
+            if (!consent_ok($dir, $users[$newIndex])) fail('У участника нет принятого согласия на обработку данных.', 409);
+            $oldName = $ed['founderName'];
+            $editorials[$index]['founderId'] = $users[$newIndex]['id'];
+            $editorials[$index]['founderName'] = $users[$newIndex]['name'];
+            $editorials[$index]['headChangedAt'] = $now;
+            if (role_level(isset($users[$newIndex]['access']) ? $users[$newIndex]['access'] : '') < ROLE_LEVELS['Редакционный основатель']) {
+                $users[$newIndex]['access'] = 'Редакционный основатель';
+            }
+            /* прежний руководитель остаётся участником, но права руководителя с него снимаются */
+            if ($oldIndex >= 0 && isset($users[$oldIndex]['access']) && $users[$oldIndex]['access'] === 'Редакционный основатель') {
+                $users[$oldIndex]['access'] = 'Пользователь';
+            }
+            if (!write_json(users_file($dir), $users) || !write_json(editorials_file($dir), $editorials)) {
+                fail('Не удалось сохранить.', 500);
+            }
+            audit_log($dir, (string) $me['email'], 'editorial-head',
+                'редакция «' . $ed['name'] . '»: руководитель ' . ($oldName !== '' ? $oldName : '—') . ' → ' . $users[$newIndex]['name']);
+            notify_user($dir, $users[$newIndex]['id'], 'Вы назначены руководителем редакции «' . $ed['name'] . '». Заявки, штат и отчёты — в кабинете, вкладка «Редакция».',
+                array('kind' => 'editorial', 'ref' => 'edhead:' . $id . ':' . time()));
+            if ($oldIndex >= 0) {
+                notify_user($dir, $users[$oldIndex]['id'], 'Руководителем редакции «' . $ed['name'] . '» назначен(а) ' . $users[$newIndex]['name'] . '. Вы остаётесь участником редакции.',
+                    array('kind' => 'editorial', 'ref' => 'edheadold:' . $id . ':' . time()));
+            }
+            respond(array('ok' => true, 'headId' => $users[$newIndex]['id'], 'headName' => $users[$newIndex]['name']));
+        }
+
+        /* закрытие: люди остаются авторами проекта, редакция уходит в архив */
+        $note = text(isset($in['note']) ? $in['note'] : '', 400);
+        if (slen($note) < 5) fail('Напишите причину закрытия: участники получат её в уведомлении.');
+        $members = array();
+        foreach (read_users($dir) as $u) {
+            if (isset($u['editorialId']) && (string) $u['editorialId'] === $id
+                && !(isset($u['status']) && $u['status'] === 'deleted')) $members[] = $u['id'];
+        }
+        foreach ($members as $userId) {
+            editorial_member_out($dir, $userId, $id, 'closed', $note, $me['name']);
+        }
+        $apps = read_editorial_apps($dir);
+        foreach ($apps as $i => $a) {
+            if ((string) $a['editorialId'] === $id && $a['status'] === 'pending') {
+                $apps[$i]['status'] = 'closed';
+                $apps[$i]['note'] = 'Редакция закрыта';
+                $apps[$i]['decidedAt'] = $now;
+            }
+        }
+        write_json(editorial_apps_file($dir), $apps);
+        $closed = read_json($dir . '/editorials-closed.json', array());
+        if (!is_array($closed)) $closed = array();
+        $ed['closedAt'] = $now;
+        $ed['closedBy'] = $me['name'];
+        $ed['closeNote'] = $note;
+        $closed[] = $ed;
+        array_splice($editorials, $index, 1);
+        if (!write_json(editorials_file($dir), $editorials) || !write_json($dir . '/editorials-closed.json', $closed)) {
+            fail('Не удалось сохранить.', 500);
+        }
+        audit_log($dir, (string) $me['email'], 'editorial-close', 'закрыта редакция «' . $ed['name'] . '»: ' . $note);
+        foreach ($members as $userId) {
+            notify_user($dir, $userId, 'Редакция «' . $ed['name'] . '» закрыта решением директора проекта. Причина: ' . rtrim($note, " .!?") . '. Вы остаётесь автором проекта: материалы можно отправлять как раньше.',
+                array('kind' => 'editorial', 'ref' => 'edclose:' . $id . ':' . $userId));
+        }
+        respond(array('ok' => true, 'members' => count($members)));
+    }
     $list = read_editorial_open($dir);
 
     if ($act === 'editorial-open-mine') {

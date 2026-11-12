@@ -640,6 +640,69 @@
       if (has("editorialOpen")) mountEditorialOpenQueue(panel);
       if (has("reports") && window.SCReports && window.SCReports.admin) window.SCReports.admin(panel, user, ui, kit());
       if (has("editorialApps")) legacy.editorialApps(panel);
+      if (cap("editorials.open") || has("editorialApps")) mountEditorialsAll(panel);
+    }
+
+    /* Действующие редакции: штат, смена руководителя, закрытие. Решения — у директора. */
+    function mountEditorialsAll(panel) {
+      var sec = section(panel, "editorial-all", "Редакции", "Действующие редакции",
+        "Сменить руководителя или закрыть редакцию может директор проекта. Новым руководителем становится участник этой редакции; " +
+        "при закрытии люди остаются авторами проекта, а их материалы проверяет центральная редакция.");
+      sec.tools.innerHTML = '<button class="btn btn--sm btn--ghost" type="button" data-reload>Обновить</button>';
+      $("[data-reload]", sec.tools).addEventListener("click", reload);
+
+      function reload() {
+        load(sec, "editorial-all", {}, function (res) {
+          var list = res.editorials || [];
+          sec.body.innerHTML = list.length ? list.map(function (e) {
+            var others = e.roster.filter(function (m) { return !m.head; });
+            return '<article class="adm-item" data-ed="' + esc(e.id) + '">' +
+              '<div class="adm-item__top"><h3>' + esc(e.name) + "</h3>" +
+              (e.headId ? "" : '<span class="status status--bad">без руководителя</span>') + "</div>" +
+              '<p class="adm-item__meta">' + esc(region(e.region)) + " · руководитель — " + esc(e.headName || "не назначен") +
+              " · в штате " + e.roster.length + " · открыта " + esc(day(e.createdAt)) + "</p>" +
+              '<p class="adm-item__meta">Штат: ' + (e.roster.length ? e.roster.map(function (m) { return esc(m.name) + (m.head ? " (руководитель)" : ""); }).join(", ") : "никого") + "</p>" +
+              (res.canDecide
+                ? '<div class="adm-item__actions">' +
+                  (others.length
+                    ? '<select class="adm-input" data-new-head aria-label="Новый руководитель">' + others.map(function (m) {
+                        return '<option value="' + esc(m.id) + '">' + esc(m.name) + "</option>";
+                      }).join("") + '</select><button class="btn btn--sm" type="button" data-set-head>Назначить руководителем</button>'
+                    : '<span class="form__note">Сменить руководителя можно, когда в редакции есть другие участники.</span>') +
+                  "</div>" +
+                  '<div class="adm-item__actions"><input type="text" class="adm-input" placeholder="Причина закрытия — участники получат её в уведомлении" data-close-note maxlength="400" aria-label="Причина закрытия">' +
+                  '<button class="btn btn--sm btn--ghost" type="button" data-close>Закрыть редакцию</button></div>'
+                : "") +
+              "</article>";
+          }).join("") : emptyNote("Действующих редакций пока нет.");
+          $$("[data-ed]", sec.body).forEach(function (el) {
+            var id = el.getAttribute("data-ed");
+            var setHead = $("[data-set-head]", el);
+            if (setHead) setHead.addEventListener("click", function () {
+              act(sec, "editorial-head", { id: id, userId: $("[data-new-head]", el).value }, function (r) {
+                sec.status.textContent = "Руководитель редакции — " + r.headName + ". Оба человека получили уведомления.";
+                reload();
+              }, setHead);
+            });
+            var close = $("[data-close]", el);
+            if (close) close.addEventListener("click", function () {
+              var note = $("[data-close-note]", el).value.trim();
+              if (note.length < 5) { sec.status.textContent = "Напишите причину закрытия: участники получат её в уведомлении."; $("[data-close-note]", el).focus(); return; }
+              if (close.getAttribute("data-sure") !== "1") {
+                close.setAttribute("data-sure", "1");
+                close.textContent = "Точно закрыть?";
+                sec.status.textContent = "Редакция уйдёт в архив, участники останутся авторами проекта. Нажмите ещё раз, чтобы закрыть.";
+                return;
+              }
+              act(sec, "editorial-close", { id: id, note: note }, function () {
+                sec.status.textContent = "Редакция закрыта, участники получили уведомление.";
+                reload();
+              }, close);
+            });
+          });
+        });
+      }
+      reload();
     }
 
     function mountEditorialOpenQueue(panel) {

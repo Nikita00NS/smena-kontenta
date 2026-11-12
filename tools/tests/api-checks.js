@@ -1351,6 +1351,54 @@ const results = [];
   r = await call("school-students", { token: teacherT.token, id: courseId });
   check("28.5 записи и ответы удалённого ученика стёрты", r.ok === true && r.students.length === 0, r);
 
+  /* ======================================================================
+     29. ДЕЙСТВУЮЩИЕ РЕДАКЦИИ: смена руководителя и закрытие — у директора.
+     ====================================================================== */
+  const vera = await newUser("Вера Преемница", "vera-p@example.ru", "moskva");
+  await giveConsent(vera);
+  r = await joinEditorial(vera);
+  check("29.1 новый участник принят в редакцию", r.ok === true, r);
+  r = await call("editorial-all", { token: authorA.token });
+  check("29.1 список всех редакций руководителю редакции закрыт", r.ok === false && r.code === 403, r);
+  r = await call("editorial-all", { token: token3 });
+  const edRow = (r.editorials || []).find((e) => e.id === editorialX);
+  check("29.1 директор видит редакцию со штатом", r.ok === true && r.canDecide === true && !!edRow && edRow.headId === authorA.id && edRow.roster.some((m) => m.id === vera.id), edRow);
+  r = await call("editorial-head", { token: token3, id: editorialX, userId: vera.id });
+  check("29.1 смена руководителя — только под код из письма", r.ok === false && r.needConfirm === true, r);
+  r = await call("editorial-head", { token: authorA.token, confirm: await makeConfirm(authorA.token), id: editorialX, userId: vera.id });
+  check("29.1 сам руководитель преемника не назначает", r.ok === false && r.code === 403, r);
+  r = await call("editorial-head", { token: token3, confirm: await makeConfirm(token3), id: editorialX, userId: token4 ? outsiderO.id : "" });
+  check("29.1 руководителем не назначить человека не из редакции", r.ok === false && (r.code === 404 || r.code === 409), r);
+  r = await call("editorial-head", { token: token3, confirm: await makeConfirm(token3), id: editorialX, userId: vera.id });
+  check("29.1 директор назначил нового руководителя", r.ok === true && r.headId === vera.id, r);
+  r = await call("me", { token: vera.token });
+  check("29.1 новый руководитель получил роль руководителя редакции", r.ok === true && r.user.access === "Редакционный основатель" && r.user.editorialId === editorialX, r.user);
+  r = await call("me", { token: authorA.token });
+  check("29.1 прежний руководитель остался участником без прав руководителя", r.ok === true && r.user.access === "Пользователь" && r.user.editorialId === editorialX, r.user);
+  r = await call("posts-queue", { token: authorA.token });
+  check("29.1 очередь редакции прежнему руководителю закрыта", r.ok === false && r.code === 403, r);
+  r = await call("editorial-mine", { token: vera.token });
+  check("29.1 новый руководитель видит редакцию и штат", r.ok === true && r.editorial && r.editorial.id === editorialX && r.roster.length >= 2, r);
+  r = await call("report-mine", { token: vera.token });
+  check("29.1 отчёты редакции перешли новому руководителю", r.ok === true && r.editorial && r.editorial.id === editorialX, r);
+
+  r = await call("editorial-close", { token: token3, confirm: await makeConfirm(token3), id: editorialX, note: "" });
+  check("29.2 закрыть редакцию без причины нельзя", r.ok === false && r.code === 400, r);
+  r = await call("editorial-close", { token: vera.token, confirm: await makeConfirm(vera.token), id: editorialX, note: "Хочу закрыть сама." });
+  check("29.2 руководитель редакции её не закрывает", r.ok === false && r.code === 403, r);
+  r = await call("editorial-close", { token: token3, confirm: await makeConfirm(token3), id: editorialX, note: "Команда разъехалась на лето." });
+  check("29.2 директор закрыл редакцию", r.ok === true && r.members >= 2, r);
+  r = await call("editorial-list", { region: "moskva" });
+  check("29.2 закрытой редакции нет в списке региона", r.ok === true && !r.editorials.some((e) => e.id === editorialX), r.editorials);
+  r = await call("me", { token: vera.token });
+  check("29.2 участники вышли из редакции, роль руководителя снята", r.ok === true && !r.user.editorialId && r.user.access === "Пользователь", r.user);
+  r = await call("messages-mine", { token: authorA.token });
+  check("29.2 участники получили уведомление с причиной", r.ok === true && r.messages.some((m) => /закрыта решением директора проекта\. Причина: Команда разъехалась на лето\./.test(m.text)), r.messages && r.messages.slice(0, 2));
+  r = await call("submit", postPayload(vera.token, "Материал автора после закрытия редакции"));
+  check("29.2 после закрытия редакции человек остаётся автором", r.ok === true && r.post.status === "pending", r);
+  r = await call("report-queue", { token: token3 });
+  check("29.2 закрытая редакция не числится в несдавших отчёт", r.ok === true && !r.missing.some((m) => m.editorialId === editorialX), r.missing);
+
   console.log("\n=== ИТОГ ===");
   let bad = 0;
   results.forEach((x) => {

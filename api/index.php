@@ -3943,6 +3943,15 @@ if ($act === 'account-delete') {
                 $changed = true;
             }
         }
+        /* руководитель удалил аккаунт: имя из редакции стирается, нового
+           руководителя назначает директор (панель, раздел «Редакции») */
+        foreach ($editorials as $i => $e) {
+            if (isset($e['founderId']) && $e['founderId'] === $me['id']) {
+                $editorials[$i]['founderId'] = '';
+                $editorials[$i]['founderName'] = '';
+                $changed = true;
+            }
+        }
         if ($changed) write_json($DATA_DIR . '/editorials.json', $editorials);
     }
 
