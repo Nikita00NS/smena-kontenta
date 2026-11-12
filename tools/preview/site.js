@@ -290,6 +290,32 @@ async function seedDemo(site) {
   const memberPost = await site.call("submit", { token: tokens.member, title: "Лицей № 7 открыл собственную студию подкастов",
     excerpt: "Материал участника редакции ждёт проверки руководителя.", body, topic: "Школа", format: "Новость", region: "respublika-tatarstan" });
 
+  /* Отчёты редакции. Редакция «открыта» три месяца назад — иначе сдавать было
+     бы нечего: отчёт сдаётся за завершившийся месяц. Один отчёт принят, один
+     ждёт решения центральной редакции, один не сдан. */
+  const monthsAgo = (n) => {
+    const d = new Date();
+    d.setUTCDate(1);
+    d.setUTCMonth(d.getUTCMonth() - n);
+    return d;
+  };
+  const period = (n) => monthsAgo(n).toISOString().slice(0, 7);
+  const editorials = await site.readData("editorials.json", []);
+  for (const e of editorials) {
+    if (e.id === editorialId) e.createdAt = period(3) + "-10T09:00:00+00:00";
+  }
+  await site.writeData("editorials.json", editorials);
+  const reportText = (n) => ({
+    done: "Выпустили материалы о школьных событиях, записали выпуск подкаста и провели планёрку с новыми авторами.",
+    events: n === 3 ? "Освещали городской фестиваль школьных медиа." : "",
+    problems: "Не хватает петличного микрофона для интервью.",
+    plans: "Серия интервью с учителями и фоторепортаж с олимпиады.",
+  });
+  const first = await site.call("report-save", { token: tokens.head, period: period(3), form: reportText(3), send: true });
+  if (!first || !first.ok) throw new Error("seedDemo: отчёт редакции — " + JSON.stringify(first));
+  await site.call("report-review", { token: tokens.editor, id: first.report.id, decision: "accepted", note: "Спасибо, хороший месяц." });
+  await site.call("report-save", { token: tokens.head, period: period(2), form: reportText(2), send: true });
+
   /* карты: одна выдана (есть что открыть и проверить), одна заявка ждёт решения */
   const granted = await site.call("card-grant", { token: director, id: ids.head });
   if (!granted || !granted.ok) throw new Error("seedDemo: карта руководителю — " + JSON.stringify(granted));

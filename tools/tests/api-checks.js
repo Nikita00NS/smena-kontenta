@@ -1118,6 +1118,87 @@ const results = [];
   check("26.6 список авторов отдаётся", r.ok === true && Array.isArray(r.authors), r);
   check("26.6 у авторов есть инициалы", r.ok === true && r.authors.every((a) => typeof a.initials === "string" && a.initials.length >= 1), r.authors && r.authors.slice(0, 3));
 
+  /* ======================================================================
+     27. ОТЧЁТЫ РЕДАКЦИЙ: текст пишет руководитель, цифры считает сервер,
+     принимает центральная редакция.
+     ====================================================================== */
+  const monthBack = (n) => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - n); return d.toISOString().slice(0, 7); };
+  const fullReport = { done: "Выпустили три материала, записали подкаст и провели планёрку с новыми авторами.",
+    plans: "Серия интервью с учителями.", problems: "Нужен микрофон.", events: "" };
+
+  r = await call("report-mine", { token: authorA.token });
+  check("27.1 у новой редакции отчётных месяцев ещё нет",
+    r.ok === true && r.editorial && r.editorial.id === editorialX && r.periods.length === 0 && r.current && typeof r.current.stats.members === "number", r);
+  check("27.1 цифры текущего месяца считает сервер: материалы участников учтены",
+    r.ok === true && r.current.stats.published >= 1 && r.current.stats.submitted >= 1 && r.current.stats.members >= 1, r.current && r.current.stats);
+  r = await call("report-mine", { token: token4 });
+  check("27.1 не руководителю отчёты не показываются", r.ok === true && r.editorial === null && r.periods.length === 0, r);
+  r = await call("report-save", { token: token4, period: monthBack(1), form: fullReport, send: true });
+  check("27.1 отчёт сдаёт только руководитель редакции", r.ok === false && r.code === 403, r);
+  r = await call("report-save", { token: authorA.token, period: monthBack(1), form: fullReport, send: true });
+  check("27.1 за месяц до открытия редакции отчёт не сдать", r.ok === false && r.code === 400, r);
+  r = await call("report-mine", {});
+  check("27.1 без входа отчёты закрыты", r.ok === false && r.code === 401, r);
+
+  // редакция «открыта» два месяца назад: появились отчётные месяцы
+  await editJson("editorials.json", (list) => list.map((e) => (e.id === editorialX ? Object.assign({}, e, { createdAt: monthBack(2) + "-03T10:00:00+00:00" }) : e)));
+  r = await call("report-mine", { token: authorA.token });
+  check("27.2 отчётные месяцы: с открытия редакции до прошлого месяца",
+    r.ok === true && r.periods.length === 2 && r.periods[0].period === monthBack(1) && r.periods[1].period === monthBack(2) && r.periods.every((p) => p.status === "none"), r.periods);
+  check("27.2 просроченный месяц помечен", r.ok === true && r.periods[1].overdue === true && /^\d{4}-\d{2}-05$/.test(r.periods[1].due), r.periods && r.periods[1]);
+  r = await call("report-save", { token: authorA.token, period: monthBack(0), form: fullReport, send: true });
+  check("27.2 за текущий месяц отчёт не сдать", r.ok === false && r.code === 400, r);
+  r = await call("report-save", { token: authorA.token, period: "2026-13", form: fullReport, send: true });
+  check("27.2 несуществующий месяц — отказ", r.ok === false && r.code === 400, r);
+  r = await call("report-save", { token: authorA.token, period: monthBack(2), form: { done: "коротко" }, send: true });
+  check("27.2 пустой отчёт не отправить", r.ok === false && r.code === 400, r);
+  r = await call("report-save", { token: authorA.token, period: monthBack(2), form: { done: "коротко" }, send: false });
+  check("27.2 черновик сохраняется", r.ok === true && r.report.status === "draft" && r.report.form.done === "коротко", r);
+  r = await call("report-queue", { token: token3 });
+  check("27.2 черновик центральной редакции не виден", r.ok === true && r.reports.length === 0, r.reports);
+  check("27.2 редакция с просроченным отчётом — в списке несдавших",
+    r.ok === true && r.missing.some((m) => m.editorialId === editorialX && m.period === monthBack(2) && m.status === "draft"), r.missing);
+
+  // отправка и решение
+  r = await call("report-save", { token: authorA.token, period: monthBack(2), form: fullReport, send: true });
+  check("27.3 отчёт отправлен", r.ok === true && r.report.status === "sent" && r.report.late === true && r.report.sentBy === "Анна Авторова", r);
+  check("27.3 цифры в отчёт подставил сервер",
+    r.ok === true && r.report.stats && typeof r.report.stats.published === "number" && r.report.stats.members >= 1 && r.report.stats.period === monthBack(2), r.report && r.report.stats);
+  const reportId = r.report ? r.report.id : "";
+  r = await call("report-save", { token: authorA.token, period: monthBack(2), form: fullReport, send: true });
+  check("27.3 отправленный отчёт не переписать", r.ok === false && r.code === 409, r);
+  r = await call("report-queue", { token: authorA.token });
+  check("27.3 очередь отчётов руководителю редакции закрыта", r.ok === false && r.code === 403, r);
+  r = await call("report-queue", { token: moder.token });
+  check("27.3 модератору отчёты закрыты", r.ok === false && r.code === 403, r);
+  r = await call("staff-summary", { token: token3 });
+  check("27.3 в сводке панели — один отчёт ждёт решения", r.ok === true && r.summary.reports === 1, r.summary);
+  r = await call("report-queue", { token: token3 });
+  check("27.3 отчёт в очереди с текстом и цифрами",
+    r.ok === true && r.reports.length === 1 && r.reports[0].id === reportId && r.reports[0].form.done.indexOf("подкаст") !== -1 && !!r.reports[0].stats, r.reports);
+  r = await call("report-review", { token: moder.token, id: reportId, decision: "accepted" });
+  check("27.3 решение по отчёту — только центральной редакции", r.ok === false && r.code === 403, r);
+  r = await call("report-review", { token: token3, id: reportId, decision: "returned", note: "" });
+  check("27.3 вернуть без замечания нельзя", r.ok === false && r.code === 400, r);
+  r = await call("report-review", { token: token3, id: reportId, decision: "returned", note: "Добавьте ссылки на вышедшие материалы." });
+  check("27.3 отчёт возвращён на доработку", r.ok === true && r.report.status === "returned", r);
+  r = await call("report-mine", { token: authorA.token });
+  const back = (r.periods || []).find((p) => p.period === monthBack(2));
+  check("27.3 руководитель видит замечание", !!back && back.status === "returned" && back.report.note === "Добавьте ссылки на вышедшие материалы." && back.overdue === true, back);
+  r = await call("messages-mine", { token: authorA.token });
+  check("27.3 замечание пришло сообщением", r.ok === true && r.messages.some((m) => /Отчёт редакции за .* возвращён на доработку/.test(m.text)), r.messages && r.messages.slice(0, 3));
+  r = await call("report-save", { token: authorA.token, period: monthBack(2), form: Object.assign({}, fullReport, { events: "Ссылки: /article?id=1" }), send: true });
+  check("27.3 исправленный отчёт отправлен заново", r.ok === true && r.report.status === "sent", r);
+  r = await call("report-review", { token: token3, id: reportId, decision: "accepted", note: "" });
+  check("27.3 отчёт принят", r.ok === true && r.report.status === "accepted" && r.report.decidedBy !== "", r);
+  r = await call("report-review", { token: token3, id: reportId, decision: "returned", note: "ещё раз вернуть" });
+  check("27.3 решение по отчёту принимается один раз", r.ok === false && r.code === 409, r);
+  r = await call("report-save", { token: authorA.token, period: monthBack(2), form: fullReport, send: false });
+  check("27.3 принятый отчёт не изменить", r.ok === false && r.code === 409, r);
+  r = await call("report-queue", { token: token3 });
+  check("27.3 принятый месяц ушёл из несдавших",
+    r.ok === true && !r.missing.some((m) => m.period === monthBack(2)) && r.waiting === 0, r.missing);
+
 
   console.log("\n=== ИТОГ ===");
   let bad = 0;

@@ -148,6 +148,7 @@ require __DIR__ . '/lib/staff.php';    /* уведомления о решени
 require __DIR__ . '/lib/consent.php';  /* согласие на обработку ПД: закрытое хранение, проверка */
 require __DIR__ . '/lib/cards.php';    /* пресс-карта: заявка, выдача, срок, проверка по номеру */
 require __DIR__ . '/lib/editorial_open.php'; /* заявление на открытие редакции → решение директора */
+require __DIR__ . '/lib/reports.php';  /* ежемесячные отчёты редакций: форма руководителя + цифры сервера */
 
 function action() {
     if (isset($_GET['action'])) return (string) $_GET['action'];
@@ -900,6 +901,7 @@ if (staff_routes($act, $DATA_DIR)) exit;
 if (consent_routes($act, $DATA_DIR)) exit;
 if (cards_routes($act, $DATA_DIR)) exit;
 if (editorial_open_routes($act, $DATA_DIR)) exit;
+if (reports_routes($act, $DATA_DIR)) exit;
 
 if ($act === 'selftest') {
     require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
@@ -1199,6 +1201,8 @@ if ($act === 'submit') {
         'authorName' => $authorUser['name'],
         'authorRole' => isset($authorUser['role']) ? $authorUser['role'] : '',
         'authorRegion' => isset($authorUser['region']) ? $authorUser['region'] : '',
+        /* редакция автора на момент отправки: по ней считается отчёт редакции */
+        'editorialId' => isset($authorUser['editorialId']) ? (string) $authorUser['editorialId'] : '',
         'title' => $title,
         'excerpt' => $excerpt,
         'body' => $content,
