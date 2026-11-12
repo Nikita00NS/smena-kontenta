@@ -413,7 +413,7 @@ window.Store = (function () {
     saveToken("");
     cacheUser(null);
     /* копии статусов и пропуск подтверждения — не для следующего вошедшего */
-    ["smena_consent_v1", "smena_consent_v2", "smena_card_v1", "smena_portfolio_v1", "smena_confirm"].forEach(function (key) {
+    ["smena_consent_v1", "smena_consent_v2", "smena_card_v1", "smena_portfolio_v1", "smena_portfolio_v2", "smena_confirm"].forEach(function (key) {
       try { window.localStorage.removeItem(key); } catch (e) {}
     });
     var data = read();
