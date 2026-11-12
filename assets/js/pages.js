@@ -48,6 +48,11 @@
     return text ? text + " г." : "—";
   }
 
+  /* название в кавычках; кавычки внутри названия становятся „лапками“ */
+  function quoted(name) {
+    return "«" + String(name || "").replace(/«/g, "„").replace(/»/g, "“") + "»";
+  }
+
   function phone(raw) {
     var d = String(raw || "").replace(/\D/g, "");
     if (d.length === 11 && (d[0] === "7" || d[0] === "8")) {
@@ -256,6 +261,8 @@
       var base = ((d.bases || {})[f.base] || "") + (f.baseName ? " — " + f.baseName : "");
       var back = d.own ? ["/profile#editorial", "В кабинет"] : ["/admin#editorials", "К заявлениям"];
       var draft = a.status === "draft";
+      var regionTitle = ui.regionName(f.region) || "";
+      var place = regionTitle + (f.city && f.city !== regionTitle ? (regionTitle ? ", " : "") + f.city : "");
 
       host.innerHTML =
         toolbar(esc, back[0], back[1], draft
@@ -264,18 +271,18 @@
         '<article class="doc-sheet" data-doc-sheet>' +
         '<div class="doc-sheet__to">' +
         "<p>" + esc(p.director.positionDative) + "<br>проекта " + esc(p.name) + "<br>" + esc(p.director.dative) + "</p>" +
-        "<p>от " + esc(f.headName || a.applicant.name) +
+        "<p>Заявитель: " + esc(f.headName || a.applicant.name) +
         (f.headBirth ? ",<br>дата рождения: " + esc(docDate(ui, f.headBirth)) : "") +
         (f.headPhone ? "<br>телефон: " + esc(phone(f.headPhone)) : "") +
         "<br>электронная почта: " + esc(a.applicant.email) + "</p></div>" +
         '<h1 class="doc-sheet__title">Заявление' + (a.number ? " № " + esc(a.number) : "") + "<small>на открытие редакции</small></h1>" +
-        "<p>Прошу открыть в проекте " + esc(p.name) + " редакцию <b>«" + esc(f.name || "") + "»</b>" +
-        " (" + esc(ui.regionName(f.region) || "") + (f.city ? ", " + esc(f.city) : "") + ")" +
+        "<p>Прошу открыть в проекте " + esc(p.name) + " редакцию <b>" + esc(quoted(f.name)) + "</b>" +
+        " (" + esc(place) + ")" +
         (base ? ", которая работает на базе: " + esc(base) : "") + ".</p>" +
         (f.about ? "<p><b>О редакции.</b> " + esc(f.about) + "</p>" : "") +
         (f.plan ? "<p><b>План выпуска.</b> " + esc(f.plan) + "</p>" : "") +
         (f.links ? "<p><b>Страницы редакции.</b> " + esc(f.links) + "</p>" : "") +
-        "<p><b>Руководитель редакции:</b> " + esc(f.headName || "") + (f.headBirth ? ", дата рождения " + esc(docDate(ui, f.headBirth)) : "") + ".</p>" +
+        "<p><b>Руководитель редакции:</b> " + esc(f.headName || "") + (f.headBirth ? ", дата рождения " + esc(docDate(ui, f.headBirth)) : ".") + "</p>" +
         (cur.name
           ? "<p><b>Куратор редакции</b> (совершеннолетний, отвечает за работу редакции вместе с руководителем): " + esc(cur.name) +
             (cur.role ? ", " + esc(cur.role) : "") + (cur.phone ? ", телефон " + esc(phone(cur.phone)) : "") +
@@ -305,7 +312,7 @@
         "<p>Решение: открыть редакцию / отказать (нужное подчеркнуть).</p>" +
         '<div class="doc-sign"><span>' + esc(p.director.position) + '</span><i></i><b>' + esc(p.director.short) + "</b></div></div>" +
         "</article>";
-      document.title = "Заявление " + (a.number || "— черновик") + " — редакция «" + (f.name || "") + "»";
+      document.title = "Заявление " + (a.number || "— черновик") + " — редакция " + quoted(f.name);
       bindPrint(ui, host);
     }, function (err) {
       host.innerHTML = notice(esc, "Заявление недоступно", (err && err.message) || "Не удалось получить заявление.", "/profile#editorial", "В кабинет");

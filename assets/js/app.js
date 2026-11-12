@@ -219,16 +219,15 @@
     return r ? r.name : "";
   }
 
-  /* материалы редакции + материалы, опубликованные авторами на сайте */
+  /* материалы редакции + материалы авторов, которые опубликовал сервер */
   function allArticles() {
     var base = (SC.articles || []).slice();
     var extra = [];
-    if (Store) {
+    if (Store && Store.remoteArticles) {
       try {
-        extra = Store.publishedAsArticles();
-        if (Store.remoteArticles) extra = extra.concat(Store.remoteArticles());
+        extra = Store.remoteArticles();
       } catch (e) {
-        extra = extra || [];
+        extra = [];
       }
     }
     return base
@@ -3828,23 +3827,24 @@
     host.innerHTML =
       '<div class="sec-head" style="margin-top:0"><div class="sec-head__left">' +
       '<span class="kicker">Редакции</span><h2>Редакции региона</h2>' +
-      '<p class="sec-head__text">Основатель редакции набирает штат сам: смотрит заявление, ' +
+      '<p class="sec-head__text">Руководитель редакции набирает штат сам: смотрит заявление, ' +
       "портфолио и материалы на сайте. Если решения нет семь дней, заявка уходит в центральную " +
-      "комиссию — отказ или молчание без основания не допускаются.</p></div></div>" +
+      "редакцию проекта — молчание без ответа не допускается.</p></div></div>" +
       '<div class="path-choice" data-path-choice>' +
       '<button class="path-choice__card" type="button" data-path-pick="individual">' +
       '<b>Писать индивидуально</b><span>Свой аккаунт, свои темы, проверка редакции. ' +
       "Пресс-карта — после пяти публикаций.</span></button>" +
       '<button class="path-choice__card" type="button" data-path-pick="editorial">' +
-      '<b>Вступить в редакцию региона</b><span>Заявление основателю, штат, редакционная ' +
-      "пресс-карта после трёх постов и общие проекты.</span></button></div>" +
+      '<b>Вступить в редакцию региона</b><span>Заявление руководителю редакции, работа в команде, ' +
+      "общие проекты. Материалы первым проверяет руководитель.</span></button></div>" +
       '<p class="form__note" data-path-note></p>' +
       '<div class="editorial-list" data-editorial-list><p class="media-empty">Загружаем редакции…</p></div>' +
       (user
         ? '<div class="editorial-actions">' +
           '<button class="btn btn--accent btn--sm" type="button" data-editorial-join>Подать заявление в редакцию</button>' +
-          '<button class="btn btn--ghost btn--sm" type="button" data-editorial-new>Создать свою редакцию</button>' +
+          '<a class="btn btn--ghost btn--sm" href="/profile#editorial">Открыть свою редакцию</a>' +
           "</div>" +
+          '<div data-editorial-gate></div>' +
           '<form class="editorial-form is-hidden" data-editorial-apply>' +
           '<div class="field"><label for="ed-target">Редакция</label>' +
           '<select id="ed-target" name="editorialId" data-editorial-target></select></div>' +
@@ -3857,28 +3857,36 @@
           '<input id="ed-files" type="file" accept="image/*,application/pdf" multiple data-editorial-files>' +
           '<p class="field__hint">Материалы с сайта приложатся автоматически.</p></div>' +
           '<div class="row"><button class="btn" type="submit">Отправить заявление</button>' +
-          '<span class="form__note" data-editorial-note></span></div></form>' +
-          '<form class="editorial-form is-hidden" data-editorial-create>' +
-          '<div class="field"><label for="ed-name">Название редакции</label>' +
-          '<input id="ed-name" name="name" type="text" maxlength="120" placeholder="Например, «Смена. Поволжье»"></div>' +
-          '<div class="field"><label for="ed-about">Чем будет заниматься</label>' +
-          '<textarea id="ed-about" name="about" rows="3" maxlength="600"></textarea></div>' +
-          '<div class="row"><button class="btn" type="submit">Создать редакцию</button>' +
-          '<span class="form__note" data-editorial-create-note></span></div></form>'
+          '<span class="form__note" data-editorial-note></span></div></form>'
         : '<div class="editorial-actions"><a class="btn btn--accent btn--sm" href="/join?next=profile">' +
           "Войдите, чтобы вступить в редакцию</a></div>");
 
     var listEl = $("[data-editorial-list]", host);
     var applyForm = $("[data-editorial-apply]", host);
-    var createForm = $("[data-editorial-create]", host);
     var targetSelect = $("[data-editorial-target]", host);
+    var gateEl = $("[data-editorial-gate]", host);
+
+    /* Вступить в редакцию можно только с принятым согласием: сервер проверит
+       это сам, а здесь сразу говорим человеку, чего не хватает. */
+    function consentReady() {
+      var c = Store.consent();
+      return !!(c && (c.exempt || c.granted));
+    }
+    function showGate() {
+      if (!gateEl) return;
+      var c = Store.consent();
+      gateEl.innerHTML = '<p class="gate">' + (c && c.status === "pending"
+        ? "<b>Согласие на проверке.</b> Заявление в редакцию откроется, как только редакция проекта примет ваше согласие на обработку данных. "
+        : "<b>Сначала — согласие на обработку данных.</b> Без него в редакцию не вступить: в заявлении есть ваши персональные данные. ") +
+        '<a href="/profile#docs">Открыть «Документы» в кабинете</a></p>';
+    }
 
     function drawList(items) {
       if (!items.length) {
         listEl.innerHTML =
           '<div class="fill-note fill-note--flat"><b>В этом регионе редакции пока нет</b>' +
-          "<p>Вы можете создать её первым: заявление на имя основателя, набор штата и работа " +
-          "с авторами региона.</p></div>";
+          "<p>Вы можете открыть её первым: анкета в личном кабинете, заявление на имя директора " +
+          'проекта и команда от трёх человек. <a href="/profile#editorial">Как открыть редакцию</a></p></div>';
         if (targetSelect) targetSelect.innerHTML = '<option value="">Редакций нет</option>';
         return;
       }
@@ -3887,7 +3895,7 @@
           return '<div class="editorial-card"><div class="editorial-card__top"><b>' + esc(e.name) +
             "</b><span>" + (e.members || 0) + " в штате</span></div>" +
             (e.about ? "<p>" + esc(e.about) + "</p>" : "") +
-            '<div class="editorial-card__meta">Основатель: ' + esc(e.founderName) +
+            '<div class="editorial-card__meta">Руководитель: ' + esc(e.founderName) +
             " · " + esc(fmtDate(e.createdAt)) + "</div></div>";
         })
         .join("");
@@ -3920,14 +3928,23 @@
         chosen = b.getAttribute("data-path-pick");
         try { window.localStorage.setItem("smena_path_v1", chosen); } catch (e) {}
         paintPath();
-        if (chosen === "editorial" && applyForm && loaded.length) {
-          applyForm.classList.remove("is-hidden");
-          createForm.classList.add("is-hidden");
-          applyForm.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
+        if (chosen === "editorial" && applyForm && loaded.length) openApply(true);
       });
     });
     paintPath();
+
+    function openApply(scroll) {
+      if (!applyForm) return;
+      if (!consentReady()) {
+        applyForm.classList.add("is-hidden");
+        showGate();
+        if (scroll && gateEl) gateEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (gateEl) gateEl.innerHTML = "";
+      if (scroll) applyForm.classList.remove("is-hidden"); else applyForm.classList.toggle("is-hidden");
+      if (scroll) applyForm.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
 
     var loaded = [];
     Store.editorialList(slug).then(function (items) {
@@ -3938,23 +3955,18 @@
     if (!user) return;
 
     var joinBtn = $("[data-editorial-join]", host);
-    var newBtn = $("[data-editorial-new]", host);
     if (joinBtn && applyForm) {
       joinBtn.addEventListener("click", function () {
+        var noteEl = $("[data-path-note]", host);
         if (!loaded.length) {
-          window.alert("В этом регионе пока нет редакций. Создайте свою.");
+          if (noteEl) noteEl.textContent = "В этом регионе пока нет редакций. Свою можно открыть через кабинет: кнопка «Открыть свою редакцию».";
           return;
         }
-        applyForm.classList.toggle("is-hidden");
-        createForm.classList.add("is-hidden");
+        openApply(false);
       });
     }
-    if (newBtn && createForm) {
-      newBtn.addEventListener("click", function () {
-        createForm.classList.toggle("is-hidden");
-        applyForm.classList.add("is-hidden");
-      });
-    }
+    /* свежий статус согласия: человек мог отправить его в соседней вкладке */
+    if (Store.refreshConsent) Store.refreshConsent();
 
     if (applyForm) {
       applyForm.addEventListener("submit", function (e) {
@@ -3990,30 +4002,15 @@
             sitePosts: sitePosts,
           });
         }).then(function () {
-          noteEl.textContent = "Заявление отправлено. Основатель редакции увидит его в кабинете.";
+          noteEl.innerHTML = 'Заявление отправлено. Руководитель редакции увидит его в кабинете, а статус — у вас: <a href="/profile#editorial">кабинет, вкладка «Редакция»</a>.';
           applyForm.reset();
         }, function (err) {
+          if (err && err.needConsent) {
+            applyForm.classList.add("is-hidden");
+            showGate();
+            return;
+          }
           noteEl.textContent = (err && err.message) || "Не удалось отправить заявление.";
-        });
-      });
-    }
-
-    if (createForm) {
-      createForm.addEventListener("submit", function (e) {
-        e.preventDefault();
-        var noteEl = $("[data-editorial-create-note]", host);
-        var name = createForm.querySelector('[name="name"]').value.trim();
-        var about = createForm.querySelector('[name="about"]').value.trim();
-        if (name.length < 3) { noteEl.textContent = "Название — хотя бы три символа."; return; }
-        if (about.length < 20) { noteEl.textContent = "Опишите редакцию: минимум 20 символов."; return; }
-        noteEl.textContent = "Создаём…";
-        Store.editorialCreate({ region: slug, name: name, about: about }).then(function (created) {
-          noteEl.textContent = "Редакция создана. Вы её основатель.";
-          loaded.unshift(created);
-          drawList(loaded);
-          createForm.reset();
-        }, function (err) {
-          noteEl.textContent = (err && err.message) || "Редакция не создалась.";
         });
       });
     }

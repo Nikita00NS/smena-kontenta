@@ -669,9 +669,6 @@ window.Store = (function () {
   /* Опубликованным материал делает только сервер, и на сайте видны только
      серверные публикации (remoteArticles). Раньше «опубликованный» черновик
      показывался в ленте — но только в браузере автора. */
-  function publishedAsArticles() {
-    return [];
-  }
 
   /* ---------------------------------------------------- отправка материала */
 
@@ -1718,20 +1715,6 @@ window.Store = (function () {
     });
   }
 
-  function editorialCreate(payload) {
-    var token = readToken();
-    if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы создать редакцию."));
-    return api("editorial-create", {
-      token: token,
-      region: payload.region,
-      name: payload.name,
-      about: payload.about,
-    }).then(function (res) {
-      if (res && res.ok) return res.editorial;
-      throw new Error((res && res.error) || "Редакция не создалась.");
-    });
-  }
-
   function editorialApply(payload) {
     var token = readToken();
     if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы подать заявление."));
@@ -1745,7 +1728,9 @@ window.Store = (function () {
       sitePosts: payload.sitePosts || [],
     }).then(function (res) {
       if (res && res.ok) return res.application;
-      throw new Error((res && res.error) || "Заявление не отправилось.");
+      var err = new Error((res && res.error) || "Заявление не отправилось.");
+      err.needConsent = !!(res && res.needConsent);
+      throw err;
     });
   }
 
@@ -1853,7 +1838,6 @@ window.Store = (function () {
     submitPost: submitPost,
     ACCESS: ACCESS,
     can: can,
-    publishedAsArticles: publishedAsArticles,
     ready: ready,
     remoteArticles: remoteArticles,
     authorKey: authorKey,
@@ -1944,7 +1928,6 @@ window.Store = (function () {
     recoveryIssue: recoveryIssue,
     recoveryClose: recoveryClose,
     editorialList: editorialList,
-    editorialCreate: editorialCreate,
     editorialApply: editorialApply,
     editorialMine: editorialMine,
     editorialReview: editorialReview,

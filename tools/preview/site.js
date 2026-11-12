@@ -290,10 +290,30 @@ async function seedDemo(site) {
   const memberPost = await site.call("submit", { token: tokens.member, title: "Лицей № 7 открыл собственную студию подкастов",
     excerpt: "Материал участника редакции ждёт проверки руководителя.", body, topic: "Школа", format: "Новость", region: "respublika-tatarstan" });
 
+  /* карты: одна выдана (есть что открыть и проверить), одна заявка ждёт решения */
+  const granted = await site.call("card-grant", { token: director, id: ids.head });
+  if (!granted || !granted.ok) throw new Error("seedDemo: карта руководителю — " + JSON.stringify(granted));
   await site.call("card-apply", { token: tokens.author });
 
+  /* второе заявление на открытие редакции — ждёт подписанного скана */
+  const second = await site.call("editorial-open-save", { token: tokens.author, submit: true, form: {
+    name: "Медиацентр «Перемена»", region: "moskva", city: "Москва", base: "youth", baseName: "Молодёжный центр «Перемена»",
+    about: "Команда молодёжного центра: еженедельные новости района, видеосюжеты и интервью с интересными людьми.",
+    headName: "Авторова Анна Сергеевна", headBirth: "2009-02-20", headPhone: "+7 900 765-43-21",
+    curator: { name: "Орлова Ирина Павловна", role: "педагог-организатор", phone: "+7 900 111-22-33", email: "orlova@demo.ru" },
+    team: [{ name: "Пётр Монтажёров", role: "Видео", age: 15 }, { name: "Дина Ведущая", role: "Ведущая", age: 16 }],
+    confirms: { truth: true, rules: true, consents: true, reports: true },
+  } });
+  if (!second || !second.ok) throw new Error("seedDemo: второе заявление — " + JSON.stringify(second));
+
+  /* обращение в поддержку — чтобы очередь в панели была не пустой */
+  await site.call("support-send", { name: "Нина Новичкова", email: "newbie@demo.ru", topic: "Аккаунт",
+    message: "Здравствуйте! Подскажите, как отправить согласие, если мне 13 лет и подписывает мама?" });
+
   return { tokens, ids, users, password: DEMO_PASSWORD, posts, pendingPost: pending.post.id,
-    memberPost: memberPost.post ? memberPost.post.id : "", editorialId, png: PNG };
+    memberPost: memberPost.post ? memberPost.post.id : "", editorialId, png: PNG,
+    cardNumber: granted.number || "", cardId: (granted.card && granted.card.id) || "",
+    openDone: app.application.id, openWaiting: second.application.id };
 }
 
 module.exports = { createSite, seedDemo, DEMO_PASSWORD, ROOT };
