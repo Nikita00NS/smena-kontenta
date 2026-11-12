@@ -138,7 +138,6 @@ function points_add($dir, $userId, $delta, $reason, $by, $note = '', $ref = '') 
         'balanceAfter' => points_balance($dir, $userId) + $delta,
     );
     $list[] = $row;
-    if (count($list) > 20000) $list = array_slice($list, -20000);
     if (!write_json(points_file($dir), $list)) {
         return array('ok' => false, 'error' => 'Не удалось сохранить операцию.');
     }

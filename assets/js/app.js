@@ -117,7 +117,9 @@
   }
 
   function fmtDate(iso) {
+    if (!iso) return "—";
     var d = new Date(iso);
+    if (isNaN(d.getTime())) return "—";
     return d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear();
   }
 
@@ -126,6 +128,15 @@
     var h = d.getHours();
     var m = d.getMinutes();
     return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+  }
+
+  /* Дата и время для писем и чата команды. */
+  function fmtMailDate(value) {
+    if (!value) return "";
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) + " " +
+      d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   }
 
   function fmtWhen(iso) {
@@ -679,6 +690,32 @@
     });
   }
 
+  /* Социальные сети в подвале. Ссылки и логотипы берутся только из
+     SC.brand.social (assets/js/data.js) — руками в разметке их не дублируем. */
+  function footerSocial() {
+    var list = (SC && SC.brand && SC.brand.social) || [];
+    if (!list.length) return "";
+    var items = list.map(function (item) {
+      if (!item || !item.url) return "";
+      var label = item.title || item.url;
+      return '<li><a class="footer-social__link" href="' + esc(item.url) + '"' +
+        ' target="_blank" rel="noopener noreferrer"' +
+        ' aria-label="' + esc(item.hint || label) + ' (откроется в новой вкладке)"' +
+        ' title="' + esc(item.hint || label) + '">' +
+        (item.icon
+          ? '<img class="footer-social__icon" src="' + esc(item.icon) + '" alt="" width="24" height="24" loading="lazy">'
+          : "") +
+        '<span>' + esc(label) + "</span></a></li>";
+    }).join("");
+    return '<div class="footer-social">' +
+      '<div class="footer-social__head">' +
+      "<h3>Социальные сети</h3>" +
+      "<p>Анонсы конкурсов и жизнь команды. Материалы авторов выходят на сайте.</p>" +
+      "</div>" +
+      '<ul class="footer-social__list">' + items + "</ul>" +
+      "</div>";
+  }
+
   function mountFooter() {
     var host = $("[data-footer]");
     if (!host) return;
@@ -703,6 +740,7 @@
       '<li><a href="/docs">Документы и пресс-кит</a></li>' +
       '<li><a href="/partners">Партнёрам</a></li>' +
       '<li><a href="/about#roadmap">План развития</a></li>' +
+      '<li><a href="/verify">Проверка пресс-карты</a></li>' +
       "</ul></div>" +
       '<div class="footer-col"><h3>' + (user ? "Аккаунт" : "Участие") + "</h3><ul>" +
       (user
@@ -717,6 +755,7 @@
         ? '<li><a href="mailto:' + esc(contactEmail()) + '">' + esc(contactEmail()) + "</a></li>"
         : "") +
       "</ul></div></div>" +
+      footerSocial() +
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
@@ -1590,6 +1629,129 @@
       .join("");
   }
 
+  function cardStatusBadge(card) {
+    var status = card && card.status;
+    if (status === "pending") return '<span class="status status--pending">ждёт решения</span>';
+    if (status === "issued") return '<span class="status status--pub">действует' +
+      (card.number ? " · " + esc(card.number) : "") + "</span>";
+    if (status === "expired") return '<span class="status status--rejected">срок истёк</span>';
+    if (status === "revoked" || status === "annulled") return '<span class="status status--rejected">отозвана</span>';
+    if (status === "rejected") return '<span class="status status--rejected">возвращена</span>';
+    return '<span class="status status--draft">нет карты</span>';
+  }
+
+  /* ------------------------------------------------------------------
+     ПОДТВЕРЖДЕНИЕ ДЕЙСТВИЙ КОДОМ ИЗ ПИСЬМА
+     Пароля редакции больше нет. Чувствительное действие (публикация,
+     удаление, баллы, согласия, выдача прав) подтверждается кодом на
+     почту вошедшего администратора. Подтвердил один раз — 30 минут
+     работает, дальше код не спрашивается.
+     ------------------------------------------------------------------ */
+  function confirmRowHtml() {
+    if (Store.hasConfirm && Store.hasConfirm()) {
+      return '<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 10px" data-confirm-row>' +
+        '<span class="status status--pub">действие подтверждено · ещё 30 минут</span>' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-confirm-reset>Сбросить</button></div>';
+    }
+    return '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px" data-confirm-row>' +
+      '<button class="btn btn--sm" type="button" data-confirm-send>Получить код на почту</button>' +
+      '<input class="admin-review__note" type="text" inputmode="numeric" maxlength="6" ' +
+      'placeholder="Код из письма" data-confirm-code style="max-width:150px" aria-label="Код из письма">' +
+      '<button class="btn btn--sm btn--ghost" type="button" data-confirm-go>Подтвердить</button>' +
+      '<span class="form__note" data-confirm-note></span></div>';
+  }
+
+  function confirmReady(noteEl) {
+    if (Store.hasConfirm && Store.hasConfirm()) return true;
+    if (noteEl) {
+      noteEl.textContent = "Сначала подтвердите действие: «Получить код на почту» и шесть цифр из письма.";
+    }
+    return false;
+  }
+
+  /* Просмотр очередей кодом не запираем: он нужен только за само решение.
+     Сервер ответил «нужен код» — показываем строку подтверждения на месте
+     и повторяем действие сами, без повторного нажатия. */
+  function askConfirm(slot, noteEl, retry) {
+    if (!slot) {
+      if (noteEl) noteEl.textContent = "Подтвердите действие кодом из письма.";
+      return;
+    }
+    if (Store.hasConfirm && Store.hasConfirm()) Store.clearConfirm();
+    if (askConfirm.activeSlot && askConfirm.activeSlot !== slot && askConfirm.activeSlot.isConnected) {
+      askConfirm.activeSlot.innerHTML = "";
+      askConfirm.activeSlot.style.display = "none";
+    }
+    if (askConfirm.listener) document.removeEventListener("smena:confirmed", askConfirm.listener);
+    askConfirm.activeSlot = slot;
+    slot.style.display = "";
+    slot.innerHTML = confirmRowHtml();
+    bindConfirmDelegation();
+    if (noteEl) noteEl.textContent = "Подтвердите действие: пришлём шесть цифр на вашу почту.";
+    var once = function () {
+      document.removeEventListener("smena:confirmed", once);
+      askConfirm.listener = null;
+      askConfirm.activeSlot = null;
+      slot.innerHTML = "";
+      slot.style.display = "none";
+      if (typeof retry === "function") retry();
+    };
+    askConfirm.listener = once;
+    document.addEventListener("smena:confirmed", once);
+  }
+
+  /* Один обработчик на всю панель: кнопки подтверждения встречаются в
+     нескольких разделах, дублировать код незачем. */
+  function bindConfirmDelegation() {
+    if (bindConfirmDelegation.done) return;
+    bindConfirmDelegation.done = true;
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var row = t.closest("[data-confirm-row]");
+      if (!row) return;
+      var note = $("[data-confirm-note]", row);
+      if (t.closest("[data-confirm-send]")) {
+        var btn = t.closest("[data-confirm-send]");
+        btn.disabled = true;
+        if (note) note.textContent = "Отправляем код…";
+        Store.actionCode().then(function (res) {
+          btn.disabled = false;
+          if (note) note.textContent = "Код отправлен на " + (res.email || "вашу почту") + ". Введите шесть цифр.";
+        }, function (err) {
+          btn.disabled = false;
+          if (note) note.textContent = (err && err.message) || "Код не отправился.";
+        });
+        return;
+      }
+      if (t.closest("[data-confirm-go]")) {
+        var input = $("[data-confirm-code]", row);
+        var code = input ? (input.value || "").replace(/\D/g, "") : "";
+        if (code.length !== 6) { if (note) note.textContent = "Код — шесть цифр."; return; }
+        Store.actionConfirm(code).then(function () {
+          var fresh = document.createElement("div");
+          fresh.innerHTML = confirmRowHtml();
+          row.parentNode.replaceChild($("[data-confirm-row]", fresh), row);
+          $$("[data-confirm-row]:not([data-bound-note])", document).forEach(function (r) {
+            r.setAttribute("data-bound-note", "1");
+            var n = $("[data-confirm-note]", r);
+            if (n) n.textContent = "Подтверждено. Действуйте — код больше не спросим 30 минут.";
+          });
+          try { document.dispatchEvent(new Event("smena:confirmed")); } catch (e) {}
+        }, function (err) {
+          if (note) note.textContent = (err && err.message) || "Код не подошёл.";
+        });
+        return;
+      }
+      if (t.closest("[data-confirm-reset]")) {
+        Store.clearConfirm();
+        var box = document.createElement("div");
+        box.innerHTML = confirmRowHtml();
+        row.parentNode.replaceChild($("[data-confirm-row]", box), row);
+      }
+    });
+  }
+
   function initAdmin() {
     var host = $("[data-admin]");
     if (!host) return;
@@ -1601,7 +1763,8 @@
     }
 
     var settings = Store.getSettings();
-    var isOwner = Store.can(user, "manage") || user.number === 101;
+    var isOwner = Store.can(user, "manage");
+    function hasCap(cap) { return Store.can(user, cap); }
 
     if (!isOwner) {
       /* Понятный экран вместо «доступ только редакции»: кто вы для сервера,
@@ -1700,47 +1863,8 @@
       return el ? el.value.trim() : "";
     }
 
-    function authorRow(a) {
-      var hasCard = a.posts >= settings.card.minPosts;
-      return (
-        '<div class="admin-table__row">' +
-        "<div><b>" + esc(a.name) + "</b><small>" + esc(a.email) + "</small></div>" +
-        "<div>" + esc(a.role || "—") + "</div>" +
-        "<div>" + esc(a.team || "индивидуально") + "</div>" +
-        "<div>" + a.posts + " публ.</div>" +
-        '<div><span class="status ' + (hasCard ? "status--pub" : "status--draft") + '">' +
-        (hasCard ? "карта выдана" : "нет карты") + "</span></div>" +
-        '<div><select class="admin-access" data-access="' + a.id + '">' +
-        Store.ACCESS.map(function (r) {
-          return '<option' + (r === (a.access || "Пользователь") ? " selected" : "") + ">" + esc(r) + "</option>";
-        }).join("") +
-        "</select></div>" +
-        "</div>"
-      );
-    }
-
-    function pendingRow(p) {
-      return (
-        '<div class="admin-review" data-review-row="' + p.id + '">' +
-        '<div class="admin-review__top"><b>' + esc(p.title) + "</b>" +
-        '<span class="status status--pending">на проверке</span></div>' +
-        '<div class="admin-review__meta">' + esc(p.authorName) + " · " + esc(p.format || "") +
-        " · " + esc(regionName(p.region) || "регион не выбран") + " · " + esc(String(p.read || 0)) + " мин</div>" +
-        '<p class="admin-review__excerpt">' + esc(p.excerpt || "") + "</p>" +
-        '<div class="admin-review__actions">' +
-        '<a class="btn btn--sm btn--ghost" href="/write?id=' + p.id + '">Открыть текст</a>' +
-        '<input class="admin-review__note" type="text" placeholder="Замечание автору (если правки)" data-note="' + p.id + '">' +
-        '<button class="btn btn--sm" type="button" data-approve="' + p.id + '">Опубликовать</button>' +
-        '<button class="btn btn--sm btn--ghost" type="button" data-reject="' + p.id + '">Вернуть на правки</button>' +
-        "</div></div>"
-      );
-    }
-
     function render() {
       settings = Store.getSettings();
-      var authors = Store.listUsers();
-      var pending = Store.pendingPosts();
-      var teams = Store.listTeams();
       host.innerHTML =
         '<section class="page-hero"><div class="wrap page-hero__grid"><div>' +
         '<span class="kicker">Служебное</span><h1>Панель<br>проекта</h1></div>' +
@@ -1753,16 +1877,17 @@
 
       var panels = $("[data-admin-panels]", host);
       var TABS = [
-        ["overview", "Обзор"],
-        ["people", "Люди"],
-        ["hiring", "Приём на работу"],
-        ["content", "Материалы"],
-        ["editorials", "Редакции"],
-        ["cards", "Карты"],
-        ["support", "Поддержка и почта"],
-        ["site", "Сайт"],
-        ["server", "Сервер"],
-      ];
+        ["overview", "Обзор", hasCap("server.diag")],
+        ["people", "Люди", hasCap("people.view") || hasCap("people.edit") || hasCap("consents.review")],
+        ["hiring", "Приём на работу", hasCap("hiring.view")],
+        ["content", "Материалы", hasCap("posts.review") || hasCap("portfolio.review")],
+        ["editorials", "Редакции", hasCap("editorials.appoint")],
+        ["cards", "Карты", hasCap("cards.view") || hasCap("cards.issue")],
+        ["support", "Поддержка и почта", hasCap("support.answer") || hasCap("mail.use") || hasCap("mail.manage")],
+        ["site", "Сайт", hasCap("site.manage")],
+        ["server", "Сервер", hasCap("server.diag")],
+      ].filter(function (t) { return t[2]; }).map(function (t) { return [t[0], t[1]]; });
+      if (!TABS.length) TABS = [["people", "Люди"]];
 
       TABS.forEach(function (t) {
         var div = document.createElement("div");
@@ -1777,20 +1902,22 @@
       }
 
       warnLocalOnly();
-      mountOverview(panel("overview"));
-      mountPeople(panel("people"));
-      mountTeamChat(panel("people"));
-      mountContent(panel("content"));
-      mountEditorialQueue(panel("editorials"));
-      mountCardQueue(panel("cards"));
-      mountSupportQueue(panel("support"));
-      mountMailClient(panel("support"));
-      mountMailSettings(panel("support"));
-      mountHiringAdmin(panel("hiring"));
-      mountTasksAdmin(panel("people"));
-      mountSite(panel("site"));
-      mountAuthorsShow(panel("site"));
-      mountDiag(panel("server"));
+      if (hasCap("server.diag")) mountOverview(panel("overview"));
+      if (hasCap("people.view")) mountPeople(panel("people"));
+      if (hasCap("people.edit")) mountTeamChat(panel("people"));
+      if (hasCap("consents.review")) mountConsentQueue(panel("people"));
+      if (hasCap("people.edit")) mountTasksAdmin(panel("people"));
+      if (hasCap("posts.review")) mountContent(panel("content"));
+      if (hasCap("portfolio.review")) mountPortfolioQueue(panel("content"));
+      if (hasCap("editorials.appoint")) mountEditorialQueue(panel("editorials"));
+      if (hasCap("cards.view") || hasCap("cards.issue")) mountCardQueue(panel("cards"));
+      if (hasCap("support.answer")) mountSupportQueue(panel("support"));
+      if (hasCap("mail.use")) mountMailClient(panel("support"));
+      if (hasCap("mail.manage")) mountMailSettings(panel("support"));
+      if (hasCap("hiring.view")) mountHiringAdmin(panel("hiring"));
+      if (hasCap("site.manage")) mountSite(panel("site"));
+      if (hasCap("site.manage")) mountAuthorsShow(panel("site"));
+      if (hasCap("server.diag")) mountDiag(panel("server"));
 
       buildAdminTabs(host, TABS);
     }
@@ -1901,11 +2028,18 @@
                     return;
                   }
                   load();
+                }, function (err) {
+                  btn.disabled = false;
+                  if (err && err.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
+                  statusEl.textContent = (err && err.message) || "Не удалось сохранить решение.";
                 });
               }
               sendReview();
             });
           });
+        }, function (err) {
+          statusEl.textContent = (err && err.message) || "Не удалось загрузить работы.";
+          listEl.innerHTML = "";
         });
       }
 
@@ -1993,7 +2127,7 @@
       });
     }
 
-    /* Материалы: что ждёт проверки на сервере. */
+    /* Материалы: очередь и решения на сервере, с подтверждением кодом. */
     function mountContent(host) {
       var old = $("[data-admin-content]");
       if (old) old.remove();
@@ -2008,28 +2142,83 @@
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Материалы</span>' +
         "<h2>Очередь публикаций</h2>" +
         '<p class="sec-head__text">Материалы приходят с сервера: их видно с любого устройства. ' +
-        "Публикация, правки и отказ — здесь же.</p></div></div>" +
-        '<div data-admin-content-list><p class="form__note">Загружаем очередь…</p></div>';
+        "Решение принимает редакция; для возврата на правки нужно замечание автору.</p></div></div>" +
+        '<div class="panel"><div data-confirm-slot style="display:none"></div>' +
+        '<p class="form__note" data-content-status>Загружаем очередь…</p></div>' +
+        '<div data-admin-content-list></div>';
       host.appendChild(section);
 
       var listEl = $("[data-admin-content-list]", section);
+      var statusEl = $("[data-content-status]", section);
+      var slotEl = $("[data-confirm-slot]", section);
 
-      function draw(items) {
-        if (!items.length) {
-          listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Очередь пуста</b>' +
-            "<p>Новые материалы появятся здесь сразу после отправки из редактора.</p></div>";
-          return;
-        }
-        listEl.innerHTML = '<div class="editorial-queue">' + items.map(function (p) {
-          return '<div class="editorial-card"><div class="editorial-card__top"><b>' +
-            esc(p.title) + "</b><span>" + esc(p.authorName || "") + "</span></div>" +
-            '<div class="editorial-card__meta">' + esc(p.format || "") + " · " +
-            esc(fmtDate(p.date)) + " · " + esc(regionName(p.region) || "регион не выбран") +
-            "</div><p>" + esc(p.excerpt || "") + "</p></div>";
-        }).join("") + "</div>";
+      function row(p) {
+        var body = Array.isArray(p.body) ? p.body.join("\n\n") : String(p.body || "");
+        return (
+          '<div class="admin-review" data-review-row="' + esc(p.id) + '">' +
+          '<div class="admin-review__top"><b>' + esc(p.title) + "</b>" +
+          '<span class="status status--pending">на проверке</span></div>' +
+          '<div class="admin-review__meta">' + esc(p.authorName || "Автор") + " · " + esc(p.format || "") +
+          " · " + esc(regionName(p.region) || "регион не выбран") + " · " + esc(fmtDate(p.date)) + "</div>" +
+          '<p class="admin-review__excerpt">' + esc(p.excerpt || "") + "</p>" +
+          (body ? '<details class="admin-review__text"><summary>Читать материал</summary><div>' +
+            body.split(/\n{2,}/).map(function (par) { return "<p>" + esc(par) + "</p>"; }).join("") +
+            "</div></details>" : "") +
+          '<div class="admin-review__actions">' +
+          '<input class="admin-review__note" type="text" placeholder="Замечание автору (обязательно для возврата)" data-note="' + esc(p.id) + '">' +
+          '<button class="btn btn--sm" type="button" data-approve="' + esc(p.id) + '">Опубликовать</button>' +
+          '<button class="btn btn--sm btn--ghost" type="button" data-reject="' + esc(p.id) + '">Вернуть на правки</button>' +
+          "</div></div>"
+        );
       }
 
-      Store.apiPendingQueue().then(draw, function () { draw([]); });
+      function load() {
+        statusEl.textContent = "Загружаем очередь…";
+        Store.apiPendingQueue().then(function (items) {
+          items = items || [];
+          statusEl.textContent = items.length ? "Ждут решения: " + items.length + "." : "Очередь пуста.";
+          listEl.innerHTML = items.length
+            ? items.map(row).join("")
+            : '<div class="fill-note fill-note--flat"><b>Очередь пуста</b>' +
+              "<p>Новые материалы появятся здесь сразу после отправки из редактора.</p></div>";
+
+          $$("[data-approve], [data-reject]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var approve = btn.hasAttribute("data-approve");
+              var id = btn.getAttribute("data-approve") || btn.getAttribute("data-reject");
+              var noteEl = $('[data-note="' + id + '"]', listEl);
+              var note = noteEl ? noteEl.value.trim() : "";
+              if (!approve && note.length < 5) {
+                statusEl.textContent = "Для возврата на правки напишите замечание — не короче пяти символов.";
+                if (noteEl) noteEl.focus();
+                return;
+              }
+              function sendReview() {
+                btn.disabled = true;
+                Store.apiReview("", id, approve ? "approve" : "reject", note).then(function (r) {
+                  btn.disabled = false;
+                  if (r && r.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
+                  if (!r || !r.ok) {
+                    statusEl.textContent = (r && r.error) || "Не удалось сохранить решение.";
+                    return;
+                  }
+                  load();
+                }, function (err) {
+                  btn.disabled = false;
+                  if (err && err.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
+                  statusEl.textContent = (err && err.message) || "Не удалось сохранить решение.";
+                });
+              }
+              sendReview();
+            });
+          });
+        }, function () {
+          statusEl.textContent = "Не удалось загрузить очередь. Проверьте связь и обновите страницу.";
+          listEl.innerHTML = "";
+        });
+      }
+
+      load();
     }
 
     /* Сайт: открыт или на работах, объявление в шапке. */
@@ -2235,7 +2424,7 @@
       /* «Почта» раньше была отдельной вкладкой — теперь живёт внутри поддержки */
       if (saved === "mail") saved = "support";
       var exists = TABS.some(function (t) { return t[0] === saved; });
-      show(exists ? saved : "overview");
+      show(exists ? saved : TABS[0][0]);
     }
 
     /* Люди: список с поиском, по клику — карточка человека со всеми решениями. */
@@ -2447,21 +2636,27 @@
         });
 
         (d.consents || []).forEach(function (c) {
-          rows.push('<div class="pcard__line"><span>Согласие на обработку ПД</span><small>' +
+          var docKind = c.kind === "distribution" ? "distribution" : "processing";
+          var docTitle = docKind === "distribution"
+            ? "Согласие на распространение ПД (конкурсы)"
+            : "Согласие на обработку ПД";
+          rows.push('<div class="pcard__line"><span>' + docTitle + "</span><small>" +
             esc(ED[c.status] || "ждёт решения") + "</small>" +
             (c.status !== "approved"
-              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" data-consent-ok>' +
-                'Принять</button><button class="btn btn--ghost btn--sm" type="button" data-consent-no>' +
-                "Отклонить</button></span>"
+              ? '<span class="pcard__actions"><button class="btn btn--sm" type="button" ' +
+                'data-consent-ok="' + docKind + '">Принять</button>' +
+                '<button class="btn btn--ghost btn--sm" type="button" ' +
+                'data-consent-no="' + docKind + '">Отклонить</button></span>'
               : "<span></span>") + "</div>");
         });
 
         (d.cards || []).forEach(function (c) {
-          rows.push('<div class="pcard__line"><span>Пресс-карта</span><small>' +
-            esc(c.status === "issued" ? "выдана " + (c.number || "")
-              : c.status === "pending" ? "заявка ждёт решения"
-                : c.status === "annulled" ? "аннулирована" : "возвращена") +
-            "</small><span></span></div>");
+          var label = c.status === "issued" ? "действует " + (c.number || "")
+            : c.status === "pending" ? "заявка ждёт решения"
+              : c.status === "expired" ? "срок истёк"
+                : c.status === "revoked" || c.status === "annulled" ? "отозвана" : "возвращена";
+          if (c.validUntil && (c.status === "issued" || c.status === "expired")) label += " · до " + fmtDate(c.validUntil);
+          rows.push('<div class="pcard__line"><span>Пресс-карта</span><small>' + esc(label) + "</small><span></span></div>");
         });
 
         (d.portfolio || []).forEach(function (item) {
@@ -2489,7 +2684,10 @@
 
       function renderCard(d) {
         var u = d.user;
-        var issued = (d.cards || []).filter(function (c) { return c.status === "issued"; })[0];
+        var cards = d.cards || [];
+        var issued = cards.filter(function (c) { return c.status === "issued"; })[0];
+        var pendingCard = cards.filter(function (c) { return c.status === "pending"; })[0];
+        var lifeCard = issued || cards.filter(function (c) { return c.status === "expired"; })[0];
         var founded = (d.editorialsFounded || [])[0];
 
         cardEl.innerHTML =
@@ -2502,6 +2700,7 @@
           (u.emailVerified ? '<span class="status status--pub">почта подтверждена</span>'
             : '<span class="status status--draft">почта не подтверждена</span>') + "</div></div>" +
 
+          '<div data-confirm-slot style="display:none"></div>' +
           '<div class="pcard__grid">' +
           '<div class="pcard__col"><span class="kicker">Профиль</span>' +
           '<div class="field"><label>Имя и фамилия</label><input type="text" data-pf-name value="' +
@@ -2523,11 +2722,19 @@
           '<div class="pcard__col"><span class="kicker">Итоги</span><div class="diag">' +
           '<div class="diag__row"><span>Опубликовано</span><b>' + (d.published || 0) + "</b></div>" +
           '<div class="diag__row"><span>Всего материалов</span><b>' + (d.posts || []).length + "</b></div>" +
-          '<div class="diag__row"><span>Пресс-карта</span><b>' + (issued ? esc(issued.number) : "нет") + "</b></div>" +
+          '<div class="diag__row"><span>Пресс-карта</span><b>' +
+            (issued ? esc(issued.number) + " · до " + esc(fmtDate(issued.validUntil))
+              : pendingCard ? "заявка ждёт" : lifeCard ? "срок истёк" : "нет") + "</b></div>" +
           '<div class="diag__row"><span>Редакция</span><b>' + (founded ? esc(founded.name) : "нет") + "</b></div>" +
           "</div>" +
-          (issued ? "" : '<button class="btn btn--sm" type="button" data-card-grant style="margin-top:10px">' +
-            "Выдать пресс-карту · " + esc(d.cardNumberNext || "") + "</button>") +
+          (!issued && !pendingCard && Store.can(user, "cards.issue") ? '<button class="btn btn--sm" type="button" data-card-grant style="margin-top:10px">' +
+            "Выдать пресс-карту · " + esc(d.cardNumberNext || "") + "</button>" : "") +
+          (lifeCard ? '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
+            '<input class="admin-review__note" type="text" placeholder="Основание решения" data-person-card-note>' +
+            (Store.can(user, "cards.extend") ? '<input class="admin-review__points" type="number" min="1" max="24" value="12" data-person-card-months aria-label="Месяцев продления">' +
+              '<button class="btn btn--sm" type="button" data-person-card-extend>Продлить</button>' : "") +
+            (Store.can(user, "cards.revoke") ? '<button class="btn btn--sm btn--ghost" type="button" data-person-card-revoke>Отозвать</button>' : "") +
+            "</div>" : "") +
           '<p class="form__note" data-card-note></p></div></div>' +
 
           '<div class="pcard__section"><span class="kicker">Заявления</span>' + appsList(d) + "</div>" +
@@ -2606,16 +2813,53 @@
         var grantBtn = $("[data-card-grant]", cardEl);
         if (grantBtn) {
           grantBtn.addEventListener("click", function () {
-            grantBtn.disabled = true;
-            Store.cardGrant(u.id).then(function (res) {
-              window.alert("Карта выдана: " + res.number);
-              openCard(u.id);
-            }, function (err) {
-              grantBtn.disabled = false;
-              window.alert((err && err.message) || "Карта не выдалась.");
-            });
+            function sendGrant() {
+              grantBtn.disabled = true;
+              Store.cardGrant(u.id).then(function (res) {
+                window.alert("Карта выдана: " + res.number);
+                openCard(u.id);
+              }, function (err) {
+                grantBtn.disabled = false;
+                if (err && err.needConfirm && confirmSlot) {
+                  askConfirm(confirmSlot, $("[data-card-note]", cardEl), sendGrant);
+                  return;
+                }
+                window.alert((err && err.message) || "Карта не выдалась.");
+              });
+            }
+            sendGrant();
           });
         }
+
+        $$("[data-person-card-extend], [data-person-card-revoke]", cardEl).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var extend = btn.hasAttribute("data-person-card-extend");
+            var noteEl = $("[data-person-card-note]", cardEl);
+            var monthsEl = $("[data-person-card-months]", cardEl);
+            var note = noteEl ? noteEl.value.trim() : "";
+            if (!extend && note.length < 5) {
+              var n = $("[data-card-note]", cardEl);
+              if (n) n.textContent = "Для отзыва нужно основание — не короче пяти символов.";
+              return;
+            }
+            function sendLife() {
+              btn.disabled = true;
+              var call = extend
+                ? Store.cardExtend(lifeCard.id, monthsEl ? Number(monthsEl.value) || 12 : 12, note)
+                : Store.cardRevoke(lifeCard.id, note);
+              call.then(function () { openCard(u.id); }, function (err) {
+                btn.disabled = false;
+                if (err && err.needConfirm && confirmSlot) {
+                  askConfirm(confirmSlot, $("[data-card-note]", cardEl), sendLife);
+                  return;
+                }
+                var n = $("[data-card-note]", cardEl);
+                if (n) n.textContent = (err && err.message) || "Не удалось сохранить решение.";
+              });
+            }
+            sendLife();
+          });
+        });
 
         var sendBtn = $("[data-msg-send]", cardEl);
         if (sendBtn) {
@@ -2648,11 +2892,21 @@
         });
 
         function after() { openCard(u.id); }
+        var confirmSlot = $('[data-confirm-slot]', cardEl);
+        function decision(fn, ok) {
+          fn().then(ok, function (e) {
+            if (e && e.needConfirm && confirmSlot) {
+              askConfirm(confirmSlot, $('[data-pf-note]', cardEl), function () { decision(fn, ok); });
+              return;
+            }
+            window.alert((e && e.message) || "Не удалось сохранить решение.");
+          });
+        }
 
         $$("[data-ed-ok]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
-            Store.editorialReview(b.getAttribute("data-ed-ok"), "approved", "").then(after,
-              function (e) { window.alert(e.message); });
+            var id = b.getAttribute("data-ed-ok");
+            decision(function () { return Store.editorialReview(id, "approved", ""); }, after);
           });
         });
         $$("[data-ed-no]", cardEl).forEach(function (b) {
@@ -2660,36 +2914,39 @@
             var note = window.prompt("Основание отказа:", "");
             if (note === null) return;
             if (note.trim().length < 5) { window.alert("Нужно основание."); return; }
-            Store.editorialReview(b.getAttribute("data-ed-no"), "rejected", note.trim()).then(after,
-              function (e) { window.alert(e.message); });
+            var id = b.getAttribute("data-ed-no");
+            decision(function () { return Store.editorialReview(id, "rejected", note.trim()); }, after);
           });
         });
         $$("[data-consent-ok]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
-            Store.consentDecide(u.id, "approved", "").then(after, function (e) { window.alert(e.message); });
+            var kind = b.getAttribute("data-consent-ok") || "processing";
+            decision(function () { return Store.consentDecide(u.id, "approved", "", kind); }, after);
           });
         });
         $$("[data-consent-no]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
+            var kind = b.getAttribute("data-consent-no") || "processing";
             var note = window.prompt("Почему не принято:", "");
             if (note === null) return;
-            Store.consentDecide(u.id, "rejected", note.trim()).then(after, function (e) { window.alert(e.message); });
+            if (note.trim().length < 5) { window.alert("Напишите основание — не короче пяти символов."); return; }
+            decision(function () { return Store.consentDecide(u.id, "rejected", note.trim(), kind); }, after);
           });
         });
         $$("[data-pf-item-ok]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
             var points = window.prompt("Баллы за работу (0–50):", "5");
             if (points === null) return;
-            Store.portfolioDecide(b.getAttribute("data-pf-item-ok"), "approved", "", Number(points) || 0)
-              .then(after, function (e) { window.alert(e.message); });
+            var id = b.getAttribute("data-pf-item-ok");
+            decision(function () { return Store.portfolioDecide(id, "approved", "", Number(points) || 0); }, after);
           });
         });
         $$("[data-pf-item-no]", cardEl).forEach(function (b) {
           b.addEventListener("click", function () {
             var note = window.prompt("Основание отказа:", "");
             if (note === null) return;
-            Store.portfolioDecide(b.getAttribute("data-pf-item-no"), "rejected", note.trim(), 0)
-              .then(after, function (e) { window.alert(e.message); });
+            var id = b.getAttribute("data-pf-item-no");
+            decision(function () { return Store.portfolioDecide(id, "rejected", note.trim(), 0); }, after);
           });
         });
         $$("[data-rc-issue]", cardEl).forEach(function (b) {
@@ -2817,10 +3074,6 @@
 
     /* Почта: настройки SMTP и проверка письмом. Пароль наружу не отдаём. */
     /* --- Задачи команды: у сотрудника — свои, у редакции — все --------- */
-    function taskBadge(t) {
-      var cls = t.priority === "urgent" ? " task-badge--urgent" : t.priority === "high" ? " task-badge--high" : "";
-      return '<span class="task-badge' + cls + '">' + esc(t.priorityLabel || "Обычная") + "</span>";
-    }
 
     function mountTasksAdmin(host) {
       if (!Store.tasksList) return;
@@ -3047,13 +3300,6 @@
         }, function () { drawFolders([]); });
       }
 
-      function fmtMailDate(value) {
-        if (!value) return "";
-        var d = new Date(value);
-        if (isNaN(d.getTime())) return value;
-        return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) + " " +
-          d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-      }
 
       function drawLetters() {
         if (!state.letters.length) {
@@ -3534,114 +3780,6 @@
       refresh();
     }
 
-    /* --- Выдача доступа по почте (для владельца проекта) ------------------ */
-
-    /* ------------------------------------------------------------------
-       ПОДТВЕРЖДЕНИЕ ДЕЙСТВИЙ КОДОМ ИЗ ПИСЬМА
-       Пароля редакции больше нет. Чувствительное действие (публикация,
-       удаление, баллы, согласия, выдача прав) подтверждается кодом на
-       почту вошедшего администратора. Подтвердил один раз — 30 минут
-       работает, дальше код не спрашивается.
-       ------------------------------------------------------------------ */
-    function confirmRowHtml() {
-      if (Store.hasConfirm && Store.hasConfirm()) {
-        return '<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 10px" data-confirm-row>' +
-          '<span class="status status--pub">действие подтверждено · ещё 30 минут</span>' +
-          '<button class="btn btn--ghost btn--sm" type="button" data-confirm-reset>Сбросить</button></div>';
-      }
-      return '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px" data-confirm-row>' +
-        '<button class="btn btn--sm" type="button" data-confirm-send>Получить код на почту</button>' +
-        '<input class="admin-review__note" type="text" inputmode="numeric" maxlength="6" ' +
-        'placeholder="Код из письма" data-confirm-code style="max-width:150px" aria-label="Код из письма">' +
-        '<button class="btn btn--sm btn--ghost" type="button" data-confirm-go>Подтвердить</button>' +
-        '<span class="form__note" data-confirm-note></span></div>';
-    }
-
-    function confirmReady(noteEl) {
-      if (Store.hasConfirm && Store.hasConfirm()) return true;
-      if (noteEl) {
-        noteEl.textContent = "Сначала подтвердите действие: «Получить код на почту» и шесть цифр из письма.";
-      }
-      return false;
-    }
-
-    /* Просмотр очередей кодом не запираем: он нужен только за само решение.
-       Сервер ответил «нужен код» — показываем строку подтверждения на месте
-       и повторяем действие сами, без повторного нажатия. */
-    function askConfirm(slot, noteEl, retry) {
-      if (!slot) {
-        if (noteEl) noteEl.textContent = "Подтвердите действие кодом из письма.";
-        return;
-      }
-      if (Store.hasConfirm && Store.hasConfirm()) Store.clearConfirm();
-      slot.style.display = "";
-      slot.innerHTML = confirmRowHtml();
-      bindConfirmDelegation();
-      if (noteEl) noteEl.textContent = "Подтвердите действие: пришлём шесть цифр на вашу почту.";
-      var once = function () {
-        document.removeEventListener("smena:confirmed", once);
-        slot.innerHTML = "";
-        slot.style.display = "none";
-        if (typeof retry === "function") retry();
-      };
-      document.addEventListener("smena:confirmed", once);
-    }
-
-    /* Один обработчик на всю панель: кнопки подтверждения встречаются в
-       нескольких разделах, дублировать код незачем. */
-    function bindConfirmDelegation() {
-      if (bindConfirmDelegation.done) return;
-      bindConfirmDelegation.done = true;
-      document.addEventListener("click", function (e) {
-        var t = e.target;
-        if (!t || !t.closest) return;
-        var row = t.closest("[data-confirm-row]");
-        if (!row) return;
-        var note = $("[data-confirm-note]", row);
-        if (t.closest("[data-confirm-send]")) {
-          var btn = t.closest("[data-confirm-send]");
-          btn.disabled = true;
-          if (note) note.textContent = "Отправляем код…";
-          Store.actionCode().then(function (res) {
-            btn.disabled = false;
-            if (note) note.textContent = "Код отправлен на " + (res.email || "вашу почту") + ". Введите шесть цифр.";
-          }, function (err) {
-            btn.disabled = false;
-            if (note) note.textContent = (err && err.message) || "Код не отправился.";
-          });
-          return;
-        }
-        if (t.closest("[data-confirm-go]")) {
-          var input = $("[data-confirm-code]", row);
-          var code = input ? (input.value || "").replace(/\D/g, "") : "";
-          if (code.length !== 6) { if (note) note.textContent = "Код — шесть цифр."; return; }
-          Store.actionConfirm(code).then(function () {
-            var fresh = document.createElement("div");
-            fresh.innerHTML = confirmRowHtml();
-            row.parentNode.replaceChild($("[data-confirm-row]", fresh), row);
-            $$("[data-confirm-row]:not([data-bound-note])", document).forEach(function (r) {
-              r.setAttribute("data-bound-note", "1");
-              var n = $("[data-confirm-note]", r);
-              if (n) n.textContent = "Подтверждено. Действуйте — код больше не спросим 30 минут.";
-            });
-            try { document.dispatchEvent(new Event("smena:confirmed")); } catch (e) {}
-          }, function (err) {
-            if (note) note.textContent = (err && err.message) || "Код не подошёл.";
-          });
-          return;
-        }
-        if (t.closest("[data-confirm-reset]")) {
-          Store.clearConfirm();
-          var box = document.createElement("div");
-          box.innerHTML = confirmRowHtml();
-          row.parentNode.replaceChild($("[data-confirm-row]", box), row);
-        }
-      });
-    }
-
-    /* Выдача админки по почте. Доступно директору и администрации; пароль
-       редакции больше не нужен — решение принимает сервер по правам. */
-
     /* --- Кабинет: работа в команде --------------------------------------- */
     function stepsHtml(steps) {
       if (!steps || !steps.length) return "";
@@ -3811,10 +3949,14 @@
         "<h2>Заявки в редакции регионов</h2>" +
         '<p class="sec-head__text">Основатель решает сам. Если решения нет семь дней, заявка ' +
         "попадает сюда: центральная комиссия принимает или отказывает с основанием.</p></div></div>" +
+        '<div class="panel"><div data-confirm-slot style="display:none"></div>' +
+        '<p class="form__note" data-editorial-admin-status></p></div>' +
         '<div data-editorial-admin-list><p class="form__note">Загружаем…</p></div>';
       host.appendChild(section);
 
       var listEl = $("[data-editorial-admin-list]", section);
+      var statusEl = $("[data-editorial-admin-status]", section);
+      var slotEl = $("[data-confirm-slot]", section);
 
       function draw(items) {
         if (!items.length) {
@@ -3835,24 +3977,39 @@
             "</div></div>";
         }).join("") + "</div>";
 
+        function sendDecision(id, decision, note, btn) {
+          btn.disabled = true;
+          Store.editorialReview(id, decision, note).then(function () {
+            btn.disabled = false;
+            return Store.editorialQueue().then(draw);
+          }, function (e) {
+            btn.disabled = false;
+            if (e && e.needConfirm) {
+              askConfirm(slotEl, statusEl, function () { sendDecision(id, decision, note, btn); });
+              return;
+            }
+            statusEl.textContent = (e && e.message) || "Не удалось сохранить решение.";
+          });
+        }
         $$("[data-edc-ok]", listEl).forEach(function (b) {
           b.addEventListener("click", function () {
-            Store.editorialReview(b.getAttribute("data-edc-ok"), "approved", "")
-              .then(function () { return Store.editorialQueue(); }).then(draw, function (e) { window.alert(e.message); });
+            sendDecision(b.getAttribute("data-edc-ok"), "approved", "", b);
           });
         });
         $$("[data-edc-no]", listEl).forEach(function (b) {
           b.addEventListener("click", function () {
             var note = window.prompt("Основание отказа:", "");
             if (note === null) return;
-            if (note.trim().length < 5) { window.alert("Основание — минимум 5 символов."); return; }
-            Store.editorialReview(b.getAttribute("data-edc-no"), "rejected", note.trim())
-              .then(function () { return Store.editorialQueue(); }).then(draw, function (e) { window.alert(e.message); });
+            if (note.trim().length < 5) { statusEl.textContent = "Основание — минимум 5 символов."; return; }
+            sendDecision(b.getAttribute("data-edc-no"), "rejected", note.trim(), b);
           });
         });
       }
 
-      Store.editorialQueue().then(draw, function () { draw([]); });
+      Store.editorialQueue().then(draw, function (err) {
+        statusEl.textContent = (err && err.message) || "Не удалось загрузить заявки.";
+        listEl.innerHTML = "";
+      });
     }
 
     function mountConsentQueue(host) {
@@ -3866,11 +4023,18 @@
       section.setAttribute("data-consent-queue", "");
       section.innerHTML =
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Согласия</span>' +
-        "<h2>Сканы согласий на обработку данных</h2>" +
+        "<h2>Сканы согласий: обработка и распространение</h2>" +
         '<p class="sec-head__text">Автор подписывает документ от руки и загружает фото. ' +
-        "Пока скан не одобрен, публикация материалов закрыта. Для отказа нужно основание.</p></div></div>" +
+        "Согласие на обработку открывает публикацию на сайте. Согласие на распространение " +
+        "нужно только для конкурсов в открытых площадках. Для отказа нужно основание.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
         '<div data-confirm-slot style="display:none"></div>' +
+        '<label class="form__note">Документ ' +
+        '<select data-consent-kind style="margin-left:8px">' +
+        '<option value="">все</option>' +
+        '<option value="processing">обработка данных</option>' +
+        '<option value="distribution">распространение (конкурсы)</option>' +
+        "</select></label>" +
         '<button class="btn btn--sm" type="button" data-consent-load>Показать согласия</button></div>' +
         '<p class="form__note" data-consent-status></p></div><div data-consent-list></div>';
       host.appendChild(section);
@@ -3887,9 +4051,14 @@
 
       function row(c) {
         var badge = LABEL[c.status] || LABEL.pending;
+        var docLabel = c.kind === "distribution"
+          ? "Распространение данных · конкурсы"
+          : "Обработка данных · работа на сайте";
         return (
           '<div class="admin-review"><div class="admin-review__top"><b>' +
           esc(c.name || "Автор") + "</b>" + badge + "</div>" +
+          '<div class="admin-review__meta">' + esc(docLabel) + "</div>" +
+          (c.purpose ? '<div class="admin-review__meta">Конкурс: ' + esc(c.purpose) + "</div>" : "") +
           '<div class="admin-review__meta">' + esc(c.email || "") +
           (c.userRegion ? " · " + esc(regionName(c.userRegion)) : "") +
           " · " + esc(fmtDate(c.createdAt)) + "</div>" +
@@ -3912,7 +4081,8 @@
 
       function load() {
         statusEl.textContent = "Загружаем…";
-        Store.consentQueue().then(function (res) {
+        var kindEl = $("[data-consent-kind]", section);
+        Store.consentQueue(kindEl ? kindEl.value : "").then(function (res) {
           if (!res || !res.ok) {
             statusEl.textContent = (res && res.error) || "Сервер не ответил.";
             return;
@@ -3945,11 +4115,18 @@
                     return;
                   }
                   load();
+                }, function (err) {
+                  btn.disabled = false;
+                  if (err && err.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
+                  statusEl.textContent = (err && err.message) || "Не удалось сохранить решение.";
                 });
               }
               sendReview();
             });
           });
+        }, function (err) {
+          statusEl.textContent = (err && err.message) || "Не удалось загрузить согласия.";
+          listEl.innerHTML = "";
         });
       }
 
@@ -3987,14 +4164,7 @@
             return "№ " + String(p.number || 0).padStart(4, "0") + " " + p.title;
           })
           .join(" · ");
-        var badge =
-          card.status === "pending"
-            ? '<span class="status status--pending">ждёт решения</span>'
-            : card.status === "issued"
-              ? '<span class="status status--pub">выдана ' + esc(card.number || "") + "</span>"
-              : card.status === "annulled"
-                ? '<span class="status status--rejected">аннулирована: автор в редакции</span>'
-                : '<span class="status status--rejected">возвращена</span>';
+        var badge = cardStatusBadge(card);
         return (
           '<div class="admin-review"><div class="admin-review__top"><b>' + esc(card.authorName || "Автор") +
           "</b>" + badge + "</div>" +
@@ -4004,13 +4174,32 @@
           " · " + esc(fmtDate(card.createdAt)) + "</div>" +
           '<p class="admin-review__excerpt">' + esc(posts) + "</p>" +
           deliveryHtml(card) +
-          (card.status === "pending"
+          (card.note ? '<p class="admin-review__excerpt">Основание: ' + esc(card.note) + "</p>" : "") +
+          (card.status === "pending" && hasCap("cards.issue")
             ? '<div class="admin-review__actions">' +
-              '<input class="admin-review__note" type="text" placeholder="Комментарий автору" data-card-note="' + esc(card.id) + '">' +
+              '<input class="admin-review__note" type="text" placeholder="Комментарий автору (для отказа — обязательно)" data-card-note="' + esc(card.id) + '">' +
               '<button class="btn btn--sm" type="button" data-card-approve="' + esc(card.id) + '">Выдать карту</button>' +
               '<button class="btn btn--sm btn--ghost" type="button" data-card-reject="' + esc(card.id) + '">Вернуть</button>' +
               "</div>"
-            : "") +
+            : (card.status === "issued" || card.status === "expired") && (hasCap("cards.extend") || hasCap("cards.revoke"))
+              ? '<div class="admin-review__actions">' +
+                '<input class="admin-review__note" type="text" placeholder="Основание решения" data-card-life-note="' + esc(card.id) + '">' +
+                (hasCap("cards.extend")
+                  ? '<input class="admin-review__points" type="number" min="1" max="24" value="12" data-card-months="' + esc(card.id) + '" aria-label="Месяцев продления">' +
+                    '<button class="btn btn--sm" type="button" data-card-extend="' + esc(card.id) + '">Продлить</button>'
+                  : "") +
+                (hasCap("cards.revoke")
+                  ? '<button class="btn btn--sm btn--ghost" type="button" data-card-revoke="' + esc(card.id) + '">Отозвать</button>'
+                  : "") +
+                (card.status === "issued" && hasCap("cards.issue") && (!card.delivery || card.delivery.method === "post")
+                  ? '<button class="btn btn--sm btn--ghost" type="button" data-card-dispatch="' + esc(card.id) + '">Отметить отправку</button>'
+                  : "") +
+                (card.status === "issued" && card.number && card.verifyCode
+                  ? '<a class="btn btn--sm btn--ghost" href="' + esc(cardPrintUrl(card)) + '" target="_blank" rel="noopener">Печать</a>' +
+                    '<button class="btn btn--sm" type="button" data-card-pdf="' + esc(card.id) + '">Скачать PDF</button>'
+                  : "") +
+                "</div>"
+              : "") +
           "</div>"
         );
       }
@@ -4032,9 +4221,12 @@
           lines.push("<b>Адрес:</b> " + esc(d.address || ""));
         }
         if (card.issuedAt) lines.push("<b>Выдана:</b> " + esc(fmtDate(card.issuedAt)));
+        if (card.validUntil) lines.push("<b>Действует до:</b> " + esc(fmtDate(card.validUntil)));
+        if (card.revokedAt) lines.push("<b>Отозвана:</b> " + esc(fmtDate(card.revokedAt)));
         if (card.issuePlace) lines.push("<b>Где:</b> " + esc(card.issuePlace));
-        if (card.dispatch && card.dispatch.tracking) {
-          lines.push("<b>Трек-номер:</b> " + esc(card.dispatch.tracking));
+        if (card.dispatch && (card.dispatch.tracking || card.dispatch.sentAt)) {
+          lines.push("<b>Отправлена:</b> " + esc(fmtDate(card.dispatch.sentAt)) +
+            (card.dispatch.tracking ? " · трек " + esc(card.dispatch.tracking) : ""));
         }
         return '<div class="pcard__list" style="margin:10px 0">' + lines.map(function (l) {
           return '<div class="pcard__line"><span>' + l + "</span><span></span><span></span></div>";
@@ -4062,6 +4254,11 @@
               var id = btn.getAttribute("data-card-approve") || btn.getAttribute("data-card-reject");
               var approve = btn.hasAttribute("data-card-approve");
               var noteEl = $('[data-card-note="' + id + '"]', listEl);
+              var note = noteEl ? noteEl.value.trim() : "";
+              if (!approve && note.length < 5) {
+                statusEl.textContent = "Для отказа нужно основание — не короче пяти символов.";
+                return;
+              }
               var place = "";
               var tracking = "";
               if (approve) {
@@ -4075,7 +4272,7 @@
               }
               function sendReview() {
                 btn.disabled = true;
-                Store.apiCardReview("", id, approve ? "approve" : "reject", noteEl ? noteEl.value.trim() : "", place, tracking)
+                Store.apiCardReview("", id, approve ? "approve" : "reject", note, place, tracking)
                   .then(function (r) {
                     btn.disabled = false;
                     if (r && r.needConfirm) { askConfirm(slotEl, statusEl, sendReview); return; }
@@ -4084,98 +4281,70 @@
                       return;
                     }
                     load();
+                  }, function (err) {
+                    btn.disabled = false;
+                    statusEl.textContent = (err && err.message) || "Не удалось сохранить решение.";
                   });
               }
               sendReview();
             });
           });
+
+          $$("[data-card-pdf]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              downloadCardPdf(btn.getAttribute("data-card-pdf"), btn, statusEl);
+            });
+          });
+          $$("[data-card-dispatch]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var id = btn.getAttribute("data-card-dispatch");
+              var tracking = window.prompt("Трек-номер почты (можно оставить пустым):", "");
+              if (tracking === null) return;
+              btn.disabled = true;
+              Store.cardDispatch(id, tracking.trim()).then(function () {
+                btn.disabled = false;
+                load();
+              }, function (err) {
+                btn.disabled = false;
+                statusEl.textContent = (err && err.message) || "Не удалось сохранить отметку об отправке.";
+              });
+            });
+          });
+          $$("[data-card-revoke], [data-card-extend]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var extend = btn.hasAttribute("data-card-extend");
+              var id = btn.getAttribute("data-card-extend") || btn.getAttribute("data-card-revoke");
+              var noteEl = $('[data-card-life-note="' + id + '"]', listEl);
+              var monthsEl = $('[data-card-months="' + id + '"]', listEl);
+              var note = noteEl ? noteEl.value.trim() : "";
+              if (!extend && note.length < 5) {
+                statusEl.textContent = "Для отзыва нужно основание — не короче пяти символов.";
+                return;
+              }
+              var months = monthsEl ? Number(monthsEl.value) || 12 : 12;
+              function sendLife() {
+                btn.disabled = true;
+                var call = extend ? Store.cardExtend(id, months, note) : Store.cardRevoke(id, note);
+                call.then(function () {
+                  btn.disabled = false;
+                  load();
+                }, function (err) {
+                  btn.disabled = false;
+                  if (err && err.needConfirm) { askConfirm(slotEl, statusEl, sendLife); return; }
+                  statusEl.textContent = (err && err.message) || "Не удалось сохранить решение.";
+                });
+              }
+              sendLife();
+            });
+          });
+        }, function (err) {
+          statusEl.textContent = (err && err.message) || "Не удалось загрузить заявки.";
+          listEl.innerHTML = "";
         });
       }
 
       $("[data-card-load]", section).addEventListener("click", load);
       load();
-    }
-
-    function bind() {
-      var org = $("[data-admin-org]", host);
-      var card = $("[data-admin-card]", host);
-      if (org)
-        org.addEventListener("submit", function (e) {
-          e.preventDefault();
-          Store.saveSettings({
-            org: {
-              name: val("org-name"),
-              center: val("org-center"),
-              head: val("org-head"),
-              email: val("org-email"),
-              phone: val("org-phone"),
-              city: val("org-city"),
-            },
-          });
-          var st = $("[data-org-status]", host);
-          if (st) st.textContent = "Сохранено";
-        });
-      if (card)
-        card.addEventListener("submit", function (e) {
-          e.preventDefault();
-          Store.saveSettings({
-            card: {
-              prefix: val("card-prefix") || "СК",
-              year: Number(val("card-year")) || new Date().getFullYear(),
-              minPosts: Math.max(1, Number(val("card-min")) || 5),
-              teamMinPosts: Math.max(1, Number(val("card-team-min")) || 20),
-              validMonths: Math.max(1, Number(val("card-valid")) || 12),
-            },
-          });
-          render();
-        });
-      $$("[data-approve]", host).forEach(function (b) {
-        b.addEventListener("click", function () {
-          Store.reviewPost(b.getAttribute("data-approve"), "approve", "");
-          render();
-        });
-      });
-
-      $$("[data-reject]", host).forEach(function (b) {
-        b.addEventListener("click", function () {
-          var id = b.getAttribute("data-reject");
-          var noteEl = $('[data-note="' + id + '"]', host);
-          var note = noteEl ? noteEl.value.trim() : "";
-          if (!note) {
-            window.alert("Напишите автору, что нужно поправить — это поле рядом.");
-            if (noteEl) noteEl.focus();
-            return;
-          }
-          Store.reviewPost(id, "reject", note);
-          render();
-        });
-      });
-
-      $$("[data-access]", host).forEach(function (sel) {
-        sel.addEventListener("change", function () {
-          var data = JSON.parse(window.localStorage.getItem("smena_content_v1") || "{}");
-          data.users = (data.users || []).map(function (u) {
-            return u.id === sel.getAttribute("data-access")
-              ? Object.assign({}, u, { access: sel.value })
-              : u;
-          });
-          window.localStorage.setItem("smena_content_v1", JSON.stringify(data));
-          render();
-        });
-      });
-
-      var exp = $("[data-export]", host);
-      if (exp)
-        exp.addEventListener("click", function () {
-          var blob = new Blob([Store.exportAll()], { type: "application/json" });
-          var a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = "smena-kontenta-" + new Date().toISOString().slice(0, 10) + ".json";
-          a.click();
-          setTimeout(function () {
-            URL.revokeObjectURL(a.href);
-          }, 1000);
-        });
     }
 
     render();
@@ -5541,7 +5710,8 @@
 
     function draw(data) {
       var html = '<div class="sec-head" style="margin:10px 0 8px"><div class="sec-head__left">' +
-        '<span class="kicker">Редакции</span><h2 style="font-size:1.35rem">Моя редакция</h2></div></div>';
+        '<span class="kicker">Редакции</span><h2 style="font-size:1.35rem">Моя редакция</h2></div></div>' +
+        '<div data-ed-confirm style="display:none"></div><p class="form__note" data-ed-note></p>';
 
       if (data.applications.length) {
         html += '<div class="editorial-list">' + data.applications.map(function (a) {
@@ -5601,40 +5771,86 @@
 
       host.innerHTML = html;
 
-      $$("[data-ed-ok]", host).forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          Store.editorialReview(btn.getAttribute("data-ed-ok"), "approved", "").then(function () {
-            return Store.editorialMine();
-          }).then(draw, function (err) { window.alert(err.message); });
+      function review(id, decision, note) {
+        var slot = $('[data-ed-confirm]', host);
+        var noteEl = $('[data-ed-note]', host);
+        var buttons = $$('[data-ed-ok], [data-ed-no]', host);
+        buttons.forEach(function (b) { b.disabled = true; });
+        if (noteEl) noteEl.textContent = 'Отправляем решение…';
+        Store.editorialReview(id, decision, note).then(function () {
+          return Store.editorialMine();
+        }).then(draw, function (err) {
+          buttons.forEach(function (b) { b.disabled = false; });
+          if (err && err.needConfirm) {
+            askConfirm(slot, noteEl, function () { review(id, decision, note); });
+            return;
+          }
+          if (noteEl) noteEl.textContent = (err && err.message) || 'Решение не сохранилось.';
         });
+      }
+      $$("[data-ed-ok]", host).forEach(function (btn) {
+        btn.addEventListener("click", function () { review(btn.getAttribute("data-ed-ok"), "approved", ""); });
       });
       $$("[data-ed-no]", host).forEach(function (btn) {
         btn.addEventListener("click", function () {
           var note = window.prompt("Основание отказа (его увидит автор):", "");
           if (note === null) return;
           if (note.trim().length < 5) {
-            window.alert("Отказ без основания недопустим: напишите хотя бы 5 символов.");
+            var noteEl = $('[data-ed-note]', host);
+            if (noteEl) noteEl.textContent = "Отказ без основания недопустим: напишите хотя бы 5 символов.";
             return;
           }
-          Store.editorialReview(btn.getAttribute("data-ed-no"), "rejected", note.trim())
-            .then(function () { return Store.editorialMine(); })
-            .then(draw, function (err) { window.alert(err.message); });
+          review(btn.getAttribute("data-ed-no"), "rejected", note.trim());
         });
       });
     }
 
-    Store.editorialMine().then(draw, function () {});
+    Store.editorialMine().then(draw, function (err) {
+      host.innerHTML = '<p class="form__note">' + esc((err && err.message) || "Не удалось загрузить данные редакции.") + '</p>';
+    });
   }
 
   /* 12. Личный кабинет ===================================================== */
 
-  /* согласие на обработку персональных данных:
-     скачал форму → подписал от руки → загрузил скан → комиссия проверила */
-  function consentBlockHtml(status, consent) {
+  /* Два документа для подписи. Оба идут одним путём: скачал форму → подписал
+     от руки → загрузил скан → комиссия проверила. Разница в том, что они
+     разрешают: обработка открывает работу на сайте, распространение нужно
+     только для конкурсов, которые выходят в открытые площадки проекта. */
+  var CONSENT_DOCS = {
+    processing: {
+      kicker: "Документ для подписи",
+      title: "Согласие на обработку персональных данных",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf",
+      none: "черновики и публикация закрыты",
+      intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
+        "фото. Комиссия проверит документ и откроет публикацию.",
+      wait: "Обычно проверка занимает до двух дней. Пока решение не принято, " +
+        "черновики, файлы и заявки закрыты.",
+      ok: "Согласие принято. Публиковать материалы на сайте можно без ограничений.",
+    },
+    distribution: {
+      kicker: "Второй документ для подписи",
+      title: "Согласие на распространение персональных данных",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf",
+      none: "без него материалы не публикуются",
+      intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
+        "это распространение персональных данных, и разрешение на него оформляется " +
+        "отдельным документом. В форме вы отмечаете, что можно показывать. Площадки " +
+        "проекта (Max, Telegram, ВКонтакте, ТДС Чат) — отдельная отметка, она нужна " +
+        "только для конкурсов; без неё материалы выходят только на сайте.",
+      wait: "Комиссия проверяет документ. Пока решения нет, материалы не публикуются.",
+      ok: "Согласие принято. Имя и работы могут выходить на сайте. В площадках проекта — " +
+        "только если вы отметили это в форме.",
+    },
+  };
+
+  function consentBlockHtml(status, consent, kind) {
+    var key = kind === "distribution" ? "distribution" : "processing";
+    var doc = CONSENT_DOCS[key];
     var info = consent || {};
     var head =
-      '<div class="consent-card__head"><span class="kicker">Документ для подписи</span>' +
-      '<h3>Согласие на обработку персональных данных</h3></div>';
+      '<div class="consent-card__head"><span class="kicker">' + esc(doc.kicker) + "</span>" +
+      "<h3>" + esc(doc.title) + "</h3></div>";
 
     var body;
     if (status === "approved") {
@@ -5642,14 +5858,13 @@
         '<div class="consent-card__state consent-card__state--ok">' +
         '<b>Проверено комиссией</b><span>' +
         (info.decidedAt ? fmtDate(info.decidedAt) : "") + "</span></div>" +
-        "<p>Согласие принято. Публиковать материалы можно без ограничений.</p>";
+        "<p>" + esc(doc.ok) + "</p>";
     } else if (status === "pending") {
       body =
         '<div class="consent-card__state consent-card__state--wait">' +
         "<b>На проверке у комиссии</b><span>" +
         (info.createdAt ? fmtDate(info.createdAt) : "") + "</span></div>" +
-        "<p>Обычно проверка занимает до двух дней. Пока решение не принято, " +
-        "опубликовать материал нельзя — черновик сохранить можно.</p>";
+        "<p>" + esc(doc.wait) + "</p>";
     } else if (status === "rejected") {
       body =
         '<div class="consent-card__state consent-card__state--bad">' +
@@ -5660,78 +5875,38 @@
     } else {
       body =
         '<div class="consent-card__state">' +
-        "<b>Пока не отправлено</b><span>публикация закрыта</span></div>" +
-        "<p>Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
-        "фото. Комиссия проверит документ и откроет публикацию.</p>";
+        "<b>Пока не отправлено</b><span>" + esc(doc.none) + "</span></div>" +
+        "<p>" + esc(doc.intro) + "</p>";
     }
 
+    if (key === "distribution" && info.purpose) {
+      body += '<p class="form__note">Конкурс: ' + esc(info.purpose) + "</p>";
+    }
+
+    var fieldId = "consent-file-" + key;
     var actions =
       '<div class="consent-card__actions">' +
-      '<a class="btn btn--sm btn--ghost" href="/assets/docs/soglasie-na-obrabotku-pd.pdf" ' +
+      '<a class="btn btn--sm btn--ghost" href="' + esc(doc.file) + '" ' +
       'target="_blank" rel="noopener">Скачать форму (PDF)</a>' +
       (status === "approved"
         ? ""
-        : '<label class="btn btn--sm btn--accent" for="consent-file">Загрузить согласие</label>' +
-          '<input id="consent-file" type="file" accept="image/*" class="visually-hidden" data-consent-file>') +
+        : '<label class="btn btn--sm btn--accent" for="' + fieldId + '">Загрузить согласие</label>' +
+          '<input id="' + fieldId + '" type="file" accept="image/*" class="visually-hidden" ' +
+          'data-consent-file="' + key + '">') +
       "</div>" +
-      '<p class="form__note" data-consent-note></p>';
+      (key === "distribution" && status !== "approved"
+        ? '<input class="input" type="text" maxlength="160" data-consent-purpose ' +
+          'placeholder="Конкурс, если согласие оформляется для конкурса (необязательно)" style="margin-top:10px">'
+        : "") +
+      '<p class="form__note" data-consent-note="' + key + '"></p>';
 
-    return '<div class="consent-card consent-card--' + esc(status) + '" data-consent-card>' +
+    return '<div class="consent-card consent-card--' + esc(status) + '" data-consent-card="' + key + '">' +
       head + body + actions + "</div>";
   }
 
-  /* Пресс-карта автора: компактная карточка вместо огромного бланка.
-     Пока карты нет — прогресс и понятные шаги; когда выдана — номер и срок. */
-  function issueCardBlock(card) {
-    var percent = Math.min(100, Math.round((card.posts / card.need) * 100));
-
-    if (!card.issued) {
-      return (
-        '<div class="pcard pcard--pending" data-reveal>' +
-        '<div class="pcard__top"><span class="kicker">Пресс-карта автора</span>' +
-        '<span class="pcard__state">ещё не выдана</span></div>' +
-        '<div class="pcard__progress">' +
-        '<b>' + card.posts + " из " + card.need + "</b>" +
-        "<span>осталось " + card.left + " " +
-        plural(card.left, ["материал", "материала", "материалов"]) + "</span></div>" +
-        '<div class="pcard__bar"><i style="width:' + percent + '%"></i></div>' +
-        '<p class="pcard__note">' +
-        (card.scope === "team"
-          ? "Карту получит каждый участник редакции «" + esc(card.teamName) + "», когда у команды будет " +
-            card.need + " опубликованных материалов."
-          : "Карта даёт право ходить на события и брать комментарии как автор проекта. Нужно " +
-            card.need + " опубликованных материалов, которые приняла редакция.") +
-        "</p>" +
-        '<ol class="pcard__steps">' +
-        "<li>Подпишите согласие на обработку данных — без него материалы не публикуются.</li>" +
-        "<li>Опубликуйте " + card.need + " материала: черновик не считается, нужна публикация.</li>" +
-        "<li>Подайте заявление в кабинете — его подписывает " + esc(card.issuer) + ", решение за 3 дня.</li>" +
-        "<li>Карту передаём лично в Москве или присылаем почтой.</li>" +
-        "</ol>" +
-        '<div class="pcard__actions">' +
-        '<a class="btn btn--ghost btn--sm" href="/docs">Правила выдачи</a>' +
-        '<a class="btn btn--ghost btn--sm" href="/support">Спросить о карте</a>' +
-        "</div></div>"
-      );
-    }
-
-    return (
-      '<div class="pcard pcard--issued" data-reveal>' +
-      '<div class="pcard__top"><span class="kicker">Пресс-карта автора</span>' +
-      '<span class="pcard__num">' + esc(card.number) + "</span></div>" +
-      '<div class="pcard__name">' + esc(card.name) + "</div>" +
-      '<div class="pcard__role">' + esc(card.role) + " · " + esc(card.region) + " · " +
-      esc(card.editorial) + "</div>" +
-      '<div class="pcard__row">' +
-      "<span><b>Выдана</b>" + fmtDate(card.issuedAt) + "</span>" +
-      "<span><b>Действует до</b>" + fmtDate(card.validUntil) + "</span>" +
-      "<span><b>Публикаций</b>" + card.posts + "</span>" +
-      "<span><b>Выдаёт</b>" + esc(card.issuer) + "</span>" +
-      "</div>" +
-      '<div class="pcard__actions">' +
-      '<button class="btn btn--sm btn--ghost" type="button" data-print>Печать карты</button>' +
-      "</div></div>"
-    );
+  function taskBadge(t) {
+    var cls = t.priority === "urgent" ? " task-badge--urgent" : t.priority === "high" ? " task-badge--high" : "";
+    return '<span class="task-badge' + cls + '">' + esc(t.priorityLabel || "Обычная") + "</span>";
   }
 
   /* Кабинет: эти блоки вызываются со страницы профиля, поэтому живут
@@ -5991,12 +6166,13 @@
 
     function render() {
       var user = Store.currentUser();
-      var card = Store.pressCard();
       var consent = Store.consent();
       var consentStatus = (consent && consent.status) || "none";
+      var distribution = Store.consent("distribution");
+      var distributionStatus = (distribution && distribution.status) || "none";
       /* Писать материалы можно только с принятым согласием на обработку ПД:
          до этого кнопка не ведёт в редактор, а показывает, чего не хватает. */
-      var canWrite = consentStatus === "approved";
+      var canWrite = consentStatus === "approved" && distributionStatus === "approved";
       var published = Store.listPosts({ authorId: user.id, status: "published" });
       var drafts = Store.listPosts({ authorId: user.id, status: "draft" });
       var pending = Store.listPosts({ authorId: user.id, status: "pending" });
@@ -6004,57 +6180,8 @@
       var mine = drafts.concat(pending, rejected, published);
       document.title = user.name + " — личный кабинет";
 
-      /* баллы: считаем по форматам опубликованных материалов */
-      var formatValue = {};
-      (SC.points || []).forEach(function (pt) {
-        formatValue[pt.format] = Number(pt.value) || 0;
-      });
-      var byFormat = {};
-      var postPoints = 0;
-      published.forEach(function (post) {
-        var v = formatValue[post.format];
-        if (v == null) v = 10;
-        postPoints += v;
-        byFormat[post.format] = (byFormat[post.format] || 0) + 1;
-      });
-      var bonus = published.length ? 10 : 0;
-      if (card && card.issued) bonus += 15;
-
-      /* портфолио: работы вне сайта, за которые комиссия начислила баллы */
+      /* Баллы и пресс-карта приходят с сервера: локальных сумм и ПИНов больше нет. */
       var portfolioItems = Store.portfolio();
-      var portfolioPoints = Store.portfolioPoints();
-      var totalPoints = postPoints + bonus + portfolioPoints;
-
-      /* особый ПИН: выдаётся авторам с пресс-картой и участникам редакции */
-      var pin = "";
-      if (card && (card.issued || Store.myTeam())) {
-        try {
-          var pinKey = "smena_pin_" + (Store.authorKey ? Store.authorKey() : user.id);
-          pin = localStorage.getItem(pinKey) || "";
-          if (!pin) {
-            pin = String(Math.floor(100000 + Math.random() * 900000));
-            localStorage.setItem(pinKey, pin);
-          }
-        } catch (e) {
-          pin = "";
-        }
-      }
-
-      var pointsRows = (SC.points || [])
-        .map(function (pt) {
-          return "<tr><td>" + esc(pt.format) + "</td><td>" + esc(pt.note || "") +
-            "</td><td>" + (byFormat[pt.format] ? byFormat[pt.format] + " × " : "") +
-            "+" + esc(String(pt.value)) + "</td></tr>";
-        })
-        .join("");
-      var bonusRows = (SC.pointsBonus || [])
-        .map(function (b) {
-          return "<tr><td>" + esc(b.name) + "</td><td>" + esc(b.note || "") +
-            "</td><td>+" + esc(String(b.value)) + "</td></tr>";
-        })
-        .join("") +
-        "<tr><td>Портфолио</td><td>Одобренная комиссией работа вне сайта</td><td>+" +
-        portfolioPoints + "</td></tr>";
 
       var portfolioRows = portfolioItems.length
         ? portfolioItems
@@ -6115,31 +6242,10 @@
         '<div class="portfolio-list">' + portfolioRows + "</div></div>";
 
       var pointsBlock =
-        '<div class="profile-posts points" style="margin-top:44px">' +
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Разбалловка</span>' +
-        "<h2>Баллы за материалы</h2></div></div>" +
-        '<div class="kpi" style="margin-bottom:18px">' +
-        '<div class="kpi__item"><b class="points__total">' + totalPoints + "</b><span>баллов всего</span></div>" +
-        '<div class="kpi__item"><b>' + postPoints + "</b><span>за материалы</span></div>" +
-        '<div class="kpi__item"><b>' + (bonus + portfolioPoints) + "</b><span>бонусы</span></div>" +
-        '<div class="kpi__item"><b>' + published.length + "</b><span>опубликовано</span></div>" +
-        "</div>" +
-        '<p class="muted" style="max-width:640px">Баллы начисляются только за опубликованные материалы, ' +
-        "которые прошли проверку редакции. Черновик и материал на проверке баллов не дают.</p>" +
-        '<table class="points__table"><thead><tr><th>Формат</th><th>Что это</th><th>Баллы</th></tr></thead>' +
-        "<tbody>" + pointsRows + "</tbody></table>" +
-        (bonusRows
-          ? '<table class="points__table" style="margin-top:18px"><thead><tr><th>Бонус</th>' +
-            "<th>Когда</th><th>Баллы</th></tr></thead><tbody>" + bonusRows + "</tbody></table>"
-          : "") +
-        (pin
-          ? '<div class="pin-card" style="margin-top:22px;max-width:560px"><div>' +
-            '<span class="kicker">Особый ПИН</span>' +
-            '<b class="pin-card__code">' + esc(pin) + "</b>" +
-            "<p>Выдаётся авторам с пресс-картой и участникам редакционной команды. " +
-            "По нему вас опознают на мероприятиях проекта. Никому не передавайте.</p></div></div>"
-          : "") +
-        "</div>";
+        '<div class="profile-posts points" style="margin-top:44px" data-profile-points>' +
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Баллы</span>' +
+        "<h2>Журнал начислений</h2></div></div>" +
+        '<p class="form__note">Загружаем журнал с сервера…</p></div>';
 
       var STATUS = {
         draft: {
@@ -6166,12 +6272,11 @@
 
       var postRow = function (p) {
         var st = STATUS[p.status] || STATUS.draft;
-        var canPublish = Store.can(user, "publish");
         var action = "";
         if (p.status === "draft" || p.status === "rejected") {
           action =
             '<button class="btn btn--sm btn--accent" type="button" data-submit="' + p.id + '">' +
-            (canPublish ? "Опубликовать" : "Отправить на проверку") + "</button>";
+            "Отправить на проверку</button>";
         } else if (p.status === "pending") {
           action = '<span class="post-row__wait">Ждёт редактора</span>';
         } else {
@@ -6191,60 +6296,18 @@
             : "") +
           "</div>" +
           '<div class="post-row__actions">' + action +
-          '<a class="btn btn--sm btn--ghost" href="/write?id=' + p.id + '">Изменить</a>' +
-          '<button class="btn btn--sm btn--ghost" type="button" data-delete="' + p.id + '">Удалить</button>' +
+          (p.status === "published"
+            ? '<a class="btn btn--sm btn--ghost" href="/support">Снять с публикации</a>'
+            : '<a class="btn btn--sm btn--ghost" href="/write?id=' + p.id + '">Изменить</a>' +
+              '<button class="btn btn--sm btn--ghost" type="button" data-delete="' + p.id + '">Удалить</button>') +
+          '<span class="form__note" data-delete-note="' + p.id + '"></span>' +
           "</div></div>"
         );
       };
 
-      var team = Store.myTeam();
-      var teamCard = Store.pressCard();
-      var teamBlock = team
-        ? '<div class="panel panel--team">' +
-          '<div class="panel__head"><h3>' + esc(team.name) + "</h3>" +
-          '<span class="panel__tag">ваша редакция</span></div>' +
-          "<p>" + (team.about ? esc(team.about) : "Команда проекта.") + "</p>" +
-          '<div class="team-stats"><span><b>' + team.members + "</b> участников</span>" +
-          "<span><b>" + team.published + "</b> публикаций</span>" +
-          "<span><b>" + Math.max(0, (teamCard ? teamCard.need : 20) - team.published) + "</b> до командной карты</span></div>" +
-          '<p class="team-code">Код для приглашения: <code>' + esc(team.code) + "</code></p>" +
-          '<div class="row"><button class="btn btn--sm btn--ghost" type="button" data-team-leave>Выйти из команды</button></div>' +
-          "</div>"
-        : '<div class="panel panel--team">' +
-          "<h3>Вы в индивидуальной редакции</h3>" +
-          "<p>Пока вы работаете один: пресс-карта появится после " +
-          (teamCard ? teamCard.need : 5) + " материалов. Если соберётесь с друзьями — " +
-          "создайте свою редакцию: тогда карта выдаётся всей команде после " +
-          Store.getSettings().card.teamMinPosts + " публикаций.</p>" +
-          '<details class="team-rules"><summary>Правила и договор о создании редакции</summary>' +
-          "<ol>" +
-          "<li>Редакцию создаёт автор проекта с подтверждённым аккаунтом и согласием на обработку данных.</li>" +
-          "<li>Глава редакции отвечает за своих авторов: проверяет факты, соблюдает кодекс редакции " +
-          "и не публикует материалы без согласия людей на фото и в цитатах.</li>" +
-          "<li>Название редакции не должно повторять чужие бренды, СМИ и школьные проекты. Если название занято, " +
-          "комиссия попросит другое.</li>" +
-          "<li>Карта автора выдаётся всей команде после " + Store.getSettings().card.teamMinPosts +
-          " опубликованных материалов. За выдуманные материалы карта отзывается.</li>" +
-          "<li>Выйти из редакции можно в любой момент. Публикации остаются, карта начинает считаться " +
-          "по личным материалам.</li>" +
-          "<li>Договор действует без срока; условия меняются только письменно, с уведомлением в кабинете.</li>" +
-          "</ol>" +
-          '<label class="check-line"><input type="checkbox" data-team-agree value="1">' +
-          "<span>Я прочитал правила и подписываю договор о создании редакции от своего имени</span></label>" +
-          "</details>" +
-          '<form class="team-form" data-team-create>' +
-          '<div class="field"><label for="t-name">Название команды</label>' +
-          '<input id="t-name" name="name" type="text" placeholder="Например, НоВоСебирьСети" maxlength="60"></div>' +
-          '<div class="field"><label for="t-about">О чём вы</label>' +
-          '<input id="t-about" name="about" type="text" placeholder="Коротко: город и темы" maxlength="120"></div>' +
-          '<div class="row"><button class="btn btn--sm" type="submit" data-team-submit disabled>Создать редакцию</button>' +
-          '<span class="form__note" data-team-status></span></div></form>' +
-          '<form class="team-form team-form--join" data-team-join>' +
-          '<div class="field"><label for="t-code">Или присоединитесь по коду</label>' +
-          '<input id="t-code" name="code" type="text" placeholder="Шесть символов от команды" maxlength="12"></div>' +
-          '<div class="row"><button class="btn btn--sm btn--ghost" type="submit">Вступить</button>' +
-          '<span class="form__note" data-team-join-status></span></div></form>' +
-          "</div>";
+      var teamBlock =
+        '<div class="panel panel--team" data-profile-editorial>' +
+        '<h3>Редакция</h3><p class="form__note">Загружаем с сервера…</p></div>';
 
       host.innerHTML =
         '<section class="profile-hero"><div class="wrap">' +
@@ -6264,8 +6327,7 @@
         '<p class="profile-id__role"><span class="status-badge">' + esc(user.access || "Пользователь") +
         "</span>" + esc(user.role) +
         (user.region ? " · " + esc(regionName(user.region)) : "") + "</p>" +
-        '<p class="profile-id__since">На проекте с ' + fmtDate(user.createdAt) +
-        (card.number ? " · карта " + esc(card.number) : "") + "</p></div>" +
+        '<p class="profile-id__since">На проекте с ' + fmtDate(user.createdAt) + "</p></div>" +
         "</div>" +
         '<div class="profile-hero__actions">' +
         (canWrite
@@ -6275,23 +6337,26 @@
         '<a class="btn btn--ghost" href="/admin">Панель проекта</a>' +
         '<button class="btn btn--ghost" type="button" data-logout>Выйти</button>' +
         (canWrite ? "" :
-          '<p class="profile-hero__lock">Редактор откроется, когда комиссия примет согласие ' +
-          "на обработку персональных данных: файл ниже.</p>") +
+          '<p class="profile-hero__lock">Редактор откроется, когда редакция примет оба ' +
+          "документа: согласие на обработку данных и согласие на распространение — " +
+          "без второго имя автора и его работу нельзя показать на сайте. Формы ниже.</p>") +
         "</div></div></div></section>" +
 
         '<section class="section wrap">' +
         (param("new")
-          ? '<div class="welcome"><b>Аккаунт создан.</b> Можно сразу писать первый материал. ' +
-            "Пресс-карта появится, когда вы опубликуете " +
-            Store.getSettings().card.minPosts + " материала: до этого момента в кабинете виден прогресс.</div>"
+          ? '<div class="welcome"><b>Аккаунт создан.</b> Сначала загрузите оба согласия: на обработку данных и на распространение. ' +
+            "После публикации нужного числа материалов можно подать заявку на пресс-карту — прогресс виден в кабинете.</div>"
           : "") +
         '<div class="profile-grid">' +
 
         // согласие на обработку данных: без него публикация закрыта
         consentBlockHtml(consentStatus, consent) +
 
-        // пресс-карта (выдаётся после нужного числа публикаций)
-        issueCardBlock(card) +
+        // согласие на распространение: отдельный документ, только для конкурсов
+        consentBlockHtml(distributionStatus, distribution, "distribution") +
+
+        // пресс-карта: статус и срок только с сервера
+        '<div data-profile-card><p class="form__note">Загружаем пресс-карту…</p></div>' +
 
         // статистика
         '<div class="profile-side">' +
@@ -6377,13 +6442,16 @@
         '<div data-twofa-card style="margin-top:18px"></div>' +
         '<div data-danger-zone style="margin-top:18px"></div>' +
         '<div data-recovery-card style="margin-top:18px"></div>' +
-        '<div class="storage-note">Аккаунт и черновики хранятся в этом браузере. ' +
-        "Отправленный материал уходит в общую приёмную редакции: он доходит до неё с любого " +
-        "устройства, а после одобрения его видят все посетители сайта.</div>" +
+        '<div class="storage-note">Аккаунт, баллы, согласия и пресс-карта хранятся на сервере. ' +
+        "Черновики остаются в этом браузере, пока вы не отправите их на проверку. Отправленный материал " +
+        "уходит в общую приёмную редакции и после одобрения виден всем посетителям сайта.</div>" +
         "</div>" +
         "</section>";
 
       initAnimations();
+      mountProfileCard();
+      mountProfilePoints();
+      mountProfileEditorial();
       mountCardApplication();
       mountMyEditorial(user);
       warnLocalOnly();
@@ -6397,7 +6465,13 @@
       Store.refreshPortfolio();
       Store.refreshConsent().then(function (fresh) {
         var before = (consent && consent.status) || "none";
-        if (fresh && fresh.status && fresh.status !== before && host.isConnected !== false) render();
+        var freshDistribution = Store.consent("distribution");
+        var changed = (fresh && fresh.status && fresh.status !== before) ||
+          (freshDistribution && freshDistribution.status !== distributionStatus);
+        if (changed && host.isConnected !== false) render();
+      }, function () {
+        var note = $('[data-consent-note="processing"]', host);
+        if (note) note.textContent = "Не удалось спросить сервер о статусе согласия. Показаны сохранённые данные.";
       });
 
       var form = $("[data-profile-form]", host);
@@ -6405,13 +6479,23 @@
         form.addEventListener("submit", function (e) {
           e.preventDefault();
           var d = new FormData(form);
+          var btn = form.querySelector('button[type="submit"]');
+          var note = $("[data-profile-status]", form);
+          if (btn) btn.disabled = true;
+          if (note) note.textContent = "Сохраняем…";
           Store.saveProfile({
             name: d.get("name"),
             role: d.get("role"),
             region: d.get("region"),
             bio: d.get("bio"),
           }).then(function (res) {
-            savedNote = res && res.ok === false ? "Не сохранилось: " + res.error : "Сохранено";
+            if (btn) btn.disabled = false;
+            if (res && res.ok === false) {
+              savedNote = "";
+              if (note) note.textContent = res.error || "Не сохранилось.";
+              return;
+            }
+            savedNote = "Сохранено";
             render();
           });
         });
@@ -6455,31 +6539,28 @@
         });
       }
 
-      var consentFile = $("[data-consent-file]", host);
-      if (consentFile) {
+      $$("[data-consent-file]", host).forEach(function (consentFile) {
+        var kind = consentFile.getAttribute("data-consent-file") || "processing";
         consentFile.addEventListener("change", function () {
           var file = consentFile.files && consentFile.files[0];
           if (!file) return;
-          var noteEl = $("[data-consent-note]", host);
+          var purposeEl = $('[data-consent-purpose]', host);
+          var purpose = kind === "distribution" && purposeEl ? purposeEl.value.trim() : "";
+          var noteEl = $('[data-consent-note="' + kind + '"]', host);
           if (noteEl) noteEl.textContent = "Загружаем скан…";
-          Store.uploadMedia(file)
-            .catch(function () { return fileToDataUrl(file); })
-            .then(function (url) {
-              /* копия скана отправляется в комиссию вместе с заявкой */
-              return fileToDataUrl(file).then(function (dataUrl) {
-                return Store.sendConsent(dataUrl).then(function () { return url; });
-              });
-            })
+          /* скан уходит прямо в закрытое хранилище вместе с заявкой */
+          fileToDataUrl(file)
+            .then(function (dataUrl) { return Store.sendConsent(dataUrl, kind, purpose); })
             .then(function () {
               render();
-              var fresh = $("[data-consent-note]", host);
+              var fresh = $('[data-consent-note="' + kind + '"]', host);
               if (fresh) fresh.textContent = "Согласие отправлено на проверку.";
             }, function (err) {
-              var fresh = $("[data-consent-note]", host);
+              var fresh = $('[data-consent-note="' + kind + '"]', host);
               if (fresh) fresh.textContent = (err && err.message) || "Не удалось отправить согласие.";
             });
         });
-      }
+      });
 
       /* «Добавить свои материалы» */
       var pfOpen = $("[data-portfolio-open]", host);
@@ -6553,9 +6634,6 @@
         });
       }
 
-      var printBtn = $("[data-print]", host);
-      if (printBtn) printBtn.addEventListener("click", function () { window.print(); });
-
       $$("[data-logout]", host).forEach(function (b) {
         b.addEventListener("click", function () {
           Store.logout();
@@ -6565,71 +6643,178 @@
 
       $$("[data-submit]", host).forEach(function (b) {
         b.addEventListener("click", function () {
-          var res = Store.submitPost(b.getAttribute("data-submit"));
-          if (!res.ok) {
-            window.alert(res.error || "Не удалось отправить материал.");
-            return;
-          }
-          render();
-        });
-      });
-
-      var teamCreate = $("[data-team-create]", host);
-      var teamAgree = $("[data-team-agree]", host);
-      var teamSubmit = $("[data-team-submit]", host);
-      if (teamAgree && teamSubmit) {
-        teamAgree.addEventListener("change", function () {
-          teamSubmit.disabled = !teamAgree.checked;
-        });
-      }
-      if (teamCreate) {
-        teamCreate.addEventListener("submit", function (e) {
-          e.preventDefault();
-          if (teamAgree && !teamAgree.checked) {
-            var noteAgree = $("[data-team-status]", host);
-            if (noteAgree) noteAgree.textContent = "Отметьте, что правила прочитаны и договор подписан.";
-            return;
-          }
-          var fd = new FormData(teamCreate);
-          var res = Store.createTeam({ name: fd.get("name"), about: fd.get("about"), region: user.region });
-          var note = $("[data-team-status]", host);
-          if (!res.ok) {
-            if (note) note.textContent = res.error || "Не получилось";
-            return;
-          }
-          render();
-        });
-      }
-
-      var teamJoin = $("[data-team-join]", host);
-      if (teamJoin) {
-        teamJoin.addEventListener("submit", function (e) {
-          e.preventDefault();
-          var fd = new FormData(teamJoin);
-          var res = Store.joinTeam(fd.get("code"));
-          var note = $("[data-team-join-status]", host);
-          if (!res.ok) {
-            if (note) note.textContent = res.error || "Не получилось";
-            return;
-          }
-          render();
-        });
-      }
-
-      $$("[data-team-leave]", host).forEach(function (b) {
-        b.addEventListener("click", function () {
-          if (!window.confirm("Выйти из команды? Публикации останутся, но карта будет считаться по личным материалам.")) return;
-          Store.leaveTeam();
-          render();
+          b.disabled = true;
+          Store.submitPost(b.getAttribute("data-submit")).then(function (res) {
+            b.disabled = false;
+            if (!res.ok) {
+              window.alert(res.error || "Не удалось отправить материал.");
+              return;
+            }
+            render();
+          }, function (err) {
+            b.disabled = false;
+            window.alert((err && err.message) || "Не удалось отправить материал.");
+          });
         });
       });
 
       $$("[data-delete]", host).forEach(function (b) {
         b.addEventListener("click", function () {
           if (!window.confirm("Удалить материал? Действие необратимо.")) return;
-          Store.deletePost(b.getAttribute("data-delete"));
-          render();
+          var id = b.getAttribute("data-delete");
+          var note = $('[data-delete-note="' + id + '"]', host);
+          b.disabled = true;
+          if (note) note.textContent = "Удаляем…";
+          Store.deletePost(id).then(function (res) {
+            b.disabled = false;
+            if (!res || !res.ok) {
+              if (note) note.textContent = (res && res.error) || "Не удалось удалить материал.";
+              return;
+            }
+            render();
+          }, function (err) {
+            b.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Не удалось удалить материал.";
+          });
         });
+      });
+    }
+
+    function mountProfileCard() {
+      var box = $("[data-profile-card]", host);
+      if (!box || !Store.apiCardStatus) return;
+      function draw(status) {
+        var current = status.current || null;
+        var st = current ? current.status : "none";
+        var published = Number(status.published) || 0;
+        var need = Number(status.minPosts) || 5;
+        var percent = Math.min(100, Math.round((published / need) * 100));
+        var head = '<div class="pcard__top"><span class="kicker">Пресс-карта автора</span>' + cardStatusBadge(current || {}) + "</div>";
+        var body = "";
+        if (st === "issued" && current) {
+          body =
+            '<div class="pcard__name">' + esc(current.number || "") + "</div>" +
+            '<div class="pcard__role">' + esc(current.authorName || "") + " · " +
+            esc(regionName(current.authorRegion) || current.authorRegion || "регион не указан") + "</div>" +
+            '<div class="pcard__row">' +
+            "<span><b>Выдана</b>" + esc(fmtDate(current.issuedAt)) + "</span>" +
+            "<span><b>Действует до</b>" + esc(fmtDate(current.validUntil)) + "</span>" +
+            "<span><b>Публикаций</b>" + published + "</span>" +
+            "</div>" +
+            (current.issuePlace ? '<p class="pcard__note">Выдача: ' + esc(current.issuePlace) + "</p>" : "") +
+            (current.dispatch && (current.dispatch.tracking || current.dispatch.sentAt)
+              ? '<p class="pcard__note">Отправлена: ' + esc(fmtDate(current.dispatch.sentAt)) +
+                (current.dispatch.tracking ? " · трек-номер " + esc(current.dispatch.tracking) : "") + "</p>"
+              : "");
+        } else if (st === "pending") {
+          body = '<p class="pcard__note">Заявка отправлена ' + esc(fmtDate(current.createdAt)) +
+            " и ждёт решения редакции. Номер и срок появятся здесь после выдачи.</p>";
+        } else {
+          var note = st === "expired" ? "Срок действия карты истёк. Можно подать новую заявку."
+            : st === "revoked" ? "Карта отозвана редакцией." + (current && current.note ? " Основание: " + esc(current.note) : "")
+            : st === "rejected" ? "Заявку вернули." + (current && current.note ? " Основание: " + esc(current.note) : "")
+            : status.byRole ? "Вы в команде проекта: карту можно получить по должности."
+            : "Карта выдаётся по заявке после " + need + " опубликованных материалов.";
+          body =
+            '<p class="pcard__note">' + note + "</p>" +
+            '<div class="pcard__progress"><b>' + published + " из " + need + "</b>" +
+            "<span>опубликовано материалов</span></div>" +
+            '<div class="pcard__bar"><i style="width:' + percent + '%"></i></div>' +
+            '<ol class="pcard__steps">' +
+            "<li>Подпишите оба согласия: на обработку и на распространение данных — без них материалы не публикуются.</li>" +
+            "<li>Опубликуйте материалы: черновик и проверка не считаются.</li>" +
+            "<li>Подайте заявление ниже — решение принимает редакция.</li>" +
+            "</ol>";
+        }
+        var canPrint = st === "issued" && current && current.number && current.verifyCode;
+        var printLink = canPrint
+          ? '<a class="btn btn--ghost btn--sm" href="' + esc(cardPrintUrl(current)) +
+            '" target="_blank" rel="noopener">Печать карты</a>' +
+            '<button class="btn btn--accent btn--sm" type="button" data-card-pdf>Скачать PDF</button>' +
+            '<span class="form__note" data-card-pdf-note role="status" aria-live="polite"></span>'
+          : "";
+        box.innerHTML = '<div class="pcard pcard--' + esc(st) + '" data-reveal>' + head + body +
+          '<div class="pcard__actions">' + printLink +
+          '<a class="btn btn--ghost btn--sm" href="#card-application">Заявка и статус</a>' +
+          '<a class="btn btn--ghost btn--sm" href="/support">Спросить о карте</a></div></div>';
+        var pdfBtn = $("[data-card-pdf]", box);
+        if (pdfBtn) pdfBtn.addEventListener("click", function () {
+          downloadCardPdf(current.id, pdfBtn, $('[data-card-pdf-note]', box));
+        });
+      }
+      function load() {
+        Store.apiCardStatus().then(function (status) {
+          if (!status || !status.ok) {
+            box.innerHTML = '<p class="form__note is-error">' + esc((status && status.error) || "Не удалось загрузить пресс-карту.") +
+              ' <button class="btn btn--sm btn--ghost" type="button" data-card-retry>Повторить</button></p>';
+            var retry = $("[data-card-retry]", box);
+            if (retry) retry.addEventListener("click", load);
+            return;
+          }
+          draw(status);
+        });
+      }
+      load();
+    }
+
+    function mountProfilePoints() {
+      var box = $("[data-profile-points]", host);
+      if (!box || !Store.pointsHistory) return;
+      function load() {
+        Promise.all([Store.pointsHistory(), Store.pointsRules ? Store.pointsRules() : Promise.resolve([])]).then(function (res) {
+          var journal = res[0];
+          var rules = res[1] || [];
+          var labels = {};
+          rules.forEach(function (r) { labels[r.key] = r.label || r.key; });
+          var entries = journal.entries || [];
+          var rows = entries.map(function (e) {
+            var delta = Number(e.delta) || 0;
+            return "<tr><td>" + esc(fmtDate(e.at)) + "</td><td>" + esc(labels[e.reason] || e.reason || "Операция") +
+              (e.note ? "<br><small>" + esc(e.note) + "</small>" : "") + "</td><td>" +
+              (delta > 0 ? "+" : "") + delta + "</td><td>" + esc(String(e.balanceAfter != null ? e.balanceAfter : "")) + "</td></tr>";
+          }).join("");
+          box.innerHTML =
+            '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Баллы</span>' +
+            "<h2>Журнал начислений</h2></div></div>" +
+            '<div class="kpi" style="margin-bottom:18px"><div class="kpi__item"><b class="points__total">' +
+            esc(String(journal.balance != null ? journal.balance : 0)) + "</b><span>баллов всего</span></div></div>" +
+            '<p class="muted" style="max-width:640px">Баллы начисляет сервер за опубликованные материалы, портфолио и пресс-карту. ' +
+            "Здесь видна каждая операция; локального подсчёта в браузере нет.</p>" +
+            (rows ? '<table class="points__table"><thead><tr><th>Дата</th><th>Основание</th><th>Баллы</th><th>Баланс</th></tr></thead><tbody>' +
+              rows + "</tbody></table>" : '<div class="fill-note fill-note--flat"><b>Начислений пока нет</b><p>Операции появятся после решения редакции.</p></div>');
+        }, function (err) {
+          box.innerHTML = '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Баллы</span><h2>Журнал начислений</h2></div></div>' +
+            '<p class="form__note is-error">' + esc((err && err.message) || "Не удалось загрузить журнал.") +
+            ' <button class="btn btn--sm btn--ghost" type="button" data-points-retry>Повторить</button></p>';
+          var retry = $("[data-points-retry]", box);
+          if (retry) retry.addEventListener("click", load);
+        });
+      }
+      load();
+    }
+
+    function mountProfileEditorial() {
+      var box = $("[data-profile-editorial]", host);
+      if (!box || !Store.editorialMine) return;
+      Store.editorialMine().then(function (data) {
+        var me = Store.currentUser() || {};
+        var ed = data.membership || data.editorial;
+        if (ed) {
+          box.innerHTML = '<div class="panel__head"><h3>' + esc(ed.name) + '</h3><span class="panel__tag">' +
+            (data.editorial && !data.membership ? "вы основатель" : "ваша редакция") + "</span></div>" +
+            "<p>" + esc(ed.about || "Редакция проекта.") + "</p>" +
+            '<p class="form__note">Регион: ' + esc(regionName(ed.region) || ed.region || "не указан") +
+            " · участников: " + esc(String(ed.members || 0)) + "</p>" +
+            '<a class="link-accent" href="/region?r=' + esc(ed.region || me.region || "moskva") + '">Страница редакции →</a>';
+          return;
+        }
+        var pending = (data.applications || []).filter(function (a) { return a.status === "pending"; })[0];
+        box.innerHTML = "<h3>Вы вне редакции</h3>" +
+          (pending ? "<p>Заявка в редакцию на рассмотрении. Решение появится в разделе «Моя редакция» ниже.</p>"
+            : "<p>Можно писать индивидуально или подать заявление в редакцию своего региона.</p>") +
+          '<a class="link-accent" href="/region?r=' + esc(me.region || "moskva") + '">Выбрать редакцию региона →</a>';
+      }, function () {
+        box.innerHTML = '<h3>Редакция</h3><p class="form__note is-error">Не удалось загрузить редакцию. Обновите страницу.</p>';
       });
     }
 
@@ -6642,222 +6827,162 @@
       var section = document.createElement("section");
       section.className = "section wrap";
       section.setAttribute("data-card-app", "");
+      section.id = "card-application";
       section.innerHTML =
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Пресс-карта</span>' +
         "<h2>Заявка на карту автора</h2>" +
-        '<p class="sec-head__text">Карта не выдаётся автоматически: нужно подать заявку и приложить ' +
-        "все свои опубликованные материалы — у каждого есть номер. Решение принимает редакция.</p>" +
-        '</div></div><div data-card-body><p class="no-data">Проверяем заявку…</p></div>';
+        '<p class="sec-head__text">Карта не выдаётся автоматически: заявление рассматривает редакция. ' +
+        "Статус, номер и срок действия приходят с сервера.</p></div></div>" +
+        '<div data-card-body><p class="no-data">Проверяем заявку…</p></div>';
       host.appendChild(section);
-
       var body = $("[data-card-body]", section);
 
-      Promise.all([Store.apiMyPosts(), Store.apiCardStatus()]).then(function (res) {
-        var posts = (res[0] || []).filter(function (p) {
-          return p.status === "published";
-        });
-        var me = Store.currentUser();
-        /* сотрудник редакции получает карту по должности: прикладывать
-           пять опубликованных материалов ему не нужно */
-        var byRole = !!(me && me.access && me.access !== "Пользователь");
-        var status = res[1] || { requests: [], minPosts: 5 };
-        var last = (status.requests || [])[0];
-        var need = status.minPosts || 5;
+      function load() {
+        Promise.all([Store.apiMyPosts(), Store.apiCardStatus()]).then(function (res) {
+          var posts = (res[0] || []).filter(function (p) { return p.status === "published"; });
+          var status = res[1];
+          if (!status || !status.ok) {
+            body.innerHTML = '<p class="form__note is-error">' + esc((status && status.error) || "Не удалось загрузить статус карты.") +
+              ' <button class="btn btn--sm btn--ghost" type="button" data-card-app-retry>Повторить</button></p>';
+            var retry = $("[data-card-app-retry]", body);
+            if (retry) retry.addEventListener("click", load);
+            return;
+          }
+          var current = status.current || null;
+          var last = (status.requests || [])[0] || current;
+          var byRole = !!status.byRole;
+          var need = Number(status.minPosts) || 5;
 
-        if (last && last.status === "pending") {
-          body.innerHTML =
-            '<div class="panel"><h3>Заявка отправлена</h3>' +
-            "<p>Материалов в заявке: " + (last.posts || []).length +
-            ". Редакция рассмотрит её и выдаст карту с номером — статус появится здесь.</p>" +
-            '<p class="form__note">Отправлено: ' + esc(fmtDate(last.createdAt)) + "</p></div>";
-          return;
-        }
-        if (last && last.status === "issued") {
-          body.innerHTML =
-            '<div class="panel"><h3>Пресс-карта выдана</h3>' +
-            '<p class="presscard__code" style="font-size:1.1rem">' + esc(last.number || "") + "</p>" +
-            "<p>Номер действует один год. Карту можно показать на месте съёмки или встречи — " +
-            "она подтверждает, что вы пишете для «Смены контента».</p>" +
-            '<p class="form__note">Материалов в заявке: ' + (last.posts || []).length + "</p>" +
-            (last.issuePlace ? '<p class="form__note">Где получить: ' + esc(last.issuePlace) + "</p>" : "") +
-            '<p class="form__note"><a class="link-accent" href="/assets/docs/blank-press-karty.pdf" ' +
-            'target="_blank" rel="noopener">Бланк карты для печати</a> — если нужно показать карту до того, ' +
-            "как она придёт.</p></div>";
-          return;
-        }
+          if (current && (current.status === "issued" || current.status === "pending")) {
+            body.innerHTML =
+              '<div class="panel"><h3>' + (current.status === "issued" ? "Пресс-карта выдана" : "Заявка отправлена") + "</h3>" +
+              (current.status === "issued"
+                ? '<p class="presscard__code" style="font-size:1.1rem">' + esc(current.number || "") + "</p>" +
+                  "<p>Действует до " + esc(fmtDate(current.validUntil)) + ". Продление и отзыв — решение редакции.</p>"
+                : "<p>Материалов в заявке: " + (current.posts || []).length + ". Редакция рассмотрит её, статус появится здесь.</p>") +
+              (current.issuePlace ? '<p class="form__note">Выдача: ' + esc(current.issuePlace) + "</p>" : "") +
+              (current.dispatch && (current.dispatch.tracking || current.dispatch.sentAt)
+                ? '<p class="form__note">Отправлена: ' + esc(fmtDate(current.dispatch.sentAt)) +
+                  (current.dispatch.tracking ? " · трек-номер " + esc(current.dispatch.tracking) : "") + "</p>"
+                : "") +
+              '<p class="form__note">Обновлено: ' + esc(fmtDate(current.decidedAt || current.createdAt)) + "</p></div>";
+            return;
+          }
+          if (!status.canApply) {
+            body.innerHTML = '<div class="panel"><p>Новую заявку сейчас подать нельзя. Статус карты: ' +
+              esc((current && current.status) || "неизвестно") + ".</p></div>";
+            return;
+          }
 
-        var head =
-          (last && last.status === "rejected"
-            ? '<div class="panel" style="margin-bottom:18px"><h3>Заявку вернули на доработку</h3><p>' +
-              esc(last.note || "Редакция не указала причину.") + "</p></div>"
-            : "") +
-          (byRole
-            ? "<p>Вы в команде проекта, поэтому карту можно получить по должности — без пяти " +
-              "опубликованных материалов. Материалы, если они есть, приложите к заявке: по ним " +
-              "редакция сверит номера.</p><p>Опубликовано материалов: <b>" + posts.length + "</b>.</p>"
-            : "<p>Опубликовано материалов: <b>" + posts.length + "</b>. Для заявки нужно не меньше " +
-              need + ".</p>");
+          var head =
+            (last && last.status === "rejected"
+              ? '<div class="panel" style="margin-bottom:18px"><h3>Заявку вернули</h3><p>' + esc(last.note || "Редакция не указала причину.") + "</p></div>"
+              : last && last.status === "expired"
+                ? '<div class="panel" style="margin-bottom:18px"><h3>Срок карты истёк</h3><p>Можно подать новую заявку.</p></div>'
+                : last && last.status === "revoked"
+                  ? '<div class="panel" style="margin-bottom:18px"><h3>Карта отозвана</h3><p>' + esc(last.note || "") + "</p></div>"
+                  : "") +
+            (byRole
+              ? "<p>Вы в команде проекта, поэтому карту можно получить по должности. Опубликовано материалов: <b>" + posts.length + "</b>.</p>"
+              : "<p>Опубликовано материалов: <b>" + posts.length + "</b>. Для заявки нужно не меньше " + need + ".</p>");
 
-        if (!posts.length && !byRole) {
-          body.innerHTML =
-            head +
-            '<div class="empty"><h3>Нужны опубликованные материалы</h3>' +
-            "<p>Сначала опубликуйте материал: после проверки редакцией у него появится номер, " +
-            "и он войдёт в заявку. Нужно " + need + ", сейчас 0.</p>" +
-            '<div class="empty__actions">' +
-            (((Store.consent() || {}).status === "approved")
-              ? '<a class="btn btn--sm" href="/write">Написать материал</a>'
-              : '<span class="btn btn--sm is-locked" aria-disabled="true">Написать материал</span>' +
-                '<p class="form__note">Откроется после того, как комиссия примет согласие на обработку данных.</p>') +
-            "</div></div>";
-          return;
-        }
+          if (!byRole && posts.length < need) {
+            body.innerHTML = head +
+              '<div class="empty"><h3>Нужны опубликованные материалы</h3>' +
+              "<p>После проверки редакцией у материала появляется номер, и он войдёт в заявку. Нужно " + need + ", сейчас " + posts.length + ".</p>" +
+              '<div class="empty__actions">' +
+              (((Store.consent() || {}).status === "approved")
+                ? '<a class="btn btn--sm" href="/write">Написать материал</a>'
+                : '<span class="btn btn--sm is-locked" aria-disabled="true">Написать материал</span>') +
+              "</div></div>";
+            return;
+          }
 
-        var rows = posts
-          .map(function (p) {
-            return (
-              '<label class="check-line" style="align-items:flex-start">' +
-              '<input type="checkbox" checked value="' + esc(p.id) + '" data-card-post>' +
-              "<span><b>№ " + String(p.number || 0).padStart(4, "0") + "</b> · " + esc(p.title) +
+          var rows = posts.map(function (p) {
+            return '<div class="check-line"><span><b>№ ' + String(p.number || 0).padStart(4, "0") + "</b> · " + esc(p.title) +
               '<small style="display:block;color:var(--muted)">' + esc(regionName(p.region) || "регион не выбран") +
-              " · " + esc(fmtDate(p.date)) + "</small></span></label>"
-            );
-          })
-          .join("");
+              " · " + esc(fmtDate(p.date)) + "</small></span></div>";
+          }).join("");
 
-        body.innerHTML =
-          head +
-          '<div class="panel"><div class="stack">' +
-          (rows ||
-            '<p class="form__note" style="margin:0">Материалов пока нет — заявка уйдёт по должности, ' +
-            "без приложенных номеров.</p>") +
-          "</div>" +
-          '<div class="pcard__section" style="margin-top:18px">' +
-          '<span class="kicker">Как получить карту</span>' +
-          '<p class="form__note" style="margin:0">Карта не приходит сама: её либо передают лично ' +
-          "в Москве, либо отправляют почтой России. Выберите способ — редакция согласует с вами " +
-          "время и место выдачи.</p>" +
-          '<label class="check-line"><input type="radio" name="card-method" value="personal" checked data-card-method>' +
-          "<span><b>Лично в Москве</b><small style=\"display:block;color:var(--muted)\">" +
-          "Договоримся о встрече, карту передадут из рук в руки. Нужен телефон для связи.</small></span></label>" +
-          '<label class="check-line"><input type="radio" name="card-method" value="post" data-card-method>' +
-          "<span><b>Почтой России</b><small style=\"display:block;color:var(--muted)\">" +
-          "Заказным письмом на ваш адрес. Нужны индекс, город, улица, дом и квартира.</small></span></label>" +
-          '<div class="field"><label for="card-fullname">Фамилия и имя полностью</label>' +
-          '<input id="card-fullname" type="text" data-card-fullname placeholder="Иванова Анна Сергеевна" ' +
-          'autocomplete="name"></div>' +
-          '<div class="field"><label for="card-phone">Телефон</label>' +
-          '<input id="card-phone" type="tel" data-card-phone placeholder="+7 900 000-00-00" autocomplete="tel"></div>' +
-          '<div data-card-post-fields hidden>' +
-          '<div class="field"><label for="card-index">Индекс</label>' +
-          '<input id="card-index" type="text" inputmode="numeric" maxlength="6" data-card-index placeholder="101000"></div>' +
-          '<div class="field"><label for="card-address">Адрес</label>' +
-          '<input id="card-address" type="text" data-card-address ' +
-          'placeholder="Город, улица, дом, квартира" autocomplete="street-address"></div></div>' +
-          '<label class="check-line"><input type="checkbox" data-card-agree>' +
-          "<span>Согласен на обработку персональных данных для печати и отправки карты. " +
-          'Данные нужны только для этого и удаляются после выдачи.</span></label>' +
-          '<div class="row" style="margin-top:6px">' +
-          '<button class="btn" type="button" data-card-send>Подать заявку</button>' +
-          '<span class="form__note" data-card-note>' +
-          (posts.length
-            ? "Материалы уже приложены — редакция проверит их по номерам."
-            : "Заявка по должности: материалы можно приложить позже.") +
-          "</span>" +
-          "</div></div></div>";
+          body.innerHTML = head +
+            '<div class="panel"><div class="stack">' +
+            (rows || '<p class="form__note" style="margin:0">Материалов пока нет — заявка уйдёт по должности.</p>') +
+            "</div>" +
+            '<div class="pcard__section" style="margin-top:18px">' +
+            '<span class="kicker">Как получить карту</span>' +
+            '<label class="check-line"><input type="radio" name="card-method" value="personal" checked data-card-method>' +
+            "<span><b>Лично в Москве</b></span></label>" +
+            '<label class="check-line"><input type="radio" name="card-method" value="post" data-card-method>' +
+            "<span><b>Почтой России</b></span></label>" +
+            '<div class="field"><label for="card-fullname">Фамилия и имя полностью</label>' +
+            '<input id="card-fullname" type="text" data-card-fullname autocomplete="name"></div>' +
+            '<div class="field"><label for="card-phone">Телефон</label>' +
+            '<input id="card-phone" type="tel" data-card-phone autocomplete="tel"></div>' +
+            '<div data-card-post-fields hidden>' +
+            '<div class="field"><label for="card-index">Индекс</label>' +
+            '<input id="card-index" type="text" inputmode="numeric" maxlength="6" data-card-index></div>' +
+            '<div class="field"><label for="card-address">Адрес</label>' +
+            '<input id="card-address" type="text" data-card-address autocomplete="street-address"></div></div>' +
+            '<label class="check-line"><input type="checkbox" data-card-agree>' +
+            "<span>Согласен на обработку персональных данных для выдачи и отправки карты.</span></label>" +
+            '<div class="row" style="margin-top:6px">' +
+            '<button class="btn" type="button" data-card-send>Подать заявку</button>' +
+            '<span class="form__note" data-card-note></span></div></div></div>';
 
-        var send = $("[data-card-send]", section);
-        var note = $("[data-card-note]", section);
-        var postFields = $("[data-card-post-fields]", section);
-        var nameEl = $("[data-card-fullname]", section);
-        var phoneEl = $("[data-card-phone]", section);
-        var indexEl = $("[data-card-index]", section);
-        var addressEl = $("[data-card-address]", section);
-        var agreeEl = $("[data-card-agree]", section);
+          var send = $("[data-card-send]", section);
+          var note = $("[data-card-note]", section);
+          var postFields = $("[data-card-post-fields]", section);
+          var nameEl = $("[data-card-fullname]", section);
+          var phoneEl = $("[data-card-phone]", section);
+          var indexEl = $("[data-card-index]", section);
+          var addressEl = $("[data-card-address]", section);
+          var agreeEl = $("[data-card-agree]", section);
+          var me = Store.currentUser();
+          if (me && nameEl) nameEl.value = me.name || "";
 
-        if (me && nameEl && !nameEl.value) nameEl.value = me.name || "";
+          function methodNow() {
+            var picked = $$("[data-card-method]", section).filter(function (el) { return el.checked; })[0];
+            return picked ? picked.value : "personal";
+          }
+          function syncMethod() { if (postFields) postFields.hidden = methodNow() !== "post"; }
+          $$("[data-card-method]", section).forEach(function (el) { el.addEventListener("change", syncMethod); });
+          syncMethod();
 
-        function methodNow() {
-          var picked = $$("[data-card-method]", section).filter(function (el) {
-            return el.checked;
-          })[0];
-          return picked ? picked.value : "personal";
-        }
-
-        function syncMethod() {
-          if (postFields) postFields.hidden = methodNow() !== "post";
-        }
-        $$("[data-card-method]", section).forEach(function (el) {
-          el.addEventListener("change", syncMethod);
-        });
-        syncMethod();
-
-        send.addEventListener("click", function () {
-          var chosen = $$("[data-card-post]", section)
-            .filter(function (el) {
-              return el.checked;
-            })
-            .map(function (el) {
-              return el.value;
+          send.addEventListener("click", function () {
+            var method = methodNow();
+            var fullName = (nameEl.value || "").trim();
+            var phone = (phoneEl.value || "").trim();
+            if (fullName.length < 5) { note.textContent = "Напишите фамилию и имя полностью."; return; }
+            if (phone.replace(/[^0-9]/g, "").length < 10) { note.textContent = "Нужен телефон для связи."; return; }
+            if (!agreeEl.checked) { note.textContent = "Нужно согласие на обработку данных."; return; }
+            if (method === "post") {
+              if ((indexEl.value || "").replace(/[^0-9]/g, "").length !== 6) { note.textContent = "Индекс — шесть цифр."; return; }
+              if ((addressEl.value || "").trim().length < 12) { note.textContent = "Напишите адрес полностью."; return; }
+            }
+            send.disabled = true;
+            note.textContent = "Отправляем…";
+            Store.cardApply({
+              delivery: method,
+              fullName: fullName,
+              phone: phone,
+              index: method === "post" ? indexEl.value : "",
+              address: method === "post" ? addressEl.value : "",
+              agree: true,
+            }).then(function () {
+              note.textContent = "Заявка отправлена. Редакция рассмотрит её и обновит статус.";
+              render();
+            }, function (err) {
+              send.disabled = false;
+              note.textContent = (err && err.message) || "Не удалось отправить заявку.";
             });
-          if (!byRole && chosen.length !== posts.length) {
-            note.textContent = "Отметьте все свои материалы: заявка подаётся со всеми публикациями.";
-            return;
-          }
-          if (!byRole && chosen.length < need) {
-            note.textContent = "Нужно не меньше " + need + " опубликованных материалов.";
-            return;
-          }
-          var method = methodNow();
-          var fullName = (nameEl && nameEl.value || "").trim();
-          var phone = (phoneEl && phoneEl.value || "").trim();
-          if (fullName.length < 5) {
-            note.textContent = "Напишите фамилию и имя полностью — карта печатается по этим данным.";
-            return;
-          }
-          if (phone.replace(/[^0-9]/g, "").length < 10) {
-            note.textContent = "Без телефона не получится согласовать выдачу.";
-            return;
-          }
-          if (!agreeEl || !agreeEl.checked) {
-            note.textContent = "Нужно согласие на обработку данных: без него карту нельзя напечатать.";
-            return;
-          }
-          if (method === "post") {
-            var idx = (indexEl && indexEl.value || "").replace(/[^0-9]/g, "");
-            var addr = (addressEl && addressEl.value || "").trim();
-            if (idx.length !== 6) {
-              note.textContent = "Индекс — шесть цифр.";
-              return;
-            }
-            if (addr.length < 12) {
-              note.textContent = "Напишите адрес полностью: город, улица, дом, квартира.";
-              return;
-            }
-          }
-          send.disabled = true;
-          note.textContent = "Отправляем…";
-          Store.cardApply({
-            delivery: method,
-            fullName: fullName,
-            phone: phone,
-            index: method === "post" ? (indexEl.value || "") : "",
-            address: method === "post" ? (addressEl.value || "") : "",
-            agree: true,
-          }).then(function () {
-            send.disabled = false;
-            window.alert(
-              method === "post"
-                ? "Заявка отправлена. Карту отправим почтой — редакция напишет вам, когда письмо уйдёт."
-                : "Заявка отправлена. Редакция напишет вам, когда и где передать карту в Москве."
-            );
-            render();
-          }, function (err) {
-            send.disabled = false;
-            note.textContent = (err && err.message) || "Не удалось отправить заявку.";
           });
+        }, function () {
+          body.innerHTML = '<p class="form__note is-error">Нет связи с сервером. <button class="btn btn--sm btn--ghost" type="button" data-card-app-retry>Повторить</button></p>';
+          var retry = $("[data-card-app-retry]", body);
+          if (retry) retry.addEventListener("click", load);
         });
-      });
+      }
+      load();
     }
 
     render();
@@ -6876,6 +7001,157 @@
 
   /* 13. Редактор материала ================================================= */
 
+  /* Ссылка на печать: номер и код с карты. Код — это возможность проверить
+     карту, поэтому в списке участников и в открытых данных его нет. */
+  function cardPrintUrl(card) {
+    /* Фрагмент (#) не уходит на сервер и не попадает в Referer: код проверки
+       знает только браузер владельца и сама страница /verify. */
+    return "/verify#n=" + encodeURIComponent(card.number || "") +
+      "&c=" + encodeURIComponent(card.verifyCode || "");
+  }
+
+  function downloadCardPdf(cardId, btn, noteEl) {
+    if (!Store.cardPdf) return;
+    var label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Готовим PDF…";
+    if (noteEl) noteEl.textContent = "";
+    Store.cardPdf(cardId).then(function (file) {
+      var url = URL.createObjectURL(file.blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = file.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      btn.disabled = false;
+      btn.textContent = label;
+      if (noteEl) noteEl.textContent = "PDF сохранён.";
+    }, function (err) {
+      btn.disabled = false;
+      btn.textContent = label;
+      var message = (err && err.message) || "Не удалось скачать PDF карты.";
+      if (noteEl) noteEl.textContent = message;
+      else window.alert(message);
+    });
+  }
+
+  /* 6b. Проверка и печать пресс-карты ====================================== */
+
+  function initVerify() {
+    var form = $("[data-verify-form]");
+    var box = $("[data-verify-result]");
+    if (!form || !box || !Store.cardVerify) return;
+    var numberEl = $("#verify-number");
+    var codeEl = $("#verify-code");
+    var statusEl = $("[data-verify-status]");
+    var submit = $("[data-verify-submit]");
+
+    var STATUS = {
+      issued: { label: "Действует", cls: "ok", text: "Карта действует. Данные ниже совпадают с тем, что напечатано на карте." },
+      expired: { label: "Срок истёк", cls: "bad", text: "Срок действия карты закончился. Владелец может подать новую заявку в кабинете." },
+      revoked: { label: "Отозвана", cls: "bad", text: "Карта отозвана редакцией и больше не подтверждает сотрудничество с проектом." },
+      pending: { label: "Заявка на проверке", cls: "wait", text: "Карта ещё не выдана: заявка ждёт решения редакции." },
+      rejected: { label: "Отказано", cls: "bad", text: "По заявке на карту отказано, карта не выдавалась." },
+    };
+
+    function face(card, code) {
+      return '<div class="pcard-print">' +
+        '<div class="pcard-print__side pcard-print__face">' +
+        '<div class="pcard-print__brand">Смена контента</div>' +
+        '<div class="pcard-print__kind">Пресс-карта автора</div>' +
+        '<div class="pcard-print__name">' + esc(card.authorName || "") + "</div>" +
+        '<div class="pcard-print__meta">' +
+        esc(regionName(card.authorRegion) || card.authorRegion || "") +
+        (card.authorRole ? " · " + esc(card.authorRole) : "") + "</div>" +
+        '<div class="pcard-print__foot"><span>№ ' + esc(card.number || "") + "</span>" +
+        "<span>до " + esc(fmtDate(card.validUntil)) + "</span></div>" +
+        "</div>" +
+        '<div class="pcard-print__side pcard-print__back">' +
+        "<p>Карта подтверждает сотрудничество с проектом «Смена контента». " +
+        "Не является удостоверением журналиста зарегистрированного СМИ и не даёт " +
+        "права на доступ на закрытые мероприятия.</p>" +
+        "<p><b>Проверка:</b> smenakontenta.ru/verify<br>" +
+        "<b>Номер:</b> " + esc(card.number || "") + "<br>" +
+        "<b>Код:</b> " + esc(code || "") + "</p>" +
+        "<p><b>Выдана:</b> " + esc(fmtDate(card.issuedAt)) +
+        " · <b>Действует до:</b> " + esc(fmtDate(card.validUntil)) + "</p>" +
+        "</div></div>";
+    }
+
+    function draw(card, code) {
+      var state = STATUS[card.status] || { label: card.status || "неизвестно", cls: "wait", text: "" };
+      var head = '<div class="verify-result verify-result--' + esc(state.cls) + ' no-print">' +
+        '<div><span class="kicker">Результат проверки</span><h2>' + esc(state.label) + "</h2>" +
+        "<p>" + esc(state.text) + "</p></div>" +
+        '<div class="verify-result__meta">' +
+        "<span><b>Номер</b>" + esc(card.number || "") + "</span>" +
+        "<span><b>Имя на карте</b>" + esc(card.authorName || "") + "</span>" +
+        "<span><b>Регион</b>" + esc(regionName(card.authorRegion) || card.authorRegion || "—") + "</span>" +
+        "<span><b>Действует до</b>" + esc(fmtDate(card.validUntil)) + "</span>" +
+        (card.revokedAt ? "<span><b>Отозвана</b>" + esc(fmtDate(card.revokedAt)) + "</span>" : "") +
+        "</div></div>";
+      var printable = card.status === "issued"
+        ? face(card, code) +
+          '<div class="verify-actions no-print">' +
+          '<button class="btn btn--accent" type="button" data-verify-print>Печать карты</button>' +
+          '<p class="form__note">Печатайте в масштабе 100 % на плотной бумаге и вырежьте ' +
+          "обе стороны. Если принтер предлагает «по размеру страницы» — отключите это.</p></div>"
+        : '<p class="form__note no-print">Печать доступна только для действующей карты.</p>';
+      box.hidden = false;
+      box.innerHTML = head + printable;
+      var printBtn = $("[data-verify-print]", box);
+      if (printBtn) printBtn.addEventListener("click", function () { window.print(); });
+    }
+
+    function check(number, code) {
+      statusEl.textContent = "Проверяем…";
+      submit.disabled = true;
+      Store.cardVerify(number, code).then(function (res) {
+        submit.disabled = false;
+        if (!res.found) {
+          box.hidden = true;
+          box.innerHTML = "";
+          statusEl.textContent = res.error || "Карта не найдена.";
+          return;
+        }
+        statusEl.textContent = "Проверено только что.";
+        draw(res.card || {}, code);
+      }, function (err) {
+        submit.disabled = false;
+        box.hidden = true;
+        box.innerHTML = "";
+        statusEl.textContent = (err && err.message) || "Не удалось проверить карту. Попробуйте ещё раз.";
+      });
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var number = (numberEl.value || "").trim();
+      var code = (codeEl.value || "").trim();
+      if (!number || !code) {
+        statusEl.textContent = "Нужны и номер, и код с обратной стороны карты.";
+        return;
+      }
+      check(number, code);
+    });
+
+    var hash = window.location.hash.replace(/^#/, "");
+    var n = "";
+    var c = "";
+    hash.split("&").forEach(function (part) {
+      var kv = part.split("=");
+      try {
+        if (kv[0] === "n") n = decodeURIComponent((kv[1] || "").replace(/\+/g, " "));
+        if (kv[0] === "c") c = decodeURIComponent((kv[1] || "").replace(/\+/g, " "));
+      } catch (e) { /* повреждённый фрагмент не должен ломать страницу */ }
+    });
+    if (n) numberEl.value = n;
+    if (c) codeEl.value = c;
+    if (n && c) check(n, c);
+  }
+
   function initWrite() {
     var host = $("[data-write]");
     if (!host) return;
@@ -6884,6 +7160,8 @@
       window.location.replace("/join?next=write#login");
       return;
     }
+
+    if (Store.refreshConsent) Store.refreshConsent().catch(function () {});
 
     var editId = param("id");
     var existing = editId ? Store.getPost(editId) : null;
@@ -6903,8 +7181,8 @@
       '<div class="write-head">' +
       '<div><span class="kicker">' + (existing ? "Редактирование" : "Новый материал") + "</span>" +
       "<h1>" + (existing ? "Изменить материал" : "Написать материал") + "</h1>" +
-      '<p class="lead">Пишите так, как рассказали бы другу. Черновик можно сохранить ' +
-      "и вернуться к нему позже.</p></div>" +
+      '<p class="lead">Пишите так, как рассказали бы другу. Черновики и отправка материалов ' +
+      "доступны после принятого согласия на обработку данных.</p></div>" +
       '<div class="write-head__side">' +
       '<a class="btn btn--sm btn--ghost" href="/profile">← В кабинет</a>' +
       "</div></div>" +
@@ -6985,13 +7263,9 @@
       '<div class="write-side__box">' +
       '<div class="write-status" data-write-status></div>' +
       '<button class="btn btn--block" type="submit" data-action="draft">Сохранить черновик</button>' +
-      '<button class="btn btn--accent btn--block" type="submit" data-action="submit">' +
-      (Store && Store.can(user, "publish") ? "Опубликовать" : "Отправить на проверку") + "</button>" +
-      '<p class="form__note">' +
-      (Store && Store.can(user, "publish")
-        ? "У вас права редакции: материал выйдет сразу."
-        : "Материал проверит редакция — обычно в течение дня. Черновик останется у вас.") +
-      "</p>" +
+      '<button class="btn btn--accent btn--block" type="submit" data-action="submit">Отправить на проверку</button>' +
+      '<p class="form__note">Материал проверит редакция — обычно в течение дня. ' +
+      'Публикация возможна только после принятого согласия на обработку данных.</p>' +
       "</div>" +
       '<div class="write-side__box write-side__box--muted">' +
       "<h3>Перед публикацией</h3><ul class=\"check-list\">" +
@@ -7217,15 +7491,15 @@
       var body = String(d.get("body") || "").trim();
       var region = String(d.get("region") || "");
 
+      var consentState = Store.consent();
+      if (!consentState || consentState.status !== "approved") {
+        return setStatus(
+          "Черновики, файлы и отправка материалов закрыты, пока комиссия не проверит согласие " +
+          "на обработку персональных данных. Скачать форму и загрузить скан можно в личном кабинете.",
+          true
+        );
+      }
       if (action === "submit") {
-        var consentState = Store.consent();
-        if (!consentState || consentState.status !== "approved") {
-          return setStatus(
-            "Публикация закрыта, пока комиссия не проверит согласие на обработку персональных " +
-            "данных. Скачать форму и загрузить скан можно в личном кабинете.",
-            true
-          );
-        }
         if (title.length < 8) return setStatus("Заголовок слишком короткий — минимум 8 символов.", true);
         if (excerpt.length < 20) return setStatus("Добавьте короткое описание: 20+ символов.", true);
         if (body.length < 200) return setStatus("Текст пока короткий: нужно хотя бы 200 символов.", true);
@@ -7255,14 +7529,18 @@
       if (!res.ok) return setStatus(res.error || "Не удалось сохранить.", true);
 
       if (action === "submit") {
-        var sent = Store.submitPost(res.post.id);
-        if (!sent.ok) return setStatus(sent.error || "Не удалось отправить материал.", true);
-        setStatus(sent.message || "Готово");
-        setTimeout(function () {
-          window.location.href = sent.direct
-            ? "/article?id=" + encodeURIComponent("u:" + res.post.id)
-            : "/profile";
-        }, 600);
+        var buttons = $$("button[type=submit]", form);
+        buttons.forEach(function (b) { b.disabled = true; });
+        setStatus("Отправляем материал редакции…");
+        Store.submitPost(res.post.id).then(function (sent) {
+          buttons.forEach(function (b) { b.disabled = false; });
+          if (!sent.ok) return setStatus(sent.error || "Не удалось отправить материал.", true);
+          setStatus(sent.message || "Материал отправлен на проверку.");
+          setTimeout(function () { window.location.href = "/profile"; }, 600);
+        }, function (err) {
+          buttons.forEach(function (b) { b.disabled = false; });
+          setStatus((err && err.message) || "Не удалось отправить материал.", true);
+        });
       } else {
         setStatus("Черновик сохранён");
         if (!existing) {
@@ -7441,9 +7719,9 @@
         el.textContent = mail;
         el.setAttribute("href", "mailto:" + mail);
       } else {
-        el.textContent = "почта пока не заведена";
-        el.removeAttribute("href");
-        el.classList.add("is-pending");
+        el.textContent = "Написать в поддержку";
+        el.setAttribute("href", "/support");
+        el.classList.remove("is-pending");
       }
     });
     $$("[data-total-articles]").forEach(function (el) {
@@ -7501,6 +7779,7 @@
       }
     }
     if (page === "support") initSupport();
+    if (page === "verify") initVerify();
 
     initAnimations();
     initHeroParallax();

@@ -347,6 +347,20 @@ body.ps.cursor-on .ps-cur { display: block; }
 .ps-foot a:hover { color: #fff; }
 .ps-foot__row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
 
+/* Соцсети проекта: список берётся из assets/js/data.js (brand.social) */
+.ps-foot__social { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 22px; }
+.ps-foot__caption { font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; color: rgba(255, 255, 255, .4); }
+.ps-foot__links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.ps-foot__links a {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 14px 7px 10px; border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 999px; background: rgba(255, 255, 255, .04);
+  color: rgba(255, 255, 255, .78); font-size: .78rem; line-height: 1;
+  transition: border-color .18s ease, background-color .18s ease, color .18s ease;
+}
+.ps-foot__links a:hover { color: #fff; border-color: rgba(255, 255, 255, .42); background: rgba(255, 255, 255, .1); }
+.ps-foot__links img { width: 20px; height: 20px; flex: none; object-fit: contain; }
+
 @media (max-width: 640px) {
   .ps-detail__head { padding: 60px 18px 28px; }
   .ps-detail__body { padding: 6px 18px 90px; }

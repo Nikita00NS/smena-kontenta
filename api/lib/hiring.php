@@ -173,7 +173,7 @@ function hiring_routes($act, $dir) {
     }
 
     if ($act === 'hiring-apply') {
-        require_verified($me);
+        require_consent($dir, $me);
         $existing = hiring_by_user($dir, $me['id']);
         if ($existing && in_array($existing['stage'], array('test', 'checklist', 'review', 'approved'), true)) {
             fail('Заявка уже есть. Откройте кабинет — там видно, на каком она этапе.', 409);
@@ -313,7 +313,9 @@ function hiring_routes($act, $dir) {
             $users = read_users($dir);
             foreach ($users as $i => $u) {
                 if ($u['id'] !== $app['userId']) continue;
-                $users[$i]['access'] = 'Сотрудник';
+                if (role_level(isset($u['access']) ? $u['access'] : '') < ROLE_LEVELS['Сотрудник']) {
+                    $users[$i]['access'] = 'Сотрудник';
+                }
                 $users[$i]['role'] = $app['position'];
                 $users[$i]['position'] = $app['position'];
                 $users[$i]['hiredAt'] = date('c');
@@ -325,6 +327,7 @@ function hiring_routes($act, $dir) {
                 break;
             }
             if (!$target) fail('Аккаунт заявителя не найден.', 404);
+            require_consent($dir, $target);
             if (!write_json(users_file($dir), $users)) fail('Не удалось выдать роль.', 500);
             $list[$index]['stage'] = 'approved';
             $list[$index]['decidedAt'] = date('c');

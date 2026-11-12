@@ -1,5 +1,9 @@
 # Почта проекта: SendPulse и всё остальное
 
+Актуальная схема — почта на домене Sprinthost (`editorial@`, `info@`, `noreply@`,
+`support@smenakontenta.ru`), настройка в админке; см. `tools/STAGE-2-MAIL-HIRING.md`.
+SendPulse ниже — исторический запасной вариант.
+
 Сайт отправляет письма через SMTP. Свой клиент лежит в `api/smtp.php` — без
 Composer и сторонних библиотек. Подходит любой провайдер: SendPulse, Brevo,
 Яндекс, Mail.ru, Gmail. Меняются только четыре значения в админке.

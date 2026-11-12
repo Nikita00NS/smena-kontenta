@@ -19,9 +19,12 @@ const engine = parser.create({
 
 let files = process.argv.slice(2);
 if (!files.length) {
-  files = ["api/index.php", "api/smtp.php", "api/lib/mailer.php",
-    "api/lib/imap.php", "api/lib/hiring.php", "api/lib/permissions.php",
-    "api/lib/points.php", "api/lib/backup.php"];
+  files = ["api/index.php", "api/smtp.php"].concat(
+    fs.readdirSync(path.resolve(__dirname, "..", "..", "api", "lib"))
+      .filter((name) => name.endsWith(".php"))
+      .sort()
+      .map((name) => "api/lib/" + name)
+  );
 }
 
 let bad = 0;

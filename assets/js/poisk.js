@@ -605,6 +605,25 @@
     if (e.key === "Escape") closeDetail();
   });
 
+  /* ------------------------------------------------------- соцсети проекта */
+  /* Адреса и логотипы не дублируем: берём из SC.brand.social (assets/js/data.js). */
+  (function social() {
+    var box = $("#ps-social");
+    if (!box) return;
+    var list = (window.SC && window.SC.brand && window.SC.brand.social) || [];
+    if (!list.length) return;
+    box.innerHTML = '<span class="ps-foot__caption">Социальные сети</span>' +
+      '<span class="ps-foot__links">' + list.map(function (item) {
+        if (!item || !item.url) return "";
+        var label = item.title || item.url;
+        return '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer"' +
+          ' title="' + esc(item.hint || label) + '"' +
+          ' aria-label="' + esc(item.hint || label) + ' (откроется в новой вкладке)">' +
+          (item.icon ? '<img src="' + esc(item.icon) + '" alt="" width="20" height="20" loading="lazy">' : "") +
+          '<span>' + esc(label) + '</span></a>';
+      }).join("") + '</span>';
+  })();
+
   /* ---------------------------------------------------------------- sources */
   (function sources() {
     var box = $("#ps-sources");

@@ -2818,6 +2818,83 @@ p:last-child {
   line-height: 1.6;
 }
 
+/* Социальные сети в подвале. Список задаётся в assets/js/data.js (brand.social). */
+.footer-social {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(16px, 2.4vw, 40px);
+  flex-wrap: wrap;
+  padding-block: clamp(20px, 2.6vw, 30px);
+  border-bottom: 1px solid rgba(247, 245, 239, 0.16);
+}
+
+.footer-social__head h3 {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(247, 245, 239, 0.62);
+}
+
+.footer-social__head p {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(247, 245, 239, 0.5);
+}
+
+.footer-social__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.footer-social__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 8px 12px;
+  border: 1px solid rgba(247, 245, 239, 0.18);
+  border-radius: 999px;
+  background: rgba(247, 245, 239, 0.04);
+  color: var(--paper);
+  font-size: 14px;
+  line-height: 1;
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+}
+
+.footer-social__link:hover,
+.footer-social__link:focus-visible {
+  border-color: rgba(247, 245, 239, 0.45);
+  background: rgba(247, 245, 239, 0.1);
+  transform: translateY(-1px);
+}
+
+.footer-social__icon {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  object-fit: contain;
+}
+
+@media (max-width: 720px) {
+  .footer-social {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .footer-social__link {
+    padding: 8px 14px 8px 10px;
+    font-size: 13px;
+  }
+}
+
 /* 16. Утилиты и адаптив ===================================================== */
 [id] {
   scroll-margin-top: calc(var(--header-h) + 46px);
@@ -7984,3 +8061,232 @@ body.is-maint { overflow: hidden; }
   opacity: 0.7;
 }
 .mail-more[open] summary { opacity: 1; }
+
+/* Этап 2: статусы пресс-карты и чтение материала в очереди */
+.pcard--expired,
+.pcard--revoked,
+.pcard--rejected { border-color: var(--line-strong); background: var(--paper-2); }
+.pcard--none { background: var(--paper-2); }
+.admin-review__text { margin: 0 0 14px; }
+.admin-review__text summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.admin-review__text div {
+  margin-top: 10px;
+  max-width: 72ch;
+  font-size: 0.94rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.admin-review__text p { margin: 0 0 10px; white-space: pre-wrap; }
+.points__table small { color: var(--muted); font-size: 0.82rem; }
+
+/* ============================================================================
+   Проверка и печать пресс-карты (/verify)
+   ========================================================================== */
+.verify-panel {
+  padding: clamp(18px, 2.4vw, 28px);
+}
+
+.verify-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+
+.verify-form .form__row--actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.verify-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(16px, 2.4vw, 32px);
+  padding: clamp(18px, 2.4vw, 26px);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: var(--radius, 14px);
+  background: var(--paper-2, rgba(255, 255, 255, 0.03));
+  margin-bottom: 22px;
+}
+
+.verify-result--ok { border-left-color: #2e9e5b; }
+.verify-result--bad { border-left-color: var(--accent); }
+.verify-result--wait { border-left-color: #c9922e; }
+
+.verify-result h2 {
+  margin: 6px 0 8px;
+  font-size: clamp(20px, 2.4vw, 28px);
+}
+
+.verify-result p {
+  margin: 0;
+  color: var(--ink-soft, inherit);
+  line-height: 1.6;
+}
+
+.verify-result__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-content: start;
+  font-size: 14px;
+}
+
+.verify-result__meta span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.verify-result__meta b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Карта на экране: две стороны в реальном соотношении 85,6 × 54 мм */
+.pcard-print {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.pcard-print__side {
+  width: 342px;
+  max-width: 100%;
+  aspect-ratio: 85.6 / 54;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pcard-print__face {
+  background: var(--dark, #121110);
+  color: var(--on-dark, #f4f2ed);
+  border-color: transparent;
+}
+
+.pcard-print__brand {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.pcard-print__kind {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.pcard-print__name {
+  margin-top: auto;
+  font-family: var(--font-display, inherit);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.pcard-print__meta {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.pcard-print__foot {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.pcard-print__back {
+  background: var(--paper, #fff);
+  color: var(--ink, #14130f);
+  font-size: 10.5px;
+  line-height: 1.45;
+  justify-content: space-between;
+}
+
+.pcard-print__back p { margin: 0; }
+
+.verify-actions {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.verify-actions .form__note { margin: 0; max-width: 52ch; }
+
+@media (max-width: 720px) {
+  .verify-result { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Печать: на лист уходят только обе стороны карты, без шапки сайта и форм */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body[data-page="verify"] .site-header,
+  body[data-page="verify"] .site-footer,
+  body[data-page="verify"] .page-hero,
+  body[data-page="verify"] .verify-panel {
+    display: none !important;
+  }
+
+  body[data-page="verify"] {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  [data-verify-result] {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .pcard-print {
+    gap: 5mm;
+  }
+
+  .pcard-print__side {
+    width: 85.6mm;
+    height: 54mm;
+    aspect-ratio: auto;
+    padding: 4mm;
+    border: 0.25mm solid #111;
+    border-radius: 3mm;
+    background: #fff !important;
+    color: #000 !important;
+    break-inside: avoid;
+  }
+
+  .pcard-print__name { font-size: 12pt; }
+  .pcard-print__brand,
+  .pcard-print__kind,
+  .pcard-print__meta,
+  .pcard-print__foot { font-size: 7.5pt; opacity: 1; }
+  .pcard-print__back { font-size: 6.5pt; line-height: 1.35; }
+}
