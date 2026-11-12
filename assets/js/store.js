@@ -1,20 +1,15 @@
 /* ============================================================================
-   СМЕНА КОНТЕНТА — аккаунты и публикации (без сервера)
+   СМЕНА КОНТЕНТА — связь сайта с сервером (api/index.php)
    ----------------------------------------------------------------------------
-   Как это работает сейчас:
-   аккаунт, черновики и опубликованные материалы хранятся в localStorage
-   браузера. То есть регистрация и публикация работают по-настоящему, но
-   данные видны только на этом устройстве.
+   Что где живёт:
+   • аккаунт, роль и права, материалы на проверке и опубликованные, согласие
+     на обработку данных, пресс-карта, редакции — на сервере. Решения
+     принимает сервер; браузер только показывает;
+   • в браузере лежат токен сессии, копия профиля для мгновенной отрисовки
+     и черновики материалов, пока автор их не отправил.
 
-   Что это значит для проекта:
-   • аккаунт, черновики и пресс-карта живут в этом браузере;
-   • отправленный материал уходит в общую приёмную на хостинге (api/index.php),
-     поэтому редактор видит его с любого устройства, а после одобрения материал
-     появляется у всех посетителей — см. блок «общая приёмная» ниже;
-   • если PHP на хостинге недоступен, сайт продолжает работать локально.
-
-   Пароль не передаётся никуда и не хранится в открытом виде, но это НЕ
-   полноценная защита: для публичного запуска нужен серверный вход.
+   Правило для интерфейса: права берутся из user.caps (их присылает сервер),
+   а не из названия роли. Новая роль на сервере не требует правок здесь.
    ========================================================================== */
 
 window.Store = (function () {
@@ -25,7 +20,7 @@ window.Store = (function () {
 
   var EMPTY = { users: [], posts: [], teams: [], session: null, settings: null };
 
-  /* данные проекта: их заполняет редакция в панели управления */
+  /* оформление: город и название для подписей на страницах */
   var DEFAULT_SETTINGS = {
     org: {
       name: "Смена контента",
@@ -34,18 +29,8 @@ window.Store = (function () {
       email: "",
       phone: "",
       city: "Москва",
-      founders: [
-        { name: "Сирик Никита Сергеевич", inn: "940802781550", role: "Основатель и генеральный директор медиапроекта" },
-        { name: "Ильин Борис Павлович", inn: "784304154610", role: "Основатель и директор медиапроекта" },
-      ],
     },
-    card: {
-      prefix: "СК",
-      year: new Date().getFullYear(),
-      minPosts: 5,
-      teamMinPosts: 20,
-      validMonths: 12,
-    },
+    card: { prefix: "СК", minPosts: 5, validMonths: 12 },
   };
 
   function merge(base, patch) {
@@ -147,19 +132,42 @@ window.Store = (function () {
     "Пользователь",
   ];
 
-  /* кому что можно. Проверяется и в интерфейсе, и в самих операциях store */
-  var RIGHTS = {
-    "Директор": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards", "manageUsers"],
-    "Администрация": ["publish", "review", "deleteAny", "manage", "editSettings", "issueCards"],
-    "Редакционный администратор региона": ["publish", "review", "manage", "issueCards"],
-    "Редакционный основатель": ["publish", "review", "manage"],
-    "Пользователь": [],
+  /* Права — это список полномочий, который сервер присылает вместе с
+     профилем (user.caps). Раньше здесь была своя таблица на пять ролей,
+     и «Главный редактор» для сайта был никем, хотя сервер его пускал. */
+  var CAP_OF = {
+    publish: "posts.publish",
+    review: "posts.review",
+    deleteAny: "posts.remove",
+    editSettings: "site.manage",
+    issueCards: "cards.issue",
+    manageUsers: "people.access",
   };
 
+  function capsOf(user) {
+    return user && Array.isArray(user.caps) ? user.caps : [];
+  }
+
+  function hasCap(cap, user) {
+    var caps = capsOf(user === undefined ? currentUser() : user);
+    return caps.indexOf("*") !== -1 || caps.indexOf(cap) !== -1;
+  }
+
+  function anyCap(list, user) {
+    for (var i = 0; i < list.length; i++) if (hasCap(list[i], user)) return true;
+    return false;
+  }
+
+  /* сотрудник редакции — тот, у кого есть хоть одно полномочие */
+  function isStaff(user) {
+    return capsOf(user === undefined ? currentUser() : user).length > 0;
+  }
+
+  /* прежние имена действий оставлены, чтобы не переписывать все вызовы */
   function can(user, action) {
     if (!user) return false;
-    var list = RIGHTS[user.access || "Пользователь"] || [];
-    return list.indexOf(action) !== -1;
+    if (action === "manage") return isStaff(user);
+    return hasCap(CAP_OF[action] || action, user);
   }
 
   var ROLES = [
@@ -404,6 +412,10 @@ window.Store = (function () {
     if (token) api("logout", { token: token }).catch(function () {});
     saveToken("");
     cacheUser(null);
+    /* копии статусов и пропуск подтверждения — не для следующего вошедшего */
+    ["smena_consent_v1", "smena_consent_v2", "smena_card_v1", "smena_portfolio_v1", "smena_confirm"].forEach(function (key) {
+      try { window.localStorage.removeItem(key); } catch (e) {}
+    });
     var data = read();
     data.session = null;
     write(data);
@@ -605,12 +617,11 @@ window.Store = (function () {
           gallery: patch.gallery || p.gallery || [],
           video: patch.video != null ? patch.video : p.video || "",
           audio: patch.audio != null ? patch.audio : p.audio || "",
-          status:
-            patch.status ||
-            (p.status === "published" && !can(user, "review") ? "pending" : p.status),
+          /* статус меняет только сервер: сохранение черновика его не трогает */
+          status: p.status,
+          edited: p.remoteId ? true : p.edited || false,
           read: readTime(body),
           updatedAt: now,
-          date: patch.status === "published" && p.status !== "published" ? now : p.date,
         });
       });
       var saved = getPost(id);
@@ -632,7 +643,7 @@ window.Store = (function () {
       gallery: patch.gallery || [],
       video: patch.video || "",
       audio: patch.audio || "",
-      status: patch.status || "draft",
+      status: "draft",
       read: readTime(body),
       date: now,
       createdAt: now,
@@ -655,413 +666,96 @@ window.Store = (function () {
     return { ok: true };
   }
 
-  function publishPost(id) {
-    var post = getPost(id);
-    if (!post) return { ok: false, error: "Материал не найден." };
-    return savePost(
-      {
-        title: post.title,
-        excerpt: post.excerpt,
-        body: post.body.join("\n\n"),
-        topic: post.topic,
-        format: post.format,
-        region: post.region,
-        image: post.image,
-        imageAlt: post.imageAlt,
-        status: "published",
-      },
-      id
-    );
-  }
-
-  /* материалы авторов в том же виде, что и материалы редакции */
+  /* Опубликованным материал делает только сервер, и на сайте видны только
+     серверные публикации (remoteArticles). Раньше «опубликованный» черновик
+     показывался в ленте — но только в браузере автора. */
   function publishedAsArticles() {
-    var data = read();
-    return data.posts
-      .filter(function (p) {
-        return p.status === "published";
-      })
-      .map(function (p) {
-        var user = data.users.filter(function (u) {
-          return u.id === p.authorId;
-        })[0];
-        return {
-          id: "u:" + p.id,
-          title: p.title,
-          excerpt: p.excerpt,
-          body: p.body,
-          region: p.region,
-          topic: p.topic,
-          format: p.format,
-          author: user ? authorOf(user) : { name: "Автор", role: "", initials: "А" },
-          date: p.date,
-          read: p.read,
-          image: p.image,
-          imageAlt: p.imageAlt,
-          isUserPost: true,
-        };
-      });
+    return [];
   }
 
-  /* -------------------------------------------------------------- сообщества */
+  /* ---------------------------------------------------- отправка материала */
 
-  var TRANSLIT = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh",
-    "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o",
-    "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "c",
-    "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
-  };
-
-  function slugify(text) {
-    return String(text || "")
-      .toLowerCase()
-      .split("")
-      .map(function (ch) {
-        return TRANSLIT[ch] != null ? TRANSLIT[ch] : ch;
-      })
-      .join("")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60);
-  }
-
-  function makeCode(teams) {
-    var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    var code;
-    do {
-      code = "";
-      for (var i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-    } while (
-      teams.some(function (t) {
-        return t.code === code;
-      })
-    );
-    return code;
-  }
-
-  function listTeams() {
-    var data = read();
-    return data.teams
-      .map(function (t) {
-        var members = data.users.filter(function (u) {
-          return u.teamId === t.id;
-        });
-        var ids = members.map(function (m) {
-          return m.id;
-        });
-        var published = data.posts.filter(function (p) {
-          return p.status === "published" && ids.indexOf(p.authorId) !== -1;
-        }).length;
-        return {
-          id: t.id,
-          name: t.name,
-          slug: t.slug || slugify(t.name),
-          region: t.region || "",
-          about: t.about || "",
-          code: t.code,
-          createdBy: t.createdBy,
-          createdAt: t.createdAt,
-          members: members.length,
-          published: published,
-        };
-      })
-      .sort(function (a, b) {
-        return b.published - a.published || b.members - a.members;
-      });
-  }
-
-  function getTeam(id) {
-    return (
-      listTeams().filter(function (t) {
-        return t.id === id || t.slug === id || t.code === String(id || "").toUpperCase();
-      })[0] || null
-    );
-  }
-
-  function myTeam() {
-    var user = currentUser();
-    if (!user || !user.teamId) return null;
-    return getTeam(user.teamId);
-  }
-
-  function createTeam(input) {
-    var data = read();
-    var user = currentUser();
-    if (!user) return { ok: false, error: "Сначала войдите в аккаунт." };
-    if (user.teamId) return { ok: false, error: "Вы уже в команде. Сначала выйдите из неё." };
-
-    var name = String(input.name || "").trim();
-    if (name.length < 3) return { ok: false, error: "Название команды — хотя бы три символа." };
-    if (name.length > 60) return { ok: false, error: "Слишком длинное название — до 60 символов." };
-    if (
-      data.teams.some(function (t) {
-        return t.name.toLowerCase() === name.toLowerCase();
-      })
-    )
-      return { ok: false, error: "Команда с таким названием уже есть. Придумайте другое." };
-
-    var team = {
-      id: uid("t_"),
-      name: name,
-      slug: slugify(name) || uid("team").slice(0, 8),
-      region: input.region || user.region || "",
-      about: String(input.about || "").trim().slice(0, 400),
-      code: makeCode(data.teams),
-      createdBy: user.id,
-      createdAt: new Date().toISOString(),
-    };
-    data.teams.push(team);
-    data.users = data.users.map(function (u) {
-      if (u.id !== user.id) return u;
-      return Object.assign({}, u, {
-        teamId: team.id,
-        access: u.access === "Автор" ? "Редактор" : u.access,
-      });
-    });
-    if (!write(data)) return { ok: false, error: "Не удалось сохранить команду." };
-    return { ok: true, team: team };
-  }
-
-  function joinTeam(code) {
-    var data = read();
-    var user = currentUser();
-    if (!user) return { ok: false, error: "Сначала войдите в аккаунт." };
-    if (user.teamId) return { ok: false, error: "Вы уже в команде — сначала выйдите из текущей." };
-    var clean = String(code || "").trim().toUpperCase();
-    var team = data.teams.filter(function (t) {
-      return t.code === clean || (t.slug || "").toLowerCase() === String(code || "").trim().toLowerCase();
-    })[0];
-    if (!team) return { ok: false, error: "Команда с таким кодом не найдена. Проверьте код." };
-    data.users = data.users.map(function (u) {
-      if (u.id !== user.id) return u;
-      return Object.assign({}, u, { teamId: team.id });
-    });
-    write(data);
-    return { ok: true, team: team };
-  }
-
-  function leaveTeam() {
-    var data = read();
-    var user = currentUser();
-    if (!user) return { ok: false, error: "Нужно войти." };
-    if (!user.teamId) return { ok: false, error: "Вы не в команде." };
-    data.users = data.users.map(function (u) {
-      if (u.id !== user.id) return u;
-      return Object.assign({}, u, { teamId: null });
-    });
-    write(data);
-    return { ok: true };
-  }
-
-  /* ------------------------------------------------------------- проверка */
-
+  /* Материал уходит на сервер от имени аккаунта. Ответ сервера — единственный
+     источник статуса: «на проверке», «опубликован» (если есть право выпускать
+     без очереди) или отказ с причиной. Возвращает Promise. */
   function submitPost(id) {
-    var data = read();
     var user = currentUser();
-    if (!user) return { ok: false, error: "Нужно войти." };
-    var post = data.posts.filter(function (p) {
+    if (!user) return Promise.resolve({ ok: false, error: "Нужно войти в аккаунт." });
+    var post = read().posts.filter(function (p) {
       return p.id === id && p.authorId === user.id;
     })[0];
-    if (!post) return { ok: false, error: "Материал не найден." };
-    if (post.status === "pending") return { ok: false, error: "Материал уже на проверке." };
+    if (!post) return Promise.resolve({ ok: false, error: "Материал не найден." });
+    if (post.status === "published") {
+      return Promise.resolve({ ok: false, error: "Материал уже опубликован. Правки — через редакцию." });
+    }
+    if (post.status === "pending" && !post.edited) {
+      return Promise.resolve({ ok: false, error: "Материал уже на проверке." });
+    }
 
-    var direct = can(user, "publish");
-    var now = new Date().toISOString();
-    data.posts = data.posts.map(function (p) {
-      if (p.id !== id) return p;
-      return Object.assign({}, p, {
-        status: direct ? "published" : "pending",
-        date: direct ? now : p.date,
-        submittedAt: now,
+    var payload = {
+      token: readToken(),
+      authorKey: authorKey(),
+      title: post.title,
+      excerpt: post.excerpt,
+      body: (post.body || []).join("\n\n"),
+      topic: post.topic,
+      format: post.format,
+      region: post.region,
+      image: post.image || "",
+      imageAlt: post.imageAlt || "",
+      gallery: post.gallery || [],
+      video: post.video || "",
+      audio: post.audio || "",
+      read: post.read || 4,
+      direct: hasCap("posts.publish", user),
+    };
+    /* исправленная версия встаёт на место прежней: тот же номер материала */
+    if (post.remoteId && (post.status === "rejected" || post.status === "pending")) {
+      payload.replaceId = post.remoteId;
+    }
+
+    return api("submit", payload).then(function (res) {
+      if (!res || !res.ok) {
+        patchPost(id, { remoteError: (res && res.error) || "не удалось отправить редакции" });
+        return {
+          ok: false,
+          error: (res && res.error) || "Сервер не принял материал.",
+          needConsent: !!(res && res.needConsent),
+          offline: !!(res && res.offline),
+        };
+      }
+      patchPost(id, {
+        remoteId: res.post.id,
+        number: res.post.number || 0,
+        status: res.post.status,
+        date: res.post.date || post.date,
+        submittedAt: res.post.submittedAt || new Date().toISOString(),
         reviewNote: "",
-        reviewedAt: direct ? now : null,
-        reviewedBy: direct ? user.id : null,
+        remoteError: "",
+        edited: false,
       });
-    });
-    write(data);
-    var fresh = data.posts.filter(function (p) {
-      return p.id === id;
-    })[0];
-    pushPost(fresh, user, direct);
-    return {
-      ok: true,
-      direct: direct,
-      message: direct
-        ? "Материал опубликован — у вас права редакции."
-        : "Материал отправлен на проверку. Редакция увидит его в очереди.",
-    };
-  }
-
-  function reviewPost(id, decision, note) {
-    var data = read();
-    var user = currentUser();
-    if (!can(user, "review")) return { ok: false, error: "Недостаточно прав для проверки." };
-    var post = data.posts.filter(function (p) {
-      return p.id === id;
-    })[0];
-    if (!post) return { ok: false, error: "Материал не найден." };
-    var now = new Date().toISOString();
-    data.posts = data.posts.map(function (p) {
-      if (p.id !== id) return p;
-      return Object.assign({}, p, {
-        status: decision === "approve" ? "published" : "rejected",
-        date: decision === "approve" ? now : p.date,
-        reviewedAt: now,
-        reviewedBy: user.id,
-        reviewNote: String(note || "").trim(),
-      });
-    });
-    write(data);
-    return { ok: true };
-  }
-
-  function pendingPosts() {
-    return listPosts({ status: "pending" }).map(function (p) {
-      var data = read();
-      var author = data.users.filter(function (u) {
-        return u.id === p.authorId;
-      })[0];
-      return Object.assign({}, p, {
-        authorName: author ? author.name : "Автор",
-        authorAccess: author ? author.access || "Автор" : "Автор",
-      });
-    });
-  }
-
-  /* ------------------------------------------------------------- пресс-карта */
-
-  function getSettings() {
-    return merge(DEFAULT_SETTINGS, read().settings || {});
-  }
-
-  function saveSettings(patch) {
-    var data = read();
-    data.settings = merge(getSettings(), patch || {});
-    if (!write(data)) return { ok: false, error: "Не удалось сохранить настройки." };
-    return { ok: true, settings: data.settings };
-  }
-
-  function addMonths(iso, months) {
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) return null;
-    d.setMonth(d.getMonth() + Number(months || 12));
-    return d.toISOString();
-  }
-
-  /* Пресс-карта выдаётся после нужного числа публикаций:
-     до этого показываем прогресс, а не номер. */
-  function pressCard() {
-    var data = read();
-    var user = currentUser();
-    if (!user) return null;
-
-    var settings = getSettings();
-    var card = settings.card;
-    var team = user.teamId ? getTeam(user.teamId) : null;
-    var scope = team ? "team" : "individual";
-
-    var pool;
-    var need;
-    if (team) {
-      var ids = data.users
-        .filter(function (u) {
-          return u.teamId === team.id;
-        })
-        .map(function (u) {
-          return u.id;
-        });
-      pool = data.posts.filter(function (p) {
-        return p.status === "published" && ids.indexOf(p.authorId) !== -1;
-      });
-      need = Math.max(1, Number(card.teamMinPosts) || 20);
-    } else {
-      pool = data.posts.filter(function (p) {
-        return p.status === "published" && p.authorId === user.id;
-      });
-      need = Math.max(1, Number(card.minPosts) || 5);
-    }
-
-    var have = pool.length;
-    var issued = have >= need;
-    var issuedAt = null;
-    var validUntil = null;
-
-    if (issued) {
-      var byDate = pool.slice().sort(function (a, b) {
-        return new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt);
-      });
-      var hit = byDate[need - 1] || byDate[byDate.length - 1];
-      issuedAt = (hit && (hit.date || hit.createdAt)) || new Date().toISOString();
-      validUntil = addMonths(issuedAt, card.validMonths);
-    }
-
-    return {
-      issued: issued,
-      scope: scope,
-      posts: have,
-      need: need,
-      left: Math.max(0, need - have),
-      teamName: team ? team.name : "",
-      editorial: team
-        ? "Редакция «" + team.name + "»"
-        : "Индивидуальная редакция «" + (settings.org.name || "Смена контента") + "»",
-      number: issued
-        ? card.prefix + "-" + card.year + "-" + String(user.number).padStart(3, "0")
-        : null,
-      name: user.name,
-      role: user.role,
-      region: regionLabel(user.region) || "Регион не выбран",
-      issuer: settings.org.center || settings.org.name,
-      head: settings.org.head || "",
-      since: user.createdAt,
-      issuedAt: issuedAt,
-      validUntil: validUntil,
-    };
-  }
-
-  /* список авторов для панели управления */
-  function listUsers() {
-    var data = read();
-    return data.users.map(function (u) {
-      var posts = data.posts.filter(function (p) {
-        return p.authorId === u.id && p.status === "published";
-      }).length;
-      var team = u.teamId
-        ? data.teams.filter(function (t) {
-            return t.id === u.teamId;
-          })[0]
-        : null;
+      if (res.direct) pullRemote();
       return {
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        access: u.access || "Автор",
-        team: team ? team.name : "",
-        teamId: u.teamId || null,
-        region: regionLabel(u.region),
-        posts: posts,
-        createdAt: u.createdAt,
-        number: u.number,
+        ok: true,
+        direct: !!res.direct,
+        remoteId: res.post.id,
+        message: res.direct
+          ? "Материал опубликован: у вас есть право выпускать без очереди."
+          : "Материал отправлен на проверку. Редакция увидит его в очереди.",
       };
     });
   }
 
-  function exportAll() {
-    return JSON.stringify(read(), null, 2);
+  function patchPost(id, patch) {
+    var data = read();
+    data.posts = data.posts.map(function (p) {
+      return p.id === id ? Object.assign({}, p, patch) : p;
+    });
+    write(data);
   }
 
-  function importAll(json) {
-    try {
-      var data = JSON.parse(json);
-      if (!data || !Array.isArray(data.users) || !Array.isArray(data.posts))
-        return { ok: false, error: "Файл не похож на резервную копию." };
-      if (!write({ users: data.users, posts: data.posts, teams: data.teams || [], session: data.session || null, settings: data.settings || null }))
-        return { ok: false, error: "Не удалось записать данные." };
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: "Файл повреждён или это не JSON." };
-    }
+  function getSettings() {
+    return merge(DEFAULT_SETTINGS, read().settings || {});
   }
 
   /* ================= общая приёмная на сервере (PHP на хостинге) ==========
@@ -1225,73 +919,61 @@ window.Store = (function () {
       });
   }
 
-  /* отправка материала в приёмную редакции */
-  function pushPost(post, user, direct) {
-    if (!post || !user) return Promise.resolve(false);
-    var payload = {
-      authorKey: authorKey(),
-      authorName: user.name,
-      authorRole: user.role || "",
-      authorRegion: user.region || "",
-      title: post.title,
-      excerpt: post.excerpt,
-      body: (post.body || []).join("\n\n"),
-      topic: post.topic,
-      format: post.format,
-      region: post.region,
-      image: post.image || "",
-      imageAlt: post.imageAlt || "",
-      gallery: post.gallery || [],
-      video: post.video || "",
-      audio: post.audio || "",
-      read: post.read || 4,
-      direct: !!direct,
-    };
-    return api("submit", payload)
-      .then(function (res) {
-        var data = read();
-        data.posts = data.posts.map(function (p) {
-          if (p.id !== post.id) return p;
-          return Object.assign({}, p, {
-            remoteId: res && res.ok ? res.post.id : "",
-            remoteError: res && res.ok ? "" : (res && res.error) || "не удалось отправить редакции",
-          });
-        });
-        write(data);
-        if (res && res.ok) pullRemote();
-        return !!(res && res.ok);
-      })
-      .catch(function () {
-        var data = read();
-        data.posts = data.posts.map(function (p) {
-          if (p.id !== post.id) return p;
-          return Object.assign({}, p, {
-            remoteError: "нет связи с сервером — материал сохранён в браузере",
-          });
-        });
-        write(data);
-        return false;
-      });
-  }
-
-  /* статусы своих материалов с сервера: одобрили, отклонили, ждут */
+  /* Свои материалы с сервера. Обновляет статусы у черновиков, которые уже
+     отправлены, и подтягивает то, что отправлено с другого устройства:
+     кабинет на телефоне и на компьютере показывает одно и то же. */
   function syncMine() {
-    return api("mine", { authorKey: authorKey() })
+    var token = readToken();
+    var user = currentUser();
+    if (!token || !user) return Promise.resolve(false);
+    return api("mine", { token: token, authorKey: authorKey() })
       .then(function (res) {
         if (!res || !res.ok) return false;
         var mine = res.posts || [];
         var data = read();
+        var known = {};
         data.posts = data.posts.map(function (p) {
+          if (!p.remoteId || p.authorId !== user.id) return p;
           var found = null;
-          for (var i = 0; i < mine.length; i++) {
-            if (p.remoteId && mine[i].id === p.remoteId) found = mine[i];
-          }
+          for (var i = 0; i < mine.length; i++) if (mine[i].id === p.remoteId) found = mine[i];
           if (!found) return p;
+          known[found.id] = true;
           return Object.assign({}, p, {
             status: found.status,
+            number: found.number || p.number || 0,
             reviewNote: found.reviewNote || "",
             reviewedAt: found.reviewedAt || null,
             date: found.status === "published" ? found.date : p.date,
+          });
+        });
+        mine.forEach(function (m) {
+          if (known[m.id]) return;
+          var body = String(m.body || "").split(/\n{2,}/).map(function (part) {
+            return part.trim();
+          }).filter(Boolean);
+          data.posts.push({
+            id: "r_" + m.id,
+            remoteId: m.id,
+            authorId: user.id,
+            title: m.title,
+            excerpt: m.excerpt,
+            body: body,
+            topic: m.topic,
+            format: m.format,
+            region: m.region,
+            image: m.image || "",
+            imageAlt: m.imageAlt || "",
+            gallery: m.gallery || [],
+            video: m.video || "",
+            audio: m.audio || "",
+            status: m.status,
+            number: m.number || 0,
+            read: m.read || 4,
+            reviewNote: m.reviewNote || "",
+            date: m.date,
+            createdAt: m.submittedAt || m.date,
+            updatedAt: m.submittedAt || m.date,
+            submittedAt: m.submittedAt || m.date,
           });
         });
         write(data);
@@ -1302,84 +984,29 @@ window.Store = (function () {
       });
   }
 
-  /* очередь редакции и решения — тоже на сервере */
-  function apiQueue(password) {
-    return api("queue", {
-      password: String(password || ""),
-      token: readToken(),
-      confirm: getConfirm(),
-    });
-  }
-
-  function apiReview(password, id, decision, note) {
-    return api("review", {
-      password: String(password || ""),
-      token: readToken(),
-      confirm: getConfirm(),
-      id: id,
-      decision: decision,
-      note: note || "",
-    }).then(function (res) {
-      if (res && res.ok) pullRemote();
-      return res;
-    });
-  }
-
   /* мои материалы на сервере (с номерами) */
   function apiMyPosts() {
-    return api("mine", { authorKey: authorKey() }).then(function (res) {
+    var token = readToken();
+    if (!token) return Promise.resolve([]);
+    return api("mine", { token: token, authorKey: authorKey() }).then(function (res) {
       return res && res.ok ? res.posts || [] : [];
     });
   }
 
-  /* заявка на пресс-карту: прикладываются все свои опубликованные материалы */
-  function apiCardRequest(payload) {
-    return api("card-request", {
-      authorKey: authorKey(),
-      authorName: payload.authorName || "",
-      authorRegion: payload.authorRegion || "",
-      authorRole: payload.authorRole || "",
-      posts: payload.posts || [],
+  /* Запрос сотрудника: токен и пропуск подтверждения подставляются сами.
+     Ответ возвращается как есть, без исключений: вызывающему нужно отличать
+     «нужен код из письма» (needConfirm) от обычного отказа. */
+  function callStaff(action, payload) {
+    var token = readToken();
+    if (!token) return Promise.resolve({ ok: false, code: 401, error: "Войдите в аккаунт." });
+    return api(action, Object.assign({}, payload || {}, { token: token, confirm: getConfirm() })).then(function (res) {
+      if (res && res.ok && (action === "review" || action === "remove")) pullRemote();
+      return res || { ok: false, error: "Сервер не ответил." };
     });
   }
 
-  function apiCardStatus() {
-    return api("card-status", { authorKey: authorKey(), token: readToken() }).then(function (res) {
-      if (res && res.ok) return res;
-      return { ok: false, requests: [], minPosts: 5, error: (res && res.error) || "" };
-    });
-  }
-
-  function apiCardQueue(password) {
-    return api("card-queue", {
-      password: String(password || ""),
-      token: readToken(),
-      confirm: getConfirm(),
-    });
-  }
-
-  function apiCardReview(password, id, decision, note, place, tracking) {
-    return api("card-review", {
-      password: String(password || ""),
-      token: readToken(),
-      confirm: getConfirm(),
-      id: id,
-      decision: decision,
-      note: note || "",
-      place: place || "",
-      tracking: tracking || "",
-    });
-  }
-
-  function apiSetPass(oldPass, newPass) {
-    return api("setpass", { old: String(oldPass || ""), new: String(newPass || "") });
-  }
-
-  function apiRemove(password, id) {
-    return api("remove", { password: String(password || ""), id: id }).then(function (res) {
-      if (res && res.ok) pullRemote();
-      return res;
-    });
+  function staffSummary() {
+    return callStaff("staff-summary", {});
   }
 
   function onChange(fn) {
@@ -1388,31 +1015,44 @@ window.Store = (function () {
 
   /* ---------------------------------------------------------- согласие на ПД */
 
-  /* Статус согласия на обработку персональных данных. Без одобрения комиссией
-     публикация закрыта: подписанный от руки документ проверяет человек. */
-  var CONSENT_KEY = "smena_consent_v1";
+  /* Статус согласия на обработку персональных данных. Решает сервер; здесь —
+     копия для мгновенной отрисовки. Копия привязана к аккаунту: раньше она
+     была одна на браузер, и следующий вошедший видел чужой статус. */
+  var CONSENT_KEY = "smena_consent_v2";
+  var NO_CONSENT = { status: "none", note: "", pages: 0, exempt: false, granted: false };
 
-  function readConsentCache() {
+  function readOwn(key) {
+    var user = currentUser();
+    if (!user || !readToken()) return null;
     try {
-      var raw = window.localStorage.getItem(CONSENT_KEY);
-      if (!raw) return { status: "none" };
-      var parsed = JSON.parse(raw);
-      return parsed && parsed.status ? parsed : { status: "none" };
+      var raw = window.localStorage.getItem(key);
+      var parsed = raw ? JSON.parse(raw) : null;
+      return parsed && parsed.userId === user.id ? parsed.data : null;
     } catch (e) {
-      return { status: "none" };
+      return null;
     }
   }
 
-  function cacheConsent(consent) {
+  function writeOwn(key, data) {
+    var user = currentUser();
+    if (!user) return;
     try {
-      if (consent) window.localStorage.setItem(CONSENT_KEY, JSON.stringify(consent));
+      window.localStorage.setItem(key, JSON.stringify({ userId: user.id, data: data }));
     } catch (e) {}
   }
 
   function consent() {
-    var cached = readConsentCache();
-    if (!readToken()) return cached.status ? cached : { status: "none" };
-    return cached;
+    return readOwn(CONSENT_KEY) || NO_CONSENT;
+  }
+
+  function keepConsent(res) {
+    var data = Object.assign({}, res.consent || {}, {
+      exempt: !!res.exempt,
+      granted: res.granted !== undefined ? !!res.granted : (res.consent && res.consent.status === "approved"),
+    });
+    writeOwn(CONSENT_KEY, data);
+    emit();
+    return data;
   }
 
   /* запрос свежего статуса с сервера */
@@ -1420,28 +1060,21 @@ window.Store = (function () {
     var token = readToken();
     if (!token) return Promise.resolve(consent());
     return api("consent-status", { token: token }).then(function (res) {
-      if (res && res.ok && res.consent) {
-        cacheConsent(res.consent);
-        emit();
-        return res.consent;
-      }
+      if (res && res.ok && res.consent) return keepConsent(res);
       return consent();
     }, function () {
       return consent();
     });
   }
 
-  /* отправка подписанного скана: картинка уходит на сервер, заявка — в комиссию */
-  function sendConsent(dataUrl) {
+  /* отправка подписанных листов: массив data-URL (фото или PDF) */
+  function sendConsent(pages) {
     var token = readToken();
     if (!token) return Promise.reject(new Error("Войдите в аккаунт, чтобы отправить согласие."));
-    return api("consent-send", { token: token, scan: dataUrl }).then(
+    var list = Array.isArray(pages) ? pages : [pages];
+    return api("consent-send", { token: token, pages: list }).then(
       function (res) {
-        if (res && res.ok && res.consent) {
-          cacheConsent(res.consent);
-          emit();
-          return res.consent;
-        }
+        if (res && res.ok && res.consent) return keepConsent({ consent: res.consent, exempt: false, granted: false });
         throw new Error((res && res.error) || "Согласие не отправилось.");
       },
       function () {
@@ -1450,26 +1083,101 @@ window.Store = (function () {
     );
   }
 
+  /* лист согласия: свой — без id, чужой — по id (нужно право на проверку) */
+  function consentFile(id, page) {
+    return withToken("consent-file", { id: id || "", page: page || 1 });
+  }
+
+  /* ------------------------------------------------------------ пресс-карта */
+
+  /* Карта — запись на сервере. Кабинет, панель и страница проверки читают
+     одно и то же состояние; локального «расчёта» карты больше нет. */
+  var CARD_KEY = "smena_card_v1";
+
+  function card() {
+    return readOwn(CARD_KEY);
+  }
+
+  function refreshCard() {
+    var token = readToken();
+    if (!token) return Promise.resolve(null);
+    return api("card-status", { token: token }).then(function (res) {
+      if (res && res.ok) {
+        writeOwn(CARD_KEY, res);
+        emit();
+        return res;
+      }
+      return card();
+    }, function () {
+      return card();
+    });
+  }
+
+  function cardApply() {
+    var token = readToken();
+    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
+    return api("card-apply", { token: token }).then(function (res) {
+      if (res && res.ok) return refreshCard().then(function () { return res.request; });
+      var err = new Error((res && res.error) || "Заявка не отправилась.");
+      err.needConsent = !!(res && res.needConsent);
+      throw err;
+    });
+  }
+
+  function cardDoc(id) {
+    return withToken("card-doc", { id: id || "" });
+  }
+
+  /* проверка подлинности по номеру: открыта всем */
+  function cardVerify(number) {
+    return api("card-verify", { number: String(number || "") });
+  }
+
+  /* --------------------------------------------- заявление на открытие редакции */
+
+  function editorialOpenMine() {
+    return withToken("editorial-open-mine", {});
+  }
+
+  /* ответ возвращается как есть: в отказе сервер присылает список того,
+     что нужно исправить в анкете (problems) */
+  function editorialOpenSave(form, submit) {
+    var token = readToken();
+    if (!token) return Promise.resolve({ ok: false, error: "Войдите в аккаунт." });
+    return api("editorial-open-save", { token: token, form: form || {}, submit: !!submit });
+  }
+
+  function editorialOpenWithdraw() {
+    return withToken("editorial-open-withdraw", {});
+  }
+
+  function editorialOpenGet(id) {
+    return withToken("editorial-open-get", { id: id || "" });
+  }
+
+  function messagesRead() {
+    var token = readToken();
+    if (!token) return Promise.resolve(false);
+    return api("messages-read", { token: token }).then(function (res) {
+      return !!(res && res.ok);
+    }, function () {
+      return false;
+    });
+  }
+
   /* ------------------------------------------------- портфолио вне сайта */
 
   /* «Добавить свои материалы»: работа не обязана быть опубликованной на сайте —
      её смотрит комиссия и решает, интересна ли она и сколько стоит в баллах. */
-  var PORTFOLIO_KEY = "smena_portfolio_v1";
+  var PORTFOLIO_KEY = "smena_portfolio_v2";
 
   function readPortfolioCache() {
-    try {
-      var raw = window.localStorage.getItem(PORTFOLIO_KEY);
-      var list = raw ? JSON.parse(raw) : [];
-      return Array.isArray(list) ? list : [];
-    } catch (e) {
-      return [];
-    }
+    var list = readOwn(PORTFOLIO_KEY);
+    return Array.isArray(list) ? list : [];
   }
 
   function cachePortfolio(list) {
-    try {
-      window.localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(list || []));
-    } catch (e) {}
+    writeOwn(PORTFOLIO_KEY, list || []);
   }
 
   function portfolio() {
@@ -1609,23 +1317,7 @@ window.Store = (function () {
     });
   }
 
-  /* заявка на пресс-карту: способ получения, контакты, согласие */
-  function cardApply(input) {
-    var token = readToken();
-    if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
-    return api("card-apply", Object.assign({ token: token }, input || {})).then(function (res) {
-      if (res && res.ok) return res.request;
-      throw new Error((res && res.error) || "Заявка не отправилась.");
-    });
-  }
 
-  function cardGrant(id, number) {
-    var token = readToken();
-    return api("card-grant", { token: token, id: id, number: number || "" }).then(function (res) {
-      if (res && res.ok) return res;
-      throw new Error((res && res.error) || "Карта не выдалась.");
-    });
-  }
 
   function userMessage(id, text) {
     var token = readToken();
@@ -1645,14 +1337,6 @@ window.Store = (function () {
     });
   }
 
-  function consentDecide(userId, decision, note) {
-    var token = readToken();
-    return api("consent-decide", { token: token, userId: userId, decision: decision, note: note || "" })
-      .then(function (res) {
-        if (res && res.ok) return true;
-        throw new Error((res && res.error) || "Решение не сохранилось.");
-      });
-  }
 
   function portfolioDecide(id, decision, note, points) {
     var token = readToken();
@@ -1664,16 +1348,6 @@ window.Store = (function () {
     });
   }
 
-  /* очередь материалов по токену: без пароля редакции */
-  function apiPendingQueue() {
-    var token = readToken();
-    if (!token) return Promise.resolve([]);
-    return api("posts-queue", { token: token }).then(function (res) {
-      return res && res.ok ? res.posts || [] : [];
-    }, function () {
-      return [];
-    });
-  }
 
   /* ------------------------------------------- участники, роли, основатели */
 
@@ -1807,7 +1481,10 @@ window.Store = (function () {
     var token = readToken();
     if (!token) return Promise.reject(new Error("Войдите в аккаунт."));
     return api("confirm-check", { token: token, code: code }).then(function (res) {
-      if (res && res.ok) return true;
+      if (res && res.ok) {
+        if (res.user) { cacheUser(res.user); mirrorUser(res.user); emit(); }
+        return true;
+      }
       throw new Error((res && res.error) || "Код не подошёл.");
     });
   }
@@ -2145,19 +1822,6 @@ window.Store = (function () {
     }, 0);
   }
 
-  function consentQueue() {
-    return withToken("consent-queue", { confirm: getConfirm() });
-  }
-
-  function consentReview(id, decision, note) {
-    return withToken("consent-review", {
-      confirm: getConfirm(),
-      id: id,
-      decision: decision,
-      note: note,
-    });
-  }
-
   return {
     ROLES: ROLES,
     currentUser: currentUser,
@@ -2175,42 +1839,23 @@ window.Store = (function () {
     getPost: getPost,
     savePost: savePost,
     deletePost: deletePost,
-    publishPost: publishPost,
     submitPost: submitPost,
-    reviewPost: reviewPost,
-    pendingPosts: pendingPosts,
     ACCESS: ACCESS,
     can: can,
-    listTeams: listTeams,
-    getTeam: getTeam,
-    myTeam: myTeam,
-    createTeam: createTeam,
-    joinTeam: joinTeam,
-    leaveTeam: leaveTeam,
     publishedAsArticles: publishedAsArticles,
     ready: ready,
     remoteArticles: remoteArticles,
     authorKey: authorKey,
     syncMine: syncMine,
-    apiQueue: apiQueue,
-    apiReview: apiReview,
-    apiRemove: apiRemove,
-    apiSetPass: apiSetPass,
     apiMyPosts: apiMyPosts,
-    apiCardRequest: apiCardRequest,
-    apiCardStatus: apiCardStatus,
-    apiCardQueue: apiCardQueue,
-    apiCardReview: apiCardReview,
     userCard: userCard,
     userUpdate: userUpdate,
     userUpdateFull: userUpdateFull,
     authorsShow: authorsShow,
     authorsShowSave: authorsShowSave,
     cardApply: cardApply,
-    cardGrant: cardGrant,
     userMessage: userMessage,
     messagesMine: messagesMine,
-    consentDecide: consentDecide,
     portfolioDecide: portfolioDecide,
     whoami: whoami,
     actionCode: actionCode,
@@ -2219,7 +1864,6 @@ window.Store = (function () {
     clearConfirm: clearConfirm,
     hasConfirm: function () { return getConfirm() !== ""; },
     claimDirector: claimDirector,
-    apiPendingQueue: apiPendingQueue,
     localOnlyAccounts: localOnlyAccounts,
     siteStatus: siteStatus,
     siteSave: siteSave,
@@ -2268,7 +1912,7 @@ window.Store = (function () {
     aiTest: aiTest,
     aiAssist: aiAssist,
     bossGrant: function (email, access) {
-      return withToken("boss-grant", { email: email || "6804979@mail.ru", access: access || "Главный администратор" });
+      return withToken("boss-grant", { email: email || "", access: access || "" });
     },
     tasksMine: tasksMine,
     tasksList: tasksList,
@@ -2304,16 +1948,28 @@ window.Store = (function () {
     consent: consent,
     refreshConsent: refreshConsent,
     sendConsent: sendConsent,
-    consentQueue: consentQueue,
-    consentReview: consentReview,
-    pressCard: pressCard,
     getSettings: getSettings,
-    saveSettings: saveSettings,
-    listUsers: listUsers,
-    exportAll: exportAll,
-    importAll: importAll,
     authorOf: authorOf,
     initials: initials,
+    /* права по полномочиям с сервера */
+    hasCap: hasCap,
+    anyCap: anyCap,
+    isStaff: isStaff,
+    callStaff: callStaff,
+    staffSummary: staffSummary,
+    /* согласие, пресс-карта, открытие редакции */
+    consentFile: consentFile,
+    card: card,
+    refreshCard: refreshCard,
+    cardDoc: cardDoc,
+    cardVerify: cardVerify,
+    editorialOpenMine: editorialOpenMine,
+    editorialOpenSave: editorialOpenSave,
+    editorialOpenWithdraw: editorialOpenWithdraw,
+    editorialOpenGet: editorialOpenGet,
+    messagesRead: messagesRead,
+    api: api,
+    withToken: withToken,
     onChange: onChange,
   };
 })();
