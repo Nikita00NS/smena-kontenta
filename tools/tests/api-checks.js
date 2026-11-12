@@ -1200,6 +1200,157 @@ const results = [];
     r.ok === true && !r.missing.some((m) => m.period === monthBack(2)) && r.waiting === 0, r.missing);
 
 
+  /* ======================================================================
+     28. МЕДИАШКОЛА: курс → публикация → запись → уроки, тест, задание →
+     проверка преподавателем → курс пройден.
+     ====================================================================== */
+  const lessonsDraft = [
+    { title: "Что такое новость", body: "Новость отвечает на вопросы: кто, что, где, когда и почему. Начинаем с главного.", check: "none",
+      video: "https://rutube.ru/video/0123456789abcdef0123456789abcdef/" },
+    { title: "Проверь себя", body: "", check: "test", pass: 60, questions: [
+      { q: "С чего начинается новость?", options: ["С главного", "С истории вопроса", "С цитаты"], answer: 0 },
+      { q: "Сколько источников нужно спорному факту?", options: ["Один", "Не меньше двух"], answer: 1 },
+      { q: "Можно ли менять цитату?", options: ["Да", "Нет"], answer: 1 },
+    ] },
+    { title: "Напиши новость", body: "Соберите факты о событии в вашей школе и напишите новость на 800 знаков.", check: "task",
+      task: "Пришлите текст новости: заголовок, лид и три абзаца." },
+  ];
+  const courseDraft = { title: "Новость за один день", summary: "Короткий курс для начинающих авторов: как собрать и написать новость.", level: "Начальный", lessons: lessonsDraft };
+
+  // 28.1 кто создаёт курсы
+  r = await call("school-course-save", { token: token4, course: courseDraft });
+  check("28.1 обычному участнику создание курсов закрыто", r.ok === false && r.code === 403, r);
+  r = await call("school-course-save", { token: moder.token, course: courseDraft });
+  check("28.1 модератору создание курсов закрыто", r.ok === false && r.code === 403, r);
+  r = await call("school-course-save", { token: teacherT.token, course: { title: "Курс", summary: "мало", lessons: [{ title: "У", body: "", check: "none", video: "https://youtube.com/watch?v=1" }] } });
+  check("28.1 неполный курс не сохраняется, причины перечислены",
+    r.ok === false && r.code === 400 && Array.isArray(r.problems) && r.problems.length >= 4 && r.problems.some((p) => /VK Видео или Rutube/.test(p)), r);
+  r = await call("school-course-save", { token: teacherT.token, course: courseDraft });
+  check("28.1 преподаватель создал курс — черновик", r.ok === true && r.course.status === "draft" && r.course.teacherId === teacherT.id && r.course.lessons.length === 3, r);
+  const courseId = r.course ? r.course.id : "";
+  const lessonIds = r.course ? r.course.lessons.map((l) => l.id) : [];
+  r = await call("school-catalog", {});
+  check("28.1 черновика в каталоге нет", r.ok === true && !r.courses.some((c) => c.id === courseId) && r.why === "login", r);
+  r = await call("school-course-status", { token: teacherT.token, id: courseId, status: "published" });
+  check("28.1 преподаватель сам курс не публикует", r.ok === false && r.code === 403, r);
+  const otherTeacher = await newUser("Олег Второй", "teacher-o@example.ru", "moskva");
+  await setUser(otherTeacher.id, { access: "Преподаватель" });
+  r = await call("school-course-save", { token: otherTeacher.token, course: Object.assign({ id: courseId }, courseDraft, { title: "Чужой курс переписан" }) });
+  check("28.1 чужой курс преподаватель не правит", r.ok === false && r.code === 403, r);
+  r = await call("school-course-get", { token: otherTeacher.token, id: courseId });
+  check("28.1 чужой курс с ответами тестов преподавателю не открыть", r.ok === false && r.code === 403, r);
+  r = await call("school-course-save", { token: teacherT.token, course: Object.assign({ id: courseId, ready: true }, courseDraft, { lessons: lessonsDraft.map((l, i) => Object.assign({ id: lessonIds[i] }, l)) }) });
+  check("28.1 преподаватель отметил курс готовым, номера уроков сохранились",
+    r.ok === true && r.course.ready === true && r.course.lessons.every((l, i) => l.id === lessonIds[i]), r);
+  r = await call("staff-summary", { token: token3 });
+  check("28.1 директор видит в сводке курс, ждущий публикации", r.ok === true && r.summary.school === 1, r.summary);
+  r = await call("school-course-status", { token: token3, id: courseId, status: "published" });
+  check("28.1 директор опубликовал курс", r.ok === true && r.course.status === "published", r);
+  r = await call("school-catalog", {});
+  check("28.1 курс в каталоге: уроки посчитаны, содержимого нет",
+    r.ok === true && r.courses.some((c) => c.id === courseId && c.counts.lessons === 3 && c.counts.tests === 1 && c.counts.tasks === 1 && c.lessons === undefined), r.courses);
+
+  // 28.2 запись: почта и согласие
+  r = await call("school-enroll", { token: token4, id: courseId });
+  check("28.2 без согласия на курс не записаться", r.ok === false && r.code === 403 && r.needConsent === true, r);
+  r = await call("school-catalog", { token: token4 });
+  check("28.2 каталог объясняет, чего не хватает", r.ok === true && r.canEnroll === false && r.why === "consent", r);
+  r = await call("school-course", { token: token4, id: courseId });
+  check("28.2 без записи видно только оглавление",
+    r.ok === true && r.enrolled === false && r.lessons.length === 3 && r.lessons.every((l) => l.state === "locked" && l.body === undefined && l.questions === undefined), r.lessons);
+  const studentS = await newUser("Соня Ученица", "student-s@example.ru", "moskva");
+  await giveConsent(studentS);
+  r = await call("school-enroll", { token: studentS.token, id: courseId });
+  check("28.2 с согласием запись проходит", r.ok === true && r.progress.total === 3 && r.progress.done === 0, r);
+  r = await call("school-enroll", { token: studentS.token, id: courseId });
+  check("28.2 второй раз на тот же курс не записаться", r.ok === false && r.code === 409, r);
+  r = await call("school-course", { token: studentS.token, id: courseId });
+  check("28.2 первый урок открыт, остальные закрыты",
+    r.ok === true && r.enrolled === true && r.lessons[0].state === "open" && r.lessons[0].body && r.lessons[1].state === "locked" && r.lessons[2].state === "locked", r.lessons && r.lessons.map((l) => l.state));
+  check("28.2 в закрытом уроке нет ни текста, ни вопросов", r.ok === true && r.lessons[1].questions === undefined && r.lessons[2].task === undefined, r.lessons && r.lessons[1]);
+
+  // 28.3 уроки по порядку, тест
+  r = await call("school-test-send", { token: studentS.token, courseId, lessonId: lessonIds[1], answers: [0, 1, 1] });
+  check("28.3 закрытый урок пройти нельзя", r.ok === false && r.code === 409, r);
+  r = await call("school-lesson-done", { token: studentS.token, courseId, lessonId: lessonIds[1] });
+  check("28.3 урок с тестом кнопкой «изучено» не закрыть", r.ok === false && r.code === 409, r);
+  r = await call("school-lesson-done", { token: studentS.token, courseId, lessonId: lessonIds[0] });
+  check("28.3 первый урок изучен", r.ok === true && r.state === "done" && r.progress.done === 1, r);
+  r = await call("school-course", { token: studentS.token, id: courseId });
+  check("28.3 открылся тест: вопросы есть, верных ответов нет",
+    r.ok === true && r.lessons[1].state === "open" && r.lessons[1].questions.length === 3 && r.lessons[1].questions.every((q) => q.answer === undefined) && r.lessons[1].pass === 60, r.lessons && r.lessons[1]);
+  r = await call("school-test-send", { token: studentS.token, courseId, lessonId: lessonIds[1], answers: [0, 1] });
+  check("28.3 тест без ответа на все вопросы не принимается", r.ok === false && r.code === 400, r);
+  r = await call("school-test-send", { token: studentS.token, courseId, lessonId: lessonIds[1], answers: [2, 0, 0] });
+  check("28.3 тест не сдан: ноль верных", r.ok === true && r.passed === false && r.score === 0 && r.state === "failed" && r.marks.join() === "false,false,false", r);
+  r = await call("school-course", { token: studentS.token, id: courseId });
+  check("28.3 после несданного теста следующий урок закрыт", r.ok === true && r.lessons[1].state === "failed" && r.lessons[2].state === "locked" && r.lessons[1].test.attempts === 1, r.lessons && r.lessons.map((l) => l.state));
+  r = await call("school-test-send", { token: studentS.token, courseId, lessonId: lessonIds[1], answers: [0, 1, 0] });
+  check("28.3 тест сдан со второй попытки: два из трёх при пороге 60", r.ok === true && r.passed === true && r.score === 66 && r.state === "done" && r.right === 2, r);
+
+  // 28.4 задание и проверка
+  r = await call("school-task-send", { token: studentS.token, courseId, lessonId: lessonIds[2], text: "коротко" });
+  check("28.4 слишком короткий ответ не принимается", r.ok === false && r.code === 400, r);
+  r = await call("school-task-send", { token: studentS.token, courseId, lessonId: lessonIds[2], text: "В нашей школе открылась студия подкастов. Первый выпуск записали ученики девятого класса.", link: "javascript:alert(1)" });
+  check("28.4 ссылка в ответе — только http(s)", r.ok === false && r.code === 400, r);
+  r = await call("school-task-send", { token: studentS.token, courseId, lessonId: lessonIds[2], text: "В нашей школе открылась студия подкастов. Первый выпуск записали ученики девятого класса." });
+  check("28.4 задание отправлено на проверку", r.ok === true && r.state === "sent" && r.progress.done === 2 && r.completed === false, r);
+  r = await call("school-queue", { token: otherTeacher.token });
+  check("28.4 чужому преподавателю работа не видна", r.ok === true && r.items.length === 0, r.items);
+  r = await call("school-queue", { token: studentS.token });
+  check("28.4 ученику очередь проверки закрыта", r.ok === false && r.code === 403, r);
+  r = await call("school-queue", { token: teacherT.token });
+  check("28.4 преподаватель курса видит работу", r.ok === true && r.items.length === 1 && r.items[0].userName === "Соня Ученица" && /студия подкастов/.test(r.items[0].text), r.items);
+  const work = r.items && r.items[0] ? r.items[0] : {};
+  r = await call("staff-summary", { token: teacherT.token });
+  check("28.4 в сводке преподавателя — одна работа на проверке", r.ok === true && r.summary.school === 1, r.summary);
+  r = await call("school-review", { token: otherTeacher.token, enrollId: work.enrollId, lessonId: work.lessonId, decision: "accepted" });
+  check("28.4 чужой преподаватель работу не оценивает", r.ok === false && r.code === 403, r);
+  r = await call("school-review", { token: teacherT.token, enrollId: work.enrollId, lessonId: work.lessonId, decision: "returned", note: "" });
+  check("28.4 вернуть без замечания нельзя", r.ok === false && r.code === 400, r);
+  r = await call("school-review", { token: teacherT.token, enrollId: work.enrollId, lessonId: work.lessonId, decision: "returned", note: "Добавьте, когда это произошло." });
+  check("28.4 работа возвращена на доработку", r.ok === true && r.completed === false, r);
+  r = await call("school-course", { token: studentS.token, id: courseId });
+  check("28.4 ученик видит замечание преподавателя",
+    r.ok === true && r.lessons[2].state === "returned" && r.lessons[2].review.note === "Добавьте, когда это произошло." && r.lessons[2].answer.text.indexOf("студия") !== -1, r.lessons && r.lessons[2]);
+  r = await call("messages-mine", { token: studentS.token });
+  check("28.4 замечание пришло сообщением", r.ok === true && r.messages.some((m) => /нужно доработать: Добавьте, когда это произошло/.test(m.text)), r.messages && r.messages.slice(0, 2));
+  r = await call("school-task-send", { token: studentS.token, courseId, lessonId: lessonIds[2], text: "В понедельник в нашей школе открылась студия подкастов. Первый выпуск записали ученики девятого класса." });
+  check("28.4 исправленная работа отправлена", r.ok === true && r.state === "sent", r);
+  r = await call("school-review", { token: teacherT.token, enrollId: work.enrollId, lessonId: work.lessonId, decision: "accepted", note: "Хорошо!" });
+  check("28.4 работа принята — курс пройден", r.ok === true && r.completed === true, r);
+  r = await call("school-review", { token: teacherT.token, enrollId: work.enrollId, lessonId: work.lessonId, decision: "returned", note: "ещё раз" });
+  check("28.4 решение по работе принимается один раз", r.ok === false && r.code === 409, r);
+  r = await call("school-catalog", { token: studentS.token });
+  const mineCourse = (r.courses || []).find((c) => c.id === courseId);
+  check("28.4 в каталоге ученика курс отмечен пройденным", !!mineCourse && mineCourse.enrollStatus === "completed" && mineCourse.progress.percent === 100, mineCourse);
+  r = await call("points-history", { token: studentS.token });
+  const rules = (r.entries || []).map((h) => h.reason || "");
+  check("28.4 начислены баллы за урок, тест, задание и курс",
+    r.ok === true && ["school.lesson", "school.test", "school.homework", "school.course"].every((k) => rules.indexOf(k) !== -1), rules);
+  r = await call("school-leave", { token: studentS.token, id: courseId });
+  check("28.4 с пройденного курса не «уйти»: результат остаётся", r.ok === false && r.code === 409, r);
+
+  // 28.5 ученики курса, снятие с публикации, удаление аккаунта
+  r = await call("school-students", { token: teacherT.token, id: courseId });
+  check("28.5 преподаватель видит учеников и прогресс", r.ok === true && r.students.length === 1 && r.students[0].status === "completed" && r.students[0].progress.done === 3, r);
+  r = await call("school-students", { token: otherTeacher.token, id: courseId });
+  check("28.5 чужих учеников преподаватель не видит", r.ok === false && r.code === 403, r);
+  r = await call("school-admin", { token: teacherT.token });
+  check("28.5 преподаватель видит только свои курсы", r.ok === true && r.courses.length === 1 && r.courses[0].students === 1 && r.canManage === false && r.teachers.length === 0, r);
+  r = await call("school-admin", { token: token3 });
+  check("28.5 директор видит все курсы и список преподавателей", r.ok === true && r.canManage === true && r.courses.length >= 1 && r.teachers.some((t) => t.id === teacherT.id), r);
+  r = await call("school-course-status", { token: token3, id: courseId, status: "archived" });
+  check("28.5 курс снят в архив", r.ok === true && r.course.status === "archived", r);
+  r = await call("school-catalog", {});
+  check("28.5 архивного курса в каталоге нет", r.ok === true && !r.courses.some((c) => c.id === courseId), r.courses);
+  r = await call("school-catalog", { token: studentS.token });
+  check("28.5 у того, кто учился, курс остаётся в списке", r.ok === true && r.courses.some((c) => c.id === courseId), r.courses);
+  r = await call("account-delete", { token: studentS.token, pass: "parol1234", confirm: "УДАЛИТЬ" });
+  check("28.5 ученик удалил аккаунт", r.ok === true, r);
+  r = await call("school-students", { token: teacherT.token, id: courseId });
+  check("28.5 записи и ответы удалённого ученика стёрты", r.ok === true && r.students.length === 0, r);
+
   console.log("\n=== ИТОГ ===");
   let bad = 0;
   results.forEach((x) => {

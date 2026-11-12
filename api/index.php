@@ -149,6 +149,7 @@ require __DIR__ . '/lib/consent.php';  /* согласие на обработк
 require __DIR__ . '/lib/cards.php';    /* пресс-карта: заявка, выдача, срок, проверка по номеру */
 require __DIR__ . '/lib/editorial_open.php'; /* заявление на открытие редакции → решение директора */
 require __DIR__ . '/lib/reports.php';  /* ежемесячные отчёты редакций: форма руководителя + цифры сервера */
+require __DIR__ . '/lib/school.php';   /* медиашкола: курсы, уроки, задания, тесты, проверка, прогресс */
 
 function action() {
     if (isset($_GET['action'])) return (string) $_GET['action'];
@@ -902,6 +903,7 @@ if (consent_routes($act, $DATA_DIR)) exit;
 if (cards_routes($act, $DATA_DIR)) exit;
 if (editorial_open_routes($act, $DATA_DIR)) exit;
 if (reports_routes($act, $DATA_DIR)) exit;
+if (school_routes($act, $DATA_DIR)) exit;
 
 if ($act === 'selftest') {
     require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
@@ -3965,6 +3967,9 @@ if ($act === 'account-delete') {
         break;
     }
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось удалить аккаунт. Напишите в поддержку.', 500);
+
+    /* медиашкола: записи на курсы и ответы на задания стираются вместе с аккаунтом */
+    if (function_exists('school_forget_user')) school_forget_user($DATA_DIR, $me['id']);
 
     /* очередь согласий: закрываем запросы удалённого */
     $consents = read_json(consents_file($DATA_DIR), array());
