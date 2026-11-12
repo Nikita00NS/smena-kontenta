@@ -47,6 +47,8 @@ const ROLE_CAPS = array(
         'points.award', 'points.rule',
         'support.answer', 'recovery.issue',
         'mail.manage', 'mail.use', 'site.manage', 'server.diag', 'audit.view',
+        /* открыть редакцию в регионе решает только директор */
+        'editorials.open',
     ),
     'Главный администратор' => array(
         'people.view', 'people.edit', 'people.access', 'people.block', 'people.note',
@@ -63,6 +65,9 @@ const ROLE_CAPS = array(
         'school.manage', 'school.teach', 'school.review', 'school.enroll',
         'docs.manage', 'points.award', 'support.answer', 'recovery.issue',
         'mail.manage', 'mail.use', 'site.manage', 'server.diag', 'audit.view',
+        /* приём заявлений на открытие редакции: отметить, что подписанный
+           документ пришёл на почту, или вернуть на доработку */
+        'editorials.intake',
     ),
     /* Администратор ведёт людей и карты, но не трогает почту, сайт,
        настройки сервера и документы проекта. */
@@ -70,6 +75,9 @@ const ROLE_CAPS = array(
         'people.view', 'people.edit', 'people.block', 'people.note',
         'posts.review', 'cards.view', 'cards.issue', 'cards.extend',
         'school.enroll', 'points.award', 'support.answer', 'audit.view',
+        /* согласия на обработку данных — это паспорт и адрес человека,
+           поэтому их видит узкий круг: от администратора и выше */
+        'consents.review',
     ),
     'Центральная редакция' => array(
         'people.view', 'posts.review', 'posts.remove',
@@ -92,6 +100,8 @@ const ROLE_CAPS = array(
         'cards.view', 'cards.issue', 'cards.revoke', 'cards.extend', 'cards.template',
         'school.manage', 'school.teach', 'school.review', 'school.enroll',
         'docs.manage', 'points.award', 'support.answer', 'audit.view',
+        /* публикация без очереди и отчёты редакций — с главного редактора */
+        'posts.publish', 'reports.review',
     ),
     /* Технический администратор отвечает за сервер и почту, но не за людей:
        так он не может выдать себе роль или снять редактора. */
@@ -195,4 +205,115 @@ function public_capabilities($user) {
         'level' => role_level(isset($user['access']) ? $user['access'] : ''),
         'caps' => user_caps($user),
     );
+}
+
+/* ============================================================================
+   ЗОНА ОТВЕТСТВЕННОСТИ
+
+   Полномочие отвечает на вопрос «что можно», зона — «над кем». Руководитель
+   региональной редакции проверяет материалы и видит людей только своей
+   редакции, региональный администратор — своего региона. Центральные роли
+   (от главного редактора и выше) и сотрудники без редакции видят всё.
+   ========================================================================== */
+
+const REGIONAL_ROLES = array(
+    'Редакционный администратор региона',
+    'Редакционный основатель',
+    'Руководитель региональной редакции',
+);
+
+/* Руководство проекта: директор и сооснователь. */
+function is_head_role($role) {
+    return role_level((string) $role) >= ROLE_LEVELS['Директор'];
+}
+
+function is_staff_user($user) {
+    return $user && count(user_caps($user)) > 0;
+}
+
+/* null — вся платформа; ['region' => …] — регион; ['editorialId' => …] — редакция. */
+function staff_scope($me) {
+    if (!$me) return array('editorialId' => '');
+    $role = isset($me['access']) ? (string) $me['access'] : '';
+    if (in_array('*', user_caps($me), true)) return null;
+    if (role_level($role) >= ROLE_LEVELS['Главный редактор']) return null;
+    $editorialId = isset($me['editorialId']) ? (string) $me['editorialId'] : '';
+    if ($role === 'Редакционный администратор региона') {
+        return array('region' => isset($me['region']) ? (string) $me['region'] : '');
+    }
+    if (in_array($role, REGIONAL_ROLES, true)) return array('editorialId' => $editorialId);
+    if ($editorialId !== '') return array('editorialId' => $editorialId);
+    return null;
+}
+
+function user_in_scope($scope, $user) {
+    if ($scope === null) return true;
+    if (!$user) return false;
+    if (isset($scope['region'])) {
+        return $scope['region'] !== '' && isset($user['region'])
+            && (string) $user['region'] === (string) $scope['region'];
+    }
+    if (isset($scope['editorialId'])) {
+        return $scope['editorialId'] !== '' && isset($user['editorialId'])
+            && (string) $user['editorialId'] === (string) $scope['editorialId'];
+    }
+    return false;
+}
+
+/* Материал в зоне, если в ней его автор; для региона — ещё и по региону
+   самого материала (автор из другого региона пишет про этот). */
+function post_in_scope($scope, $post, $author) {
+    if ($scope === null) return true;
+    if (isset($scope['region']) && $scope['region'] !== ''
+        && isset($post['region']) && (string) $post['region'] === (string) $scope['region']) {
+        return true;
+    }
+    return $author ? user_in_scope($scope, $author) : false;
+}
+
+/* Смена роли — единственное место, где решается «кто кого может назначить».
+   Возвращает пустую строку, если можно, иначе текст отказа.
+   Правила: себе роль не меняют; чужую — только тому, кто ниже; выдать можно
+   роль не выше своей; последнего руководителя проекта снять нельзя. */
+function access_change_guard($me, $target, $newRole, $users) {
+    if (!$me || !$target) return 'Участник не найден.';
+    if (!can($me, 'people.access')) return 'Роли меняет только руководство проекта.';
+    if ((string) $me['id'] === (string) $target['id']) {
+        return 'Свою роль изменить нельзя: это делает другой руководитель.';
+    }
+    if (!isset(ROLE_LEVELS[$newRole])) return 'Такой роли нет.';
+    $my = role_level(isset($me['access']) ? $me['access'] : '');
+    $theirs = role_level(isset($target['access']) ? $target['access'] : '');
+    $new = role_level($newRole);
+    $top = $my >= ROLE_LEVELS['Сооснователь'];
+    if (!$top && $theirs >= $my) return 'Этот участник не ниже вас по роли — его права меняет старший.';
+    if (!$top && $new > $my) return 'Нельзя выдать роль выше своей.';
+    if (is_head_role(isset($target['access']) ? $target['access'] : '') && !is_head_role($newRole)) {
+        $heads = 0;
+        foreach ((array) $users as $u) {
+            if (isset($u['status']) && $u['status'] === 'deleted') continue;
+            if (is_head_role(isset($u['access']) ? $u['access'] : '')) $heads++;
+        }
+        if ($heads <= 1) return 'Это единственный руководитель проекта: сначала назначьте второго.';
+    }
+    return '';
+}
+
+/* Почта в списках: полностью её видит тот, кто ведёт людей, и руководитель
+   редакции — у своих. Остальным хватает «и***@mail.ru», чтобы узнать человека. */
+function mask_email($email) {
+    $email = (string) $email;
+    $at = strrpos($email, '@');
+    if ($at === false || $at < 1) return $email === '' ? '' : '***';
+    /* первая буква может быть кириллицей: режем по символам, а не по байтам */
+    $first = function_exists('mb_substr') ? mb_substr($email, 0, 1, 'UTF-8')
+        : (ord($email[0]) < 128 ? $email[0] : '');
+    return $first . '***' . substr($email, $at);
+}
+
+function sees_contacts($me, $scope, $target) {
+    if (!$me) return false;
+    if (can($me, 'people.edit')) return true;
+    if ($target && (string) $me['id'] === (string) $target['id']) return true;
+    return $scope !== null && user_in_scope($scope, $target);
 }

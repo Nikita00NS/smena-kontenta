@@ -1,5 +1,6 @@
 /* Быстрая проверка синтаксиса PHP без установленного PHP.
-   Запуск:  node tools/tests/php-syntax.js api/index.php api/lib/*.php
+   Запуск:  node tools/tests/php-syntax.js            (все файлы api/)
+            node tools/tests/php-syntax.js api/index.php  (один файл)
    Требует: npm i php-parser (ставится вместе с php-wasm для api-checks.js) */
 const fs = require("fs");
 const path = require("path");
@@ -17,11 +18,17 @@ const engine = parser.create({
   ast: { withPositions: false },
 });
 
+/* Без аргументов проверяем все PHP-файлы приёмной: раньше список был
+   вписан руками, и новые библиотеки в проверку не попадали. */
 let files = process.argv.slice(2);
 if (!files.length) {
-  files = ["api/index.php", "api/smtp.php", "api/lib/mailer.php",
-    "api/lib/imap.php", "api/lib/hiring.php", "api/lib/permissions.php",
-    "api/lib/points.php", "api/lib/backup.php"];
+  const root = path.resolve(__dirname, "..", "..");
+  const walk = (dir) => fs.readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => {
+    const rel = dir + "/" + e.name;
+    if (e.isDirectory()) return e.name === "data" ? [] : walk(rel);
+    return e.name.endsWith(".php") ? [rel] : [];
+  });
+  files = walk("api").sort();
 }
 
 let bad = 0;

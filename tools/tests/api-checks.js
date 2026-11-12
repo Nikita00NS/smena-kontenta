@@ -483,6 +483,515 @@ const results = [];
   check("в системе осталась обезличенная запись",
     !!ghost && ghost.email === "" && /Удал/.test(ghost.name) && ghost.status === "deleted", ghost);
 
+  /* ======================================================================
+     24. ПЛАН 11.11.2026, ЭТАП 1: согласие на сервере, материалы привязаны
+     к аккаунту, пресс-карта на сервере, открытие редакции — заявлением.
+     ====================================================================== */
+  async function editJson(file, fn) {
+    let data = [];
+    try { data = JSON.parse(await readText("/smena-data/" + file)); } catch (e) {}
+    const next = fn(data) || data;
+    await php.writeFile("/smena-data/" + file, JSON.stringify(next));
+  }
+  async function newUser(name, email, region) {
+    const res = await call("reg", { name, email, pass: "parol1234", region: region || "moskva", role: "Автор текстов" });
+    await verifyAll();
+    return { token: res.token, id: res.user ? res.user.id : "", name, email };
+  }
+  async function setUser(id, patch) {
+    await editJson("users.json", (users) => users.map((u) => (u.id === id ? Object.assign({}, u, patch) : u)));
+  }
+  const longBody = "Проверочный текст материала: абзац про школьную редакцию и её первый выпуск. ".repeat(6);
+  function postPayload(token, title, extra) {
+    return Object.assign({ token, title, excerpt: "Короткое описание материала для ленты и поиска.",
+      body: longBody, topic: "Школа", format: "Статья", region: "moskva", authorKey: "browser-key-000001" }, extra || {});
+  }
+  /* директор принимает согласие человека — как в панели, под код из письма */
+  async function giveConsent(user) {
+    await call("consent-send", { token: user.token, pages: [realPng, realPng] });
+    const q = await call("consent-queue", { token: token3 });
+    const row = (q.consents || []).find((c) => c.userId === user.id);
+    const confirm = await makeConfirm(token3);
+    return call("consent-review", { token: token3, confirm, id: row ? row.id : "", decision: "approved" });
+  }
+
+  // 24.1 материал: только из аккаунта и только с согласием
+  r = await call("submit", postPayload("", "Материал без входа в аккаунт"));
+  check("24.1 без входа материал не принять", r.ok === false && r.code === 401, r);
+  const authorA = await newUser("Анна Авторова", "author-a@example.ru", "moskva");
+  r = await call("submit", postPayload(authorA.token, "Материал без согласия на обработку"));
+  check("24.1 без согласия материал не принять", r.ok === false && r.code === 403 && r.needConsent === true, r);
+  check("24.1 в отказе есть статус согласия", r.consent && r.consent.status === "none", r);
+  r = await call("consent-status", { token: authorA.token });
+  check("24.1 статус согласия: нет", r.ok === true && r.consent.status === "none" && r.granted === false && r.exempt === false, r);
+  r = await call("consent-status", { token: token3 });
+  check("24.1 директору согласие не требуется", r.ok === true && r.exempt === true && r.granted === true, r);
+
+  // 24.2 согласие: закрытое хранение, очередь, решение
+  r = await call("consent-send", { token: authorA.token, pages: [] });
+  check("24.2 согласие без файла не принять", r.ok === false, r);
+  r = await call("consent-send", { token: authorA.token, pages: [fakePng] });
+  check("24.2 поддельный файл согласия отклонён", r.ok === false && r.code === 413, r);
+  r = await call("consent-send", { token: authorA.token, pages: [realPng, realPng, realPng, realPng, realPng] });
+  check("24.2 больше четырёх листов не принять", r.ok === false, r);
+  r = await call("consent-send", { token: authorA.token, pages: [realPng, realPng] });
+  check("24.2 согласие принято на проверку", r.ok === true && r.consent.status === "pending" && r.consent.pages === 2, r);
+  check("24.2 в ответе нет адреса файла", r.ok === true && JSON.stringify(r).indexOf("pd_") === -1 && r.consent.scan === undefined, r);
+  let closed = []; let open = [];
+  try { closed = await php.readdir("/smena-data/consents"); } catch (e) {}
+  try { open = await php.readdir("/smena-data/uploads"); } catch (e) {}
+  check("24.2 сканы лежат в закрытой папке", closed.filter((f) => /^pd_/.test(f)).length === 2, closed);
+  check("24.2 в папке публичных файлов сканов нет", open.filter((f) => /^pd_/.test(f)).length === 0, open);
+  check("24.2 закрытая папка защищена от прямого доступа", closed.indexOf(".htaccess") !== -1, closed);
+  r = await call("submit", postPayload(authorA.token, "Материал, пока согласие проверяется"));
+  check("24.2 согласие на проверке — материал ещё не принять", r.ok === false && r.needConsent === true && r.consent.status === "pending", r);
+  r = await call("consent-file", { token: authorA.token, page: 1 });
+  check("24.2 свой скан человек видит", r.ok === true && /^data:image\/png;base64,/.test(r.data || "") && r.pages === 2, r);
+  r = await call("consent-queue", { token: authorA.token });
+  check("24.2 очередь согласий закрыта участнику", r.ok === false && r.code === 403, r);
+  r = await call("consent-queue", { token: token3 });
+  const consentA = (r.consents || []).find((c) => c.userId === authorA.id);
+  check("24.2 директор видит согласие в очереди", r.ok === true && !!consentA && consentA.status === "pending" && r.counts.pending >= 1, r);
+  r = await call("consent-file", { token: token4, id: consentA ? consentA.id : "", page: 1 });
+  check("24.2 чужой скан постороннему не открыть", r.ok === false && r.code === 403, r);
+  r = await call("consent-file", { token: token3, id: consentA ? consentA.id : "", page: 2 });
+  check("24.2 проверяющий открывает скан", r.ok === true && /^data:image\/png/.test(r.data || ""), r);
+  r = await call("admin-log", { token: token3 });
+  check("24.2 просмотр скана записан в журнал", r.ok && r.entries.some((e) => e.action === "consent-file"), r.entries && r.entries.slice(0, 3));
+  r = await call("consent-review", { token: token3, id: consentA.id, decision: "approved" });
+  check("24.2 решение по согласию без кода не проходит", r.ok === false && r.code === 428, r);
+  r = await call("consent-review", { token: token3, confirm: await makeConfirm(token3), id: consentA.id, decision: "rejected", note: "" });
+  check("24.2 отказ без причины не принять", r.ok === false && r.code === 400, r);
+  r = await call("consent-review", { token: token3, confirm: await makeConfirm(token3), id: consentA.id, decision: "approved" });
+  check("24.2 согласие принято", r.ok === true && r.consent.status === "approved", r);
+  r = await call("consent-review", { token: token3, confirm: await makeConfirm(token3), id: consentA.id, decision: "rejected", note: "повторное решение" });
+  check("24.2 очередь не меняет уже принятое решение", r.ok === false && r.code === 409, r);
+  r = await call("consent-send", { token: authorA.token, pages: [realPng] });
+  check("24.2 принятое согласие повторно не загружается", r.ok === false && r.code === 409, r);
+  r = await call("messages-mine", { token: authorA.token });
+  check("24.2 человеку пришло уведомление о согласии", r.ok === true && r.messages.some((m) => /Согласие.*принято/.test(m.text)), r);
+
+  // 24.3 материал привязан к аккаунту; публикация без проверки закрыта
+  r = await call("submit", postPayload(authorA.token, "Первый материал Анны про школьную редакцию",
+    { direct: true, authorName: "Чужое Имя" }));
+  check("24.3 материал с согласием принят", r.ok === true && r.post.status === "pending", r);
+  check("24.3 флажок direct без права не публикует", r.ok === true && r.direct === false, r);
+  check("24.3 имя автора берётся из аккаунта, а не из формы", r.ok === true && r.post.authorName === "Анна Авторова", r.post);
+  const postA1 = r.post ? r.post.id : "";
+  const numberA1 = r.post ? r.post.number : 0;
+  r = await call("state", {});
+  check("24.3 неодобренного материала нет на сайте", r.ok === true && !r.posts.some((p) => p.id === postA1), r);
+  r = await call("mine", { token: authorA.token });
+  check("24.3 автор видит свой материал по аккаунту", r.ok === true && r.posts.length === 1 && r.posts[0].own === true, r);
+  r = await call("mine", { authorKey: "browser-key-000001" });
+  check("24.3 по одному ключу браузера материалы не отдаются", r.ok === false && r.code === 401, r);
+  r = await call("queue", { token: token3 });
+  const queued = (r.pending || []).find((p) => p.id === postA1);
+  check("24.3 редакция видит материал и автора", !!queued && queued.authorId === authorA.id && queued.authorEmail === "author-a@example.ru", r);
+  r = await call("review", { token: token3, confirm: await makeConfirm(token3), id: postA1, decision: "reject", note: "" });
+  check("24.3 вернуть материал без замечания нельзя", r.ok === false && r.code === 400, r);
+  r = await call("review", { token: token3, confirm: await makeConfirm(token3), id: postA1, decision: "reject", note: "Добавьте фото и проверьте имена." });
+  check("24.3 материал возвращён на доработку", r.ok === true && r.post.status === "rejected", r);
+  r = await call("review", { token: token3, confirm: await makeConfirm(token3), id: postA1, decision: "approve" });
+  check("24.3 отклонённый материал повторным решением не опубликовать", r.ok === false && r.code === 409, r);
+  r = await call("messages-mine", { token: authorA.token });
+  check("24.3 автору пришло замечание", r.ok === true && r.messages.some((m) => /Добавьте фото/.test(m.text)), r);
+  r = await call("submit", postPayload(token4, "Чужая правка материала Анны целиком", { replaceId: postA1 }));
+  check("24.3 чужой материал не исправить", r.ok === false && (r.code === 403), r);
+  r = await call("submit", postPayload(authorA.token, "Первый материал Анны, исправленная версия", { replaceId: postA1 }));
+  check("24.3 исправленная версия встаёт на место прежней",
+    r.ok === true && r.replaced === true && r.post.id === postA1 && r.post.number === numberA1 && r.post.revision === 2 && r.post.status === "pending", r);
+  r = await call("review", { token: token3, confirm: await makeConfirm(token3), id: postA1, decision: "approve" });
+  check("24.3 материал опубликован", r.ok === true && r.post.status === "published", r);
+  r = await call("review", { token: token3, confirm: await makeConfirm(token3), id: postA1, decision: "reject", note: "передумали публиковать" });
+  check("24.3 опубликованный материал решением из очереди не снять", r.ok === false && r.code === 409, r);
+  r = await call("submit", postPayload(authorA.token, "Попытка заменить опубликованный материал", { replaceId: postA1 }));
+  check("24.3 опубликованный материал заменой не переписать", r.ok === false && r.code === 409, r);
+  r = await call("state", {});
+  check("24.3 опубликованный материал виден на сайте", r.ok === true && r.posts.some((p) => p.id === postA1 && p.authorName === "Анна Авторова"), r);
+  r = await call("points-history", { token: authorA.token });
+  check("24.3 автору начислены баллы за публикацию", r.ok === true && (r.balance > 0 || (r.history || r.entries || []).length > 0), r);
+  r = await call("submit", postPayload(token3, "Материал директора выходит без очереди", { direct: true }));
+  check("24.3 с правом публикации материал выходит сразу", r.ok === true && r.direct === true && r.post.status === "published", r);
+
+  /* материалы, отправленные до привязки: совпали ключ браузера и имя */
+  await editJson("posts.json", (posts) => {
+    posts.s_legacy1 = { id: "s_legacy1", authorKey: "legacy-key-aaaaaa", authorId: "", authorName: "Анна Авторова",
+      authorRole: "", authorRegion: "", title: "Старый материал Анны без аккаунта", excerpt: "Описание старого материала.",
+      body: longBody, topic: "", format: "Статья", region: "moskva", number: 900, status: "published",
+      date: "2026-11-01T10:00:00+00:00", submittedAt: "2026-11-01T10:00:00+00:00", reviewNote: "" };
+    posts.s_legacy2 = Object.assign({}, posts.s_legacy1, { id: "s_legacy2", authorName: "Другой Человек", number: 901 });
+    return posts;
+  });
+  r = await call("mine", { token: authorA.token, authorKey: "legacy-key-aaaaaa" });
+  check("24.3 старый материал привязывается к аккаунту по ключу и имени",
+    r.ok === true && r.bound === true && r.posts.some((p) => p.id === "s_legacy1"), r);
+  check("24.3 чужой материал с тем же ключом не привязывается", r.ok === true && !r.posts.some((p) => p.id === "s_legacy2"), r);
+
+  // 24.4 пресс-карта: заявка, выдача, срок, проверка по номеру
+  r = await call("card-request", { authorKey: "browser-key-000001", posts: [] });
+  check("24.4 заявка на карту без аккаунта закрыта", r.ok === false && r.code === 410, r);
+  r = await call("card-status", { token: authorA.token });
+  check("24.4 кабинет знает, почему заявку подать нельзя",
+    r.ok === true && r.canApply === false && r.published === 2 && r.minPosts === 5 && /5 опубликованных/.test(r.why), r);
+  r = await call("card-apply", { token: authorA.token });
+  check("24.4 меньше пяти материалов — заявка не принимается", r.ok === false && r.code === 409, r);
+  await editJson("posts.json", (posts) => {
+    for (let i = 1; i <= 3; i++) {
+      posts["s_more" + i] = Object.assign({}, posts[postA1], { id: "s_more" + i, number: 910 + i, title: "Ещё один материал Анны № " + i });
+    }
+    return posts;
+  });
+  r = await call("card-status", { token: authorA.token });
+  check("24.4 пять материалов — заявку подать можно", r.ok === true && r.canApply === true && r.published === 5 && r.consentOk === true, r);
+  r = await call("card-apply", { token: token4 });
+  check("24.4 без согласия заявка на карту не принимается", r.ok === false && r.code === 403 && r.needConsent === true, r);
+  r = await call("card-apply", { token: authorA.token });
+  check("24.4 заявка на карту принята", r.ok === true && r.request.state === "pending" && r.request.posts.length === 5, r);
+  const cardA = r.request ? r.request.id : "";
+  r = await call("card-apply", { token: authorA.token });
+  check("24.4 вторая заявка не создаётся", r.ok === false && r.code === 409, r);
+  r = await call("card-doc", { token: authorA.token, id: cardA });
+  check("24.4 документа нет, пока карта не выдана", r.ok === false && r.code === 409, r);
+  r = await call("card-queue", { token: authorA.token });
+  check("24.4 очередь карт закрыта участнику", r.ok === false && r.code === 403, r);
+  r = await call("card-queue", { token: token3 });
+  const queuedCard = (r.requests || []).find((c) => c.id === cardA);
+  check("24.4 редакция видит заявку с автором и согласием",
+    !!queuedCard && queuedCard.state === "pending" && queuedCard.name === "Анна Авторова" && queuedCard.consent === "approved", r);
+  r = await call("card-review", { token: token3, confirm: await makeConfirm(token3), id: cardA, decision: "reject", note: "" });
+  check("24.4 отказ по карте без причины не принять", r.ok === false && r.code === 400, r);
+  r = await call("card-review", { token: token3, confirm: await makeConfirm(token3), id: cardA, decision: "approve" });
+  check("24.4 карта выдана с номером", r.ok === true && r.request.state === "issued" && /^СК-\d{4}-\d{4}$/.test(r.request.number), r);
+  const numberA = r.request ? r.request.number : "";
+  const yearMs = 365 * 86400 * 1000;
+  check("24.4 карта действует год",
+    r.ok === true && Math.abs(new Date(r.request.validUntil) - Date.now() - yearMs) < 3 * 86400 * 1000, r.request);
+  r = await call("card-review", { token: token3, confirm: await makeConfirm(token3), id: cardA, decision: "approve" });
+  check("24.4 решение по карте принимается один раз", r.ok === false && r.code === 409, r);
+  r = await call("card-status", { token: authorA.token });
+  check("24.4 кабинет видит ту же карту, что и редакция", r.ok === true && r.card && r.card.state === "issued" && r.card.number === numberA && r.canApply === false, r);
+  r = await call("users", { token: token3 });
+  const rowA = (r.users || []).find((u) => u.id === authorA.id);
+  check("24.4 список участников показывает ту же карту и согласие",
+    !!rowA && rowA.cardStatus === "issued" && rowA.cardNumber === numberA && rowA.consent === "approved", rowA);
+  r = await call("card-verify", { number: numberA });
+  check("24.4 проверка по номеру: карта действует", r.ok === true && r.found === true && r.valid === true && r.name === "Анна Авторова", r);
+  r = await call("card-verify", { number: numberA.replace("СК", "ck").replace(/-/g, " ") });
+  check("24.4 номер латиницей и с пробелами тоже находится", r.ok === true && r.found === true && r.number === numberA, r);
+  r = await call("card-verify", { number: "СК-2026-9999" });
+  check("24.4 несуществующий номер — карта не найдена", r.ok === true && r.found === false && r.name === undefined, r);
+  r = await call("card-verify", { number: "что-то не то" });
+  check("24.4 неверный вид номера отклоняется", r.ok === false && r.code === 400, r);
+  r = await call("card-doc", { token: authorA.token, id: cardA });
+  check("24.4 владелец открывает документ о карте",
+    r.ok === true && r.card.number === numberA && r.holder.name === "Анна Авторова" && r.own === true && r.canPrint === true && !!r.issuedBy, r);
+  r = await call("card-doc", { token: token4, id: cardA });
+  check("24.4 чужой документ о карте не открыть", r.ok === false && r.code === 403, r);
+  r = await call("card-suspend", { token: token3, id: cardA, note: "" });
+  check("24.4 приостановка без причины не проходит", r.ok === false && r.code === 400, r);
+  r = await call("card-suspend", { token: token3, id: cardA, note: "Проверяем жалобу на материал." });
+  check("24.4 карта приостановлена", r.ok === true && r.card.state === "suspended", r);
+  r = await call("card-verify", { number: numberA });
+  check("24.4 приостановленная карта не действует", r.ok === true && r.valid === false && r.state === "suspended", r);
+  r = await call("card-restore", { token: token3, id: cardA });
+  check("24.4 карта возобновлена", r.ok === true && r.card.state === "issued", r);
+  r = await call("card-extend", { token: token3, id: cardA });
+  check("24.4 продление без кода не проходит", r.ok === false && r.code === 428, r);
+  r = await call("card-extend", { token: token3, confirm: await makeConfirm(token3), id: cardA });
+  check("24.4 карта продлена на год", r.ok === true && new Date(r.card.validUntil) - Date.now() > 1.9 * yearMs, r);
+  await editJson("cards.json", (cards) => { cards[cardA].validUntil = "2025-01-01T00:00:00+00:00"; return cards; });
+  r = await call("card-verify", { number: numberA });
+  check("24.4 истёкшая карта не действует", r.ok === true && r.valid === false && r.state === "expired", r);
+  r = await call("card-status", { token: authorA.token });
+  check("24.4 по истёкшей карте можно подать на продление", r.ok === true && r.card.state === "expired" && r.canApply === true && r.renewal === true, r);
+  r = await call("card-revoke", { token: token3, confirm: await makeConfirm(token3), id: cardA, note: "Нарушение правил редакции." });
+  check("24.4 карта отозвана", r.ok === true && r.card.state === "revoked", r);
+  r = await call("card-verify", { number: numberA });
+  check("24.4 отозванная карта: недействительна, имя не показывается", r.ok === true && r.valid === false && r.state === "revoked" && r.name === "", r);
+  r = await call("card-grant", { token: token3, id: token4 ? (await call("me", { token: token4 })).user.id : "" });
+  check("24.4 без согласия карту по должности не выдать", r.ok === false && r.code === 409, r);
+  const directorId = (await call("me", { token: token3 })).user.id;
+  r = await call("card-grant", { token: token3, id: directorId });
+  check("24.4 себе карту не выдать", r.ok === false && r.code === 403, r);
+  r = await call("card-grant", { token: token3, id: authorA.id });
+  check("24.4 карта по должности выдаётся с новым номером", r.ok === true && /^СК-\d{4}-\d{4}$/.test(r.number) && r.number !== numberA, r);
+
+  // 24.5 открытие редакции: заявление вместо кнопки
+  r = await call("editorial-create", { token: token4, region: "moskva", name: "Редакция без согласия", about: "Попытка открыть редакцию одной кнопкой." });
+  check("24.5 без согласия заявление не начать", r.ok === false && r.code === 403 && r.needConsent === true, r);
+  r = await call("editorial-create", { token: authorA.token, region: "moskva", name: "Школьный вестник", about: "Редакция школы № 5: новости, репортажи и подкаст." });
+  check("24.5 прежняя кнопка «Создать редакцию» создаёт только черновик заявления",
+    r.ok === true && r.pending === true && r.application.status === "draft" && r.editorial === undefined, r);
+  r = await call("me", { token: authorA.token });
+  check("24.5 роль при этом не меняется", r.ok === true && r.user.access === "Пользователь" && !r.user.editorialId, r.user);
+  r = await call("editorial-list", {});
+  check("24.5 редакция не появляется без решения директора", r.ok === true && r.editorials.length === 0, r);
+  r = await call("editorial-open-save", { token: authorA.token, submit: true, form: { name: "Школьный вестник", region: "moskva" } });
+  check("24.5 недозаполненную анкету отправить нельзя", r.ok === false && r.code === 400 && Array.isArray(r.problems) && r.problems.length > 3, r);
+  const formOk = {
+    name: "Школьный вестник", region: "moskva", city: "Москва", base: "school", baseName: "Школа № 5",
+    about: "Редакция школы № 5: еженедельные новости, репортажи с событий, подкаст и фотолетопись.",
+    headName: "Авторова Анна Сергеевна", headBirth: "2012-03-10", headPhone: "+7 900 000-00-00",
+    team: [{ name: "Пётр Первый", role: "Фотограф", age: 15 }, { name: "Вера Вторая", role: "Корреспондент", age: 16 }],
+    confirms: { truth: true, rules: true, consents: true, reports: true },
+  };
+  r = await call("editorial-open-save", { token: authorA.token, submit: true, form: Object.assign({}, formOk, { headBirth: "2015-01-01" }) });
+  check("24.5 руководителю должно быть не меньше 14 лет", r.ok === false && r.problems.some((p) => /не младше 14/.test(p)), r);
+  r = await call("editorial-open-save", { token: authorA.token, submit: true, form: formOk });
+  check("24.5 руководителю до 18 лет нужен взрослый куратор", r.ok === false && r.problems.some((p) => /куратор/.test(p)), r);
+  r = await call("editorial-open-save", { token: authorA.token, submit: true,
+    form: Object.assign({}, formOk, { team: [formOk.team[0]], curator: { name: "Иванова Мария Петровна", role: "учитель", phone: "89001112233" } }) });
+  check("24.5 в команде нужно двое кроме руководителя", r.ok === false && r.problems.some((p) => /не меньше 2/.test(p)), r);
+  r = await call("editorial-open-mine", { token: authorA.token });
+  check("24.5 набранное сохраняется черновиком", r.ok === true && r.application && r.application.status === "draft" && r.application.form.city === "Москва" && r.mailTo === "editorial@smenakontenta.ru", r);
+  const formFull = Object.assign({}, formOk, { curator: { name: "Иванова Мария Петровна", role: "учитель литературы", phone: "89001112233" } });
+  r = await call("editorial-open-save", { token: authorA.token, submit: true, form: formFull });
+  check("24.5 заявление сформировано и ждёт подписи", r.ok === true && r.application.status === "awaiting" && /^ЗР-\d{4}-\d{4}$/.test(r.application.number), r);
+  const openId = r.application ? r.application.id : "";
+  r = await call("editorial-open-save", { token: authorA.token, form: formFull });
+  check("24.5 отправленное заявление не редактируется", r.ok === false && r.code === 409, r);
+  r = await call("editorial-open-get", { token: authorA.token, id: openId });
+  check("24.5 заявитель открывает своё заявление", r.ok === true && r.own === true && r.application.form.headName === "Авторова Анна Сергеевна", r);
+  r = await call("editorial-open-get", { token: token4, id: openId });
+  check("24.5 чужое заявление не открыть", r.ok === false && r.code === 403, r);
+  r = await call("editorial-open-queue", { token: authorA.token });
+  check("24.5 очередь заявлений закрыта участнику", r.ok === false && r.code === 403, r);
+  r = await call("editorial-open-queue", { token: token3 });
+  check("24.5 директор видит заявление", r.ok === true && r.canDecide === true && r.applications.some((a) => a.id === openId && a.status === "awaiting"), r);
+  r = await call("editorial-open-decide", { token: token3, confirm: await makeConfirm(token3), id: openId, decision: "approved" });
+  check("24.5 решение до получения подписанного документа не принять", r.ok === false && r.code === 409, r);
+  r = await call("editorial-open-return", { token: token3, id: openId, note: "" });
+  check("24.5 вернуть на доработку без замечания нельзя", r.ok === false && r.code === 400, r);
+  r = await call("editorial-open-received", { token: token3, id: openId });
+  check("24.5 отмечено: подписанный документ получен", r.ok === true && r.application.status === "review", r);
+  r = await call("editorial-open-decide", { token: token3, id: openId, decision: "approved" });
+  check("24.5 решение директора без кода не проходит", r.ok === false && r.code === 428, r);
+  r = await call("editorial-open-decide", { token: token3, confirm: await makeConfirm(token3), id: openId, decision: "rejected", note: "" });
+  check("24.5 отказ без причины не принять", r.ok === false && r.code === 400, r);
+  r = await call("editorial-open-decide", { token: token3, confirm: await makeConfirm(token3), id: openId, decision: "approved" });
+  check("24.5 директор открыл редакцию", r.ok === true && r.application.status === "approved" && !!r.application.editorialId, r);
+  const editorialX = r.application ? r.application.editorialId : "";
+  r = await call("editorial-list", { region: "moskva" });
+  check("24.5 редакция появилась в регионе", r.ok === true && r.editorials.some((e) => e.id === editorialX && e.name === "Школьный вестник"), r);
+  r = await call("me", { token: authorA.token });
+  check("24.5 заявитель стал руководителем редакции", r.ok === true && r.user.access === "Редакционный основатель" && r.user.editorialId === editorialX, r.user);
+  r = await call("editorial-open-save", { token: authorA.token, form: formFull });
+  check("24.5 вторую редакцию тот же руководитель не откроет", r.ok === false && r.code === 409, r);
+  r = await call("messages-mine", { token: authorA.token });
+  check("24.5 заявителю пришло решение", r.ok === true && r.messages.some((m) => /открыта решением директора/.test(m.text)), r);
+
+  // 24.6 сессии и роли: закрытые дыры
+  for (const bad of ["0", "1", "2", "abc", "true"]) {
+    r = await call("me", { token: bad });
+    if (r.ok !== false || r.code !== 401) { check("24.6 строка «" + bad + "» не работает как токен", false, r); }
+  }
+  r = await call("me", { token: "0" });
+  check("24.6 короткие строки не работают как токен", r.ok === false && r.code === 401, r);
+  let rawTokens = {};
+  try { rawTokens = JSON.parse(await readText("/smena-data/tokens.json")); } catch (e) {}
+  check("24.6 после удаления чужого аккаунта файл сессий цел",
+    !Array.isArray(rawTokens) && Object.keys(rawTokens).length > 0 && Object.keys(rawTokens).every((k) => /^[a-f0-9]{48}$/.test(k)), Object.keys(rawTokens).slice(0, 3));
+  r = await call("me", { token: token3 });
+  check("24.6 остальные сессии после чужого удаления живы", r.ok === true, r);
+  r = await call("boss-grant", { token: token3 });
+  check("24.6 доступ без указанной почты не выдаётся", r.ok === false && r.code === 400, r);
+  r = await call("user-access", { token: token3, id: directorId, access: "Сотрудник" });
+  check("24.6 свою роль изменить нельзя", r.ok === false && r.code === 403, r);
+  r = await call("person-status", { token: token3, userId: directorId, status: "suspended", reason: "проверка запрета" });
+  check("24.6 себя приостановить нельзя", r.ok === false && r.code === 403, r);
+  const chief = await newUser("Глеб Редактор", "chief@example.ru", "moskva");
+  await setUser(chief.id, { access: "Главный редактор" });
+  r = await call("user-update", { token: chief.token, id: chief.id, access: "Директор" });
+  check("24.6 правкой профиля себе роль не выдать", r.ok === false && r.code === 403, r);
+  r = await call("user-update", { token: chief.token, id: authorA.id, access: "Администрация" });
+  check("24.6 правкой профиля чужую роль не поднять", r.ok === false && r.code === 403, r);
+  r = await call("me", { token: chief.token });
+  check("24.6 роль после попыток прежняя", r.ok === true && r.user.access === "Главный редактор", r.user);
+  const adminB = await newUser("Борис Админов", "admin-b@example.ru", "moskva");
+  await setUser(adminB.id, { access: "Администрация" });
+  r = await call("grant-admin", { token: adminB.token, confirm: await makeConfirm(adminB.token), email: "chief@example.ru", access: "Директор" });
+  check("24.6 администрация не назначает директора", r.ok === false && r.code === 403, r);
+  r = await call("grant-admin", { token: adminB.token, confirm: await makeConfirm(adminB.token), email: "first@example.ru", access: "Сотрудник" });
+  check("24.6 администрация не снимает директора (grant-admin)", r.ok === false && r.code === 403, r);
+  r = await call("boss-grant", { token: adminB.token, email: "first@example.ru", access: "Сотрудник" });
+  check("24.6 администрация не снимает директора (boss-grant)", r.ok === false && r.code === 403, r);
+  r = await call("me", { token: token3 });
+  check("24.6 директор остался директором", r.ok === true && r.user.access === "Директор", r.user);
+  r = await call("user-access", { token: adminB.token, id: chief.id, access: "Редактор" });
+  check("24.6 администрация меняет роль младшего", r.ok === true && r.access === "Редактор", r);
+  await setUser(chief.id, { access: "Главный редактор" });
+  r = await call("claim-director", { token: chief.token, confirm: await makeConfirm(chief.token), force: true });
+  check("24.6 слово force не выдаёт роль директора", r.ok === false && r.code === 409, r);
+  r = await call("whoami", {});
+  check("24.6 постороннему не сообщается имя директора", r.ok === true && r.directorExists === true && r.directorName === "" && r.accounts === 0, r);
+  r = await call("diag", { token: token3 });
+  check("24.6 диагностика открыта директору по входу", r.ok === true && typeof r.accounts === "number", r);
+  r = await call("diag", { token: chief.token });
+  check("24.6 диагностика закрыта тем, у кого нет права", r.ok === false && r.code === 404, r);
+  r = await call("selftest", { pass: "Redakcia-Smena-2026" });
+  check("24.6 пароль из открытого репозитория ничего не открывает", r.ok === false && r.code === 404, r);
+
+  /* ======================================================================
+     25. ЗОНА ОТВЕТСТВЕННОСТИ: руководитель редакции видит и решает только
+     по своим людям, региональный администратор — по своему региону.
+     ====================================================================== */
+  const memberM = await newUser("Миша Участников", "member-m@example.ru", "moskva");
+  const outsiderO = await newUser("Оля Сторонняя", "outsider-o@example.ru", "tatarstan");
+  r = await giveConsent(memberM);
+  check("25.1 согласие участника принято", r.ok === true, r);
+  await giveConsent(outsiderO);
+
+  // 25.1 вступление в редакцию: заявка → решение руководителя
+  r = await call("editorial-apply", { token: token4, editorialId: editorialX, birthDate: "01.02.2010", why: "Хочу писать репортажи о школьных событиях каждую неделю." });
+  check("25.1 без согласия в редакцию не подать", r.ok === false && r.code === 403 && r.needConsent === true, r);
+  r = await call("editorial-apply", { token: memberM.token, editorialId: editorialX, birthDate: "01.02.2010", why: "Хочу писать репортажи о школьных событиях каждую неделю." });
+  check("25.1 заявка в редакцию подана", r.ok === true && r.application.status === "pending", r);
+  const joinId = r.application ? r.application.id : "";
+  await setUser(memberM.id, { access: "Редактор" });
+  r = await call("editorial-review", { token: memberM.token, id: joinId, decision: "approved" });
+  check("25.1 свою заявку в редакцию не одобрить", r.ok === false && r.code === 403, r);
+  r = await call("editorial-review", { token: authorA.token, id: joinId, decision: "approved" });
+  check("25.1 руководитель принял участника", r.ok === true, r);
+  r = await call("me", { token: memberM.token });
+  check("25.1 вступление в редакцию не снимает роль", r.ok === true && r.user.access === "Редактор" && r.user.editorialId === editorialX, r.user);
+  await setUser(memberM.id, { access: "Пользователь" });
+  r = await call("editorial-review", { token: authorA.token, id: joinId, decision: "rejected", note: "передумали" });
+  check("25.1 решение по заявке в редакцию принимается один раз", r.ok === false && r.code === 409, r);
+
+  // 25.2 очередь материалов по зоне
+  r = await call("submit", postPayload(memberM.token, "Материал участника редакции про выпускной"));
+  const postM = r.post ? r.post.id : "";
+  r = await call("submit", postPayload(outsiderO.token, "Материал стороннего автора из Казани", { region: "tatarstan" }));
+  const postO = r.post ? r.post.id : "";
+  r = await call("submit", postPayload(authorA.token, "Материал самого руководителя редакции"));
+  const postA2 = r.post ? r.post.id : "";
+  r = await call("posts-queue", { token: authorA.token });
+  const seen = (r.posts || []).map((p) => p.id);
+  check("25.2 руководитель видит материалы своей редакции", r.ok === true && r.scoped === true && seen.indexOf(postM) !== -1 && seen.indexOf(postA2) !== -1, seen);
+  check("25.2 чужих материалов в его очереди нет", r.ok === true && seen.indexOf(postO) === -1, seen);
+  r = await call("posts-queue", { token: token3 });
+  check("25.2 директор видит всю очередь", r.ok === true && r.scoped === false && r.posts.some((p) => p.id === postO) && r.posts.some((p) => p.id === postM), r);
+  r = await call("review", { token: authorA.token, confirm: await makeConfirm(authorA.token), id: postO, decision: "approve" });
+  check("25.2 чужой материал руководитель не решает", r.ok === false && r.code === 403, r);
+  r = await call("review", { token: authorA.token, confirm: await makeConfirm(authorA.token), id: postA2, decision: "approve" });
+  check("25.2 свой материал руководитель сам не публикует", r.ok === false && r.code === 403, r);
+  r = await call("review", { token: authorA.token, confirm: await makeConfirm(authorA.token), id: postM, decision: "approve" });
+  check("25.2 материал своего участника руководитель публикует", r.ok === true && r.post.status === "published", r);
+  r = await call("submit", postPayload(authorA.token, "Руководитель редакции пробует выйти без очереди", { direct: true }));
+  check("25.2 руководитель редакции без очереди не публикует", r.ok === true && r.direct === false && r.post.status === "pending", r);
+
+  // 25.3 люди по зоне
+  r = await call("users", { token: authorA.token });
+  const ids = (r.users || []).map((u) => u.id);
+  check("25.3 руководитель видит только людей своей редакции",
+    r.ok === true && r.scoped === true && ids.indexOf(memberM.id) !== -1 && ids.indexOf(authorA.id) !== -1 && ids.indexOf(outsiderO.id) === -1 && ids.length === 2, ids);
+  check("25.3 почту своих людей руководитель видит", r.ok === true && r.users.some((u) => u.id === memberM.id && u.email === "member-m@example.ru"), r.users);
+  r = await call("user-card", { token: authorA.token, id: outsiderO.id });
+  check("25.3 карточка чужого человека закрыта", r.ok === false && r.code === 403, r);
+  r = await call("user-card", { token: authorA.token, id: memberM.id });
+  check("25.3 карточка своего человека открыта", r.ok === true && r.canMessage === true && r.consent.status === "approved" && r.cardState === "none", r);
+  check("25.3 заметки редакции руководителю не видны", r.ok === true && Array.isArray(r.notes) && r.notes.length === 0 && r.user.caps === undefined, r.notes);
+  r = await call("user-message", { token: authorA.token, id: outsiderO.id, text: "Здравствуйте, напишите нам." });
+  check("25.3 чужому человеку руководитель не пишет", r.ok === false && r.code === 403, r);
+  r = await call("user-message", { token: authorA.token, id: memberM.id, text: "Сдайте, пожалуйста, текст до пятницы." });
+  check("25.3 своему человеку руководитель пишет", r.ok === true, r);
+  r = await call("support-queue", { token: authorA.token });
+  check("25.3 обращения в поддержку руководителю редакции закрыты", r.ok === false && r.code === 403, r);
+  r = await call("card-queue", { token: authorA.token });
+  check("25.3 без права на карты очередь карт закрыта", r.ok === false && r.code === 403, r);
+  r = await call("consent-queue", { token: authorA.token });
+  check("25.3 согласия руководителю редакции закрыты", r.ok === false && r.code === 403, r);
+  r = await call("editorial-queue", { token: authorA.token });
+  check("25.3 общая очередь заявок в редакции — только центральной редакции", r.ok === false && r.code === 403, r);
+
+  // 25.4 центральная роль без права на контакты видит почту скрытой
+  const moder = await newUser("Зоя Модератор", "moder-z@example.ru", "moskva");
+  await setUser(moder.id, { access: "Модератор" });
+  r = await call("users", { token: moder.token });
+  const rowO = (r.users || []).find((u) => u.id === outsiderO.id);
+  check("25.4 модератор видит всех, но почта скрыта", r.ok === true && r.scoped === false && !!rowO && rowO.email === "o***@example.ru", rowO);
+  r = await call("user-card", { token: moder.token, id: outsiderO.id });
+  check("25.4 в карточке почта тоже скрыта", r.ok === true && r.user.email === "o***@example.ru" && r.contacts === false && r.canMessage === false, r.user);
+  r = await call("consent-file", { token: moder.token, id: consentA.id, page: 1 });
+  check("25.4 скан согласия модератору не открыть", r.ok === false && r.code === 403, r);
+  r = await call("users", { token: token3 });
+  check("25.4 директор видит почту полностью", r.ok === true && r.users.some((u) => u.email === "outsider-o@example.ru"), r);
+
+  // 25.5 региональный администратор: карты только своего региона
+  const regional = await newUser("Рената Региональная", "regional-r@example.ru", "tatarstan");
+  await setUser(regional.id, { access: "Редакционный администратор региона" });
+  r = await call("users", { token: regional.token });
+  const regionIds = (r.users || []).map((u) => u.id);
+  check("25.5 региональный администратор видит людей своего региона",
+    r.ok === true && regionIds.indexOf(outsiderO.id) !== -1 && regionIds.indexOf(memberM.id) === -1, regionIds);
+  r = await call("card-grant", { token: regional.token, id: memberM.id });
+  check("25.5 карту человеку из другого региона он не выдаёт", r.ok === false && r.code === 403, r);
+  r = await call("card-grant", { token: regional.token, id: outsiderO.id });
+  check("25.5 карту человеку своего региона выдаёт", r.ok === true && /^СК-/.test(r.number), r);
+  const numberO = r.number || "";
+  r = await call("card-queue", { token: regional.token });
+  check("25.5 в его списке карт только свой регион",
+    r.ok === true && r.requests.length >= 1 && r.requests.every((c) => c.userId === outsiderO.id), r.requests && r.requests.map((c) => c.name));
+  r = await call("posts-queue", { token: regional.token });
+  check("25.5 материалы про свой регион он видит", r.ok === true && r.posts.some((p) => p.id === postO) && !r.posts.some((p) => p.id === postA2), r.posts && r.posts.map((p) => p.title));
+  r = await call("card-revoke", { token: regional.token, confirm: await makeConfirm(regional.token), id: "x", note: "проверка права" });
+  check("25.5 отзыв карты региональному администратору закрыт", r.ok === false && r.code === 403, r);
+
+  // 25.6 сводка панели — по правам
+  r = await call("staff-summary", { token: token4 });
+  check("25.6 сводка закрыта обычному участнику", r.ok === false && r.code === 403, r);
+  r = await call("staff-summary", { token: authorA.token });
+  check("25.6 руководитель редакции: только свои разделы",
+    r.ok === true && r.scoped === true && typeof r.summary.posts === "number" && r.summary.people === 2
+    && r.summary.consents === undefined && r.summary.cards === undefined && r.summary.support === undefined
+    && r.summary.editorialOpen === undefined && r.summary.site === undefined, r);
+  check("25.6 счётчик материалов считает только свою редакцию", r.ok === true && r.summary.posts === 2, r.summary);
+  r = await call("staff-summary", { token: token3 });
+  check("25.6 директор: все разделы",
+    r.ok === true && r.scoped === false && ["posts", "consents", "cards", "editorialOpen", "editorialApps", "support", "people", "site", "hiring", "recovery", "portfolio"]
+      .every((k) => typeof r.summary[k] === "number"), r.summary);
+  r = await call("staff-summary", { token: moder.token });
+  check("25.6 модератор: материалы и поддержка, без согласий и карт",
+    r.ok === true && typeof r.summary.posts === "number" && typeof r.summary.support === "number" && r.summary.consents === undefined && r.summary.cards === undefined, r.summary);
+
+  // 25.7 лимит отправок — на аккаунт, а не на адрес
+  let lastOk = true;
+  for (let i = 0; i < 18; i++) {
+    r = await call("submit", postPayload(outsiderO.token, "Серия материалов для проверки лимита № " + (i + 1)));
+    if (!r.ok) { lastOk = false; break; }
+  }
+  check("25.7 двадцать отправок в час с аккаунта проходят", lastOk === true, r);
+  r = await call("submit", postPayload(outsiderO.token, "Двадцать первый материал за час"));
+  r = await call("submit", postPayload(outsiderO.token, "Двадцать второй материал за час"));
+  check("25.7 сверх лимита — отказ", r.ok === false && r.code === 429, r);
+  r = await call("submit", postPayload(memberM.token, "Материал другого автора с того же адреса"));
+  check("25.7 другой автор с того же адреса не заперт", r.ok === true, r);
+
+  // 25.8 удаление аккаунта стирает сканы и гасит карту
+  let before = [];
+  try { before = await php.readdir("/smena-data/consents"); } catch (e) {}
+  r = await call("account-delete", { token: outsiderO.token, pass: "parol1234", confirm: "УДАЛИТЬ" });
+  check("25.8 аккаунт удалён", r.ok === true, r);
+  let after = [];
+  try { after = await php.readdir("/smena-data/consents"); } catch (e) {}
+  const mineBefore = before.filter((f) => f.indexOf(outsiderO.id) !== -1).length;
+  const mineAfter = after.filter((f) => f.indexOf(outsiderO.id) !== -1).length;
+  check("25.8 сканы согласия стёрты вместе с аккаунтом", mineBefore === 2 && mineAfter === 0, { mineBefore, mineAfter });
+  r = await call("card-verify", { number: numberO });
+  check("25.8 карта удалённого человека недействительна", r.ok === true && r.valid === false && r.name === "", r);
+  r = await call("me", { token: token3 });
+  check("25.8 сессия директора после чужого удаления жива", r.ok === true, r);
+  r = await call("account-delete", { token: token3, pass: "parol4321", confirm: "УДАЛИТЬ" });
+  check("25.8 единственный руководитель проекта не удаляется", r.ok === false && r.code === 409, r);
+
+  // 25.9 диагностика: перебор пароля ограничен
+  for (let i = 0; i < 10; i++) await call("diag", { pass: "wrong-pass-" + i });
+  r = await call("diag", { pass: editorPass });
+  check("25.9 после десяти неверных паролей диагностика закрыта и верным", r.ok === false && r.code === 404, r);
+  r = await call("diag", { token: token3 });
+  check("25.9 вход сотрудника с правом работает и при блокировке пароля", r.ok === true, r);
+
 
   console.log("\n=== ИТОГ ===");
   let bad = 0;
