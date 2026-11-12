@@ -742,13 +742,14 @@
       '<li><a href="/about">О проекте</a></li>' +
       '<li><a href="/docs">Документы и пресс-кит</a></li>' +
       '<li><a href="/partners">Партнёрам</a></li>' +
+      '<li><a href="/verify">Проверка пресс-карты</a></li>' +
       '<li><a href="/about#roadmap">План развития</a></li>' +
       "</ul></div>" +
       '<div class="footer-col"><h3>' + (user ? "Аккаунт" : "Участие") + "</h3><ul>" +
       (user
         ? '<li><a href="/profile">Личный кабинет</a></li>' +
           '<li><a href="/write">Новый материал</a></li>' +
-          '<li><a href="/admin">Панель проекта</a></li>'
+          (Store.isStaff && Store.isStaff() ? '<li><a href="/admin">Панель проекта</a></li>' : "")
         : '<li><a href="/join">Регистрация</a></li>' +
           '<li><a href="/join#login">Вход</a></li>' +
           '<li><a href="/docs">Памятка автору</a></li>') +
@@ -760,7 +761,7 @@
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Персональные данные</a>' +
       ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";

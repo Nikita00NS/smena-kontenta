@@ -494,9 +494,9 @@
           : "") +
         '<div class="cab-block">' + head("Справочно", "Документы проекта") +
         '<div class="chips">' +
-        '<a class="chip" href="/assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Политика конфиденциальности</a>' +
+        '<a class="chip" href="/assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Политика обработки данных</a>' +
         '<a class="chip" href="/assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Пользовательское соглашение</a>' +
-        '<a class="chip" href="/assets/docs/polozhenie-o-redakcii.pdf" target="_blank" rel="noopener">Положение о редакции</a>' +
+        '<a class="chip" href="/assets/docs/polozhenie-o-redakcii.pdf" target="_blank" rel="noopener">Кодекс редакции</a>' +
         '<a class="chip" href="/assets/docs/pamyatka-avtoru.pdf" target="_blank" rel="noopener">Памятка автору</a>' +
         '<a class="chip" href="/docs">Все документы</a></div>' +
         '<p class="form__note">Вопросы по персональным данным и отзыв согласия: <a class="link-accent" href="mailto:' +
@@ -976,7 +976,7 @@
 
           '<h3 class="form__full eo-form__h">Подтверждения</h3>' +
           check("truth", conf.truth, "Сведения в анкете достоверны.") +
-          check("rules", conf.rules, 'Я прочитал(а) <a class="link-accent" href="/assets/docs/polozhenie-o-redakcii.pdf" target="_blank" rel="noopener">Положение о редакции</a> и буду ему следовать.') +
+          check("rules", conf.rules, 'Я прочитал(а) <a class="link-accent" href="/assets/docs/polozhenie-o-redakcii.pdf" target="_blank" rel="noopener">Кодекс редакции</a> и раздел о региональных редакциях в <a class="link-accent" href="/assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">пользовательском соглашении</a> и буду им следовать.') +
           check("consents", conf.consents, "Каждый участник команды сам зарегистрируется на сайте и загрузит своё согласие на обработку данных.") +
           check("reports", conf.reports, "Редакция будет сдавать короткий отчёт о работе раз в месяц.") +
 
