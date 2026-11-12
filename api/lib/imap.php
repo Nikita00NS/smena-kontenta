@@ -120,8 +120,7 @@ function mail_decode_header($value) {
     $value = preg_replace_callback('/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/', function ($m) {
         $charset = $m[1];
         $data = $m[2] === 'B' || $m[2] === 'b' ? base64_decode($m[3]) : quoted_printable_decode(str_replace('_', ' ', $m[3]));
-        $converted = @mb_convert_encoding($data, 'UTF-8', $charset);
-        return $converted === false ? $data : $converted;
+        return mail_to_utf8($data, $charset);
     }, $value);
     return $value;
 }
@@ -129,8 +128,22 @@ function mail_decode_header($value) {
 function mail_to_utf8($text, $charset) {
     $charset = strtoupper(trim((string) $charset));
     if ($charset === '' || $charset === 'UTF-8') return (string) $text;
-    $out = @mb_convert_encoding((string) $text, 'UTF-8', $charset);
-    return $out === false ? (string) $text : $out;
+    /* Письма приходят в любых кодировках, в том числе с названием, которого
+       PHP не знает: тогда mbstring бросает исключение, а без mbstring функции
+       нет вовсе. Чтение почты от этого падать не должно. */
+    $text = (string) $text;
+    if (function_exists('mb_convert_encoding')) {
+        try {
+            $out = @mb_convert_encoding($text, 'UTF-8', $charset);
+            if (is_string($out) && $out !== '') return $out;
+        } catch (\Throwable $e) {
+        }
+    }
+    if (function_exists('iconv')) {
+        $out = @iconv($charset, 'UTF-8//IGNORE', $text);
+        if (is_string($out) && $out !== '') return $out;
+    }
+    return $text;
 }
 
 /* Разбор заголовков блока: массив «ключ в нижнем регистре» → значение. */

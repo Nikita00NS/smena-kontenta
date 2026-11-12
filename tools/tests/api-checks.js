@@ -364,7 +364,7 @@ const results = [];
   check("журнал писем ведётся", r.ok === true && Array.isArray(r.entries), r && r.entries && r.entries.length);
 
   // 18. ПРИЁМ В КОМАНДУ: заявка, тест, чек-лист, согласование
-  r = await call("hiring-apply", { token: token2b, position: "Автор текстов", motivation: "Хочу писать про городские события." });
+  r = await call("hiring-apply", { token: token2b, position: "Автор текстов", motivation: "Хочу писать про городские события и школьные новости." });
   check("заявка в команду подаётся", r.ok === true && r.application.stage === "test", r);
   r = await call("hiring-apply", { token: token2b, position: "Автор текстов", motivation: "Хочу писать про городские события." });
   check("вторая заявка не создаётся", r.ok === false && r.code === 409, r);
@@ -991,6 +991,117 @@ const results = [];
   check("25.9 после десяти неверных паролей диагностика закрыта и верным", r.ok === false && r.code === 404, r);
   r = await call("diag", { token: token3 });
   check("25.9 вход сотрудника с правом работает и при блокировке пароля", r.ok === true, r);
+
+  /* ======================================================================
+     26. РЕДАКЦИЯ ИЗНУТРИ: штат, выход, исключение; имя после согласия;
+     преподаватель — роль сбоку от лестницы.
+     ====================================================================== */
+  const kirill = await newUser("Кирилл Корреспондент", "kirill-k@example.ru", "moskva");
+  const lena = await newUser("Лена Литредактор", "lena-l@example.ru", "moskva");
+  await giveConsent(kirill);
+  await giveConsent(lena);
+  async function joinEditorial(user) {
+    const a = await call("editorial-apply", { token: user.token, editorialId: editorialX, birthDate: "03.04.2009", why: "Хочу работать в редакции и писать о школьных событиях каждую неделю." });
+    return call("editorial-review", { token: authorA.token, id: a.application ? a.application.id : "", decision: "approved" });
+  }
+  r = await joinEditorial(kirill);
+  check("26.1 второй участник принят в редакцию", r.ok === true, r);
+  r = await joinEditorial(lena);
+  check("26.1 третий участник принят в редакцию", r.ok === true, r);
+
+  // 26.1 что видит о редакции руководитель и что — участник
+  r = await call("editorial-mine", { token: authorA.token });
+  const rosterHead = (r.roster || []).map((m) => m.id);
+  check("26.1 руководитель видит штат своей редакции",
+    r.ok === true && r.editorial && r.editorial.id === editorialX && r.member === null && rosterHead.indexOf(authorA.id) !== -1 && rosterHead.indexOf(kirill.id) !== -1 && rosterHead.indexOf(lena.id) !== -1, r.roster);
+  check("26.1 в штате руководитель помечен и стоит первым", r.ok === true && r.roster[0].id === authorA.id && r.roster[0].head === true, r.roster && r.roster[0]);
+  check("26.1 руководитель видит почту своих людей", r.ok === true && r.roster.some((m) => m.id === kirill.id && m.email === "kirill-k@example.ru"), r.roster);
+  r = await call("editorial-mine", { token: kirill.token });
+  check("26.1 участник видит свою редакцию", r.ok === true && r.editorial === null && r.member && r.member.id === editorialX && !!r.member.name, r);
+  check("26.1 список людей редакции участнику не отдаётся", r.ok === true && Array.isArray(r.roster) && r.roster.length === 0, r.roster);
+  check("26.1 входящие заявки участнику не показываются", r.ok === true && Array.isArray(r.incoming) && r.incoming.length === 0, r.incoming);
+  check("26.1 в своей заявке стоит название редакции", r.ok === true && r.applications.some((a) => a.editorialId === editorialX && a.editorialName), r.applications);
+  r = await call("editorial-mine", { token: token4 });
+  check("26.1 человек вне редакций: ни редакции, ни штата", r.ok === true && r.member === null && r.editorial === null && r.roster.length === 0, r);
+
+  // 26.2 выход из редакции
+  r = await call("editorial-leave", { token: authorA.token });
+  check("26.2 руководитель из своей редакции не выходит", r.ok === false && r.code === 409, r);
+  r = await call("editorial-leave", { token: token4 });
+  check("26.2 выйти можно только из редакции, где состоишь", r.ok === false && r.code === 409, r);
+  await setUser(kirill.id, { access: "Редактор" });
+  r = await call("posts-queue", { token: kirill.token });
+  check("26.2 редактор редакции видит очередь своей редакции", r.ok === true && r.scoped === true, r);
+  r = await call("editorial-leave", { token: kirill.token });
+  check("26.2 участник вышел из редакции", r.ok === true && r.roleReset === true && r.roleWas === "Редактор", r);
+  r = await call("me", { token: kirill.token });
+  check("26.2 после выхода редакции нет, а роль в ней снята", r.ok === true && !r.user.editorialId && r.user.access === "Пользователь", r.user);
+  r = await call("posts-queue", { token: kirill.token });
+  check("26.2 очередь бывшей редакции закрыта", r.ok === false && r.code === 403, r);
+  r = await call("editorial-mine", { token: kirill.token });
+  check("26.2 в заявках стоит отметка «вышел»", r.ok === true && r.member === null && r.applications.some((a) => a.status === "left"), r.applications);
+  r = await call("editorial-mine", { token: authorA.token });
+  check("26.2 в штате его больше нет", r.ok === true && !r.roster.some((m) => m.id === kirill.id), r.roster);
+  r = await call("messages-mine", { token: authorA.token });
+  check("26.2 руководитель получил сообщение о выходе", r.ok === true && r.messages.some((m) => /Кирилл Корреспондент вышел из редакции/.test(m.text)), r.messages);
+  r = await joinEditorial(kirill);
+  check("26.2 после выхода можно вступить снова", r.ok === true, r);
+
+  // 26.3 исключение из редакции
+  r = await call("editorial-exclude", { token: kirill.token, userId: lena.id, note: "не сдаёт материалы" });
+  check("26.3 участник участника не исключает", r.ok === false && r.code === 403, r);
+  r = await call("editorial-exclude", { token: authorA.token, userId: lena.id, note: "нет" });
+  check("26.3 без причины не исключить", r.ok === false && r.code === 400, r);
+  r = await call("editorial-exclude", { token: authorA.token, userId: authorA.id, note: "проверка защиты" });
+  check("26.3 себя не исключить", r.ok === false && r.code === 403, r);
+  r = await call("editorial-exclude", { token: token3, userId: authorA.id, note: "проверка защиты" });
+  check("26.3 руководителя редакции не исключить даже директору", r.ok === false && r.code === 403, r);
+  r = await call("editorial-exclude", { token: authorA.token, userId: token4 ? "нет-такого" : "", note: "проверка защиты" });
+  check("26.3 несуществующий человек — отказ", r.ok === false && r.code === 404, r);
+  r = await call("editorial-exclude", { token: moder.token, userId: lena.id, note: "проверка права" });
+  check("26.3 модератор из чужой редакции не исключает", r.ok === false && r.code === 403, r);
+  r = await call("editorial-exclude", { token: authorA.token, userId: lena.id, note: "Три месяца не сдаёт материалы." });
+  check("26.3 руководитель исключил участника", r.ok === true, r);
+  r = await call("me", { token: lena.token });
+  check("26.3 исключённый больше не в редакции", r.ok === true && !r.user.editorialId, r.user);
+  r = await call("messages-mine", { token: lena.token });
+  check("26.3 причина пришла человеку сообщением", r.ok === true && r.messages.some((m) => /Причина: Три месяца не сдаёт материалы\. Писать/.test(m.text)), r.messages);
+  r = await call("editorial-mine", { token: lena.token });
+  check("26.3 в заявках стоит отметка «исключён»", r.ok === true && r.applications.some((a) => a.status === "excluded"), r.applications);
+  r = await call("editorial-exclude", { token: token3, userId: kirill.id, note: "Решение центральной редакции." });
+  check("26.3 директор исключает участника любой редакции", r.ok === true, r);
+
+  // 26.4 имя после принятого согласия закреплено
+  r = await call("profile-save", { token: lena.token, name: "Елена Другая", role: "Фотограф", region: "moskva" });
+  check("26.4 имя после принятого согласия не изменить", r.ok === false && r.code === 409, r);
+  r = await call("profile-save", { token: lena.token, name: "Лена Литредактор", role: "Фотограф", region: "moskva" });
+  check("26.4 остальные поля профиля сохраняются", r.ok === true && r.user.role === "Фотограф" && r.user.name === "Лена Литредактор", r);
+  r = await call("profile-save", { token: token4, name: "Имя До Согласия", role: "Автор текстов", region: "moskva" });
+  check("26.4 без принятого согласия имя меняется свободно", r.ok === true && r.user.name === "Имя До Согласия", r);
+
+  // 26.5 преподаватель: только школа
+  const teacherT = await newUser("Тамара Преподаватель", "teacher-t@example.ru", "moskva");
+  await setUser(teacherT.id, { access: "Преподаватель" });
+  r = await call("whoami", { token: teacherT.token });
+  const capsT = (r.user && r.user.caps) || [];
+  check("26.5 у преподавателя только права школы",
+    r.ok === true && capsT.indexOf("school.teach") !== -1 && capsT.indexOf("school.review") !== -1 && capsT.every((c) => c.indexOf("school.") === 0), capsT);
+  r = await call("posts-queue", { token: teacherT.token });
+  check("26.5 очередь материалов преподавателю закрыта", r.ok === false && r.code === 403, r);
+  r = await call("users", { token: teacherT.token });
+  check("26.5 список людей преподавателю закрыт", r.ok === false && r.code === 403, r);
+  r = await call("support-queue", { token: teacherT.token });
+  check("26.5 обращения в поддержку преподавателю закрыты", r.ok === false && r.code === 403, r);
+  r = await call("consent-queue", { token: teacherT.token });
+  check("26.5 согласия преподавателю закрыты", r.ok === false && r.code === 403, r);
+  r = await call("staff-summary", { token: teacherT.token });
+  check("26.5 панель преподавателю открыта, но без чужих разделов",
+    r.ok === true && r.summary.posts === undefined && r.summary.people === undefined && r.summary.support === undefined && r.summary.consents === undefined, r);
+
+  // 26.6 блок авторов на главной работает без расширения mbstring
+  r = await call("top-authors", {});
+  check("26.6 список авторов отдаётся", r.ok === true && Array.isArray(r.authors), r);
+  check("26.6 у авторов есть инициалы", r.ok === true && r.authors.every((a) => typeof a.initials === "string" && a.initials.length >= 1), r.authors && r.authors.slice(0, 3));
 
 
   console.log("\n=== ИТОГ ===");

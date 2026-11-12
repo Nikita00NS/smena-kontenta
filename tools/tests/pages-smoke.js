@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
-const ROOT = "/home/user/smena-kontenta";
+const ROOT = path.resolve(__dirname, "..", "..");
 /* jsdom не умеет часть браузерных API (навигация, canvas, matchMedia).
    Такие сообщения — артефакт стенда, а не ошибка страницы: их отсекаем,
    иначе на «дым» уходят настоящие ошибки. */
@@ -13,15 +13,34 @@ const ARTIFACT = /Not implemented/i;
 /* Страницы со своим каркасом: у них нет шапки и подвала сайта — это норма. */
 const standalone = ["poisk/index.html"];
 
-const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html", "poisk/index.html", "docs/index.html", "media-school/index.html", "about/index.html", "partners/index.html", "founders/index.html"];
+/* Все страницы сайта: папки с index.html в корне. Новая страница попадает
+   в прогон сама — список руками не ведём. */
+const SKIP_DIRS = ["api", "assets", "tools", "node_modules"];
+const pages = ["index.html", "404.html"].concat(
+  fs.readdirSync(ROOT, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && d.name[0] !== "." && SKIP_DIRS.indexOf(d.name) === -1)
+    .map((d) => d.name + "/index.html")
+    .filter((rel) => fs.existsSync(path.join(ROOT, rel)))
+    .sort()
+);
+
+/* подключённые, но отсутствующие файлы: страница без скрипта «работает»
+   в стенде и пустая на сайте — это ошибка, а не мелочь */
+let missing = [];
 
 function inline(html) {
+  missing = [];
+  html.replace(/<link[^>]+rel="stylesheet"[^>]*href="([^"]+)"[^>]*>/g, (m, href) => {
+    const clean = href.split("?")[0];
+    if (clean[0] === "/" && !fs.existsSync(path.join(ROOT, clean))) missing.push(clean);
+    return m;
+  });
   return html
     .replace(/<link[^>]+rel="stylesheet"[^>]*>/g, "")
     .replace(/<script src="([^"]+)"[^>]*><\/script>/g, (m, src) => {
       const clean = src.split("?")[0];
       const file = path.join(ROOT, clean);
-      if (!fs.existsSync(file)) return "";
+      if (!fs.existsSync(file)) { missing.push(clean); return ""; }
       return "<script>\n" + fs.readFileSync(file, "utf8") + "\n</script>";
     });
 }
@@ -36,8 +55,10 @@ function inline(html) {
     const push = (msg) => { if (!ARTIFACT.test(msg)) errors.push(msg); };
     vc.on("jsdomError", (e) => push("jsdomError: " + (e.detail || e.message || e)));
     vc.on("error", (...a) => push("console.error: " + a.map(String).join(" ")));
-    const dom = new JSDOM(inline(fs.readFileSync(file, "utf8")), {
-      url: "https://smenakontenta.ru/" + rel.replace(/index\.html$/, ""),
+    const html = inline(fs.readFileSync(file, "utf8"));
+    missing.forEach((f) => errors.push("подключён файл, которого нет: " + f));
+    const dom = new JSDOM(html, {
+      url: "https://smenakontenta.ru/" + rel.replace(/\/?index\.html$/, "").replace(/\.html$/, ""),
       runScripts: "dangerously",
       pretendToBeVisual: true,
       virtualConsole: vc,
@@ -62,5 +83,6 @@ function inline(html) {
     errors.slice(0, 4).forEach((e) => console.log("    ", String(e).slice(0, 400)));
     dom.window.close();
   }
-  console.log(bad ? "страниц с ошибками: " + bad : "ошибок нет");
+  console.log(bad ? "страниц с ошибками: " + bad : "ошибок нет, страниц: " + pages.length);
+  process.exit(bad ? 1 : 0);
 })();

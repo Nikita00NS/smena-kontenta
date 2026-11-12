@@ -1,8 +1,10 @@
 User-agent: *
 Allow: /
 
-Disallow: /admin.html
-Disallow: /profile.html
-Disallow: /write.html
+Disallow: /admin
+Disallow: /profile
+Disallow: /write
+Disallow: /card-doc
+Disallow: /editorial-doc
 
 Sitemap: https://smenakontenta.ru/sitemap.xml

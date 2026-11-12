@@ -41,6 +41,9 @@ AddDefaultCharset UTF-8
   RewriteRule ^article/?$ /article/index.html [L]
   RewriteRule ^support/?$ /support/index.html [L]
   RewriteRule ^founders/?$ /founders/index.html [L]
+  RewriteRule ^verify/?$ /verify/index.html [L]
+  RewriteRule ^card-doc/?$ /card-doc/index.html [L]
+  RewriteRule ^editorial-doc/?$ /editorial-doc/index.html [L]
 
 </IfModule>
 

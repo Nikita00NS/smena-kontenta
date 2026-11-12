@@ -163,7 +163,18 @@ function text($value, $max) {
     if (function_exists('mb_substr')) {
         return mb_substr($s, 0, $max, 'UTF-8');
     }
-    return substr($s, 0, $max);
+    /* Без mbstring режем по буквам, а не по байтам: половина русской буквы
+       портит JSON, и файл данных перестаёт записываться. */
+    $max = (int) $max;
+    if (strlen($s) <= $max) return $s;
+    $out = '';
+    $offset = 0;
+    for ($left = $max; $left > 0; $left -= 2000) {
+        if (!preg_match('/\G.{1,' . min($left, 2000) . '}/us', $s, $m, 0, $offset)) break;
+        $out .= $m[0];
+        $offset += strlen($m[0]);
+    }
+    return $out;
 }
 
 /* Верхний регистр без обязательного mbstring: на части сборок PHP его нет,
@@ -182,7 +193,8 @@ function supper($value) {
 function slen($value) {
     $s = (string) $value;
     if (function_exists('mb_strlen')) return mb_strlen($s, 'UTF-8');
-    return strlen($s);
+    /* длина в буквах: байты без «хвостов» многобайтных символов UTF-8 */
+    return strlen($s) - (int) preg_match_all('/[\x80-\xBF]/', $s);
 }
 
 /* Адрес клиента для лимитов. X-Forwarded-For подставляется кем угодно,
@@ -1593,7 +1605,7 @@ if ($act === 'editorial-exclude') {
     audit_log($DATA_DIR, (string) $user['email'], 'editorial-exclude',
         'исключён из редакции «' . $ed['name'] . '»: ' . $target['name'] . ' — ' . $note);
     notify_user($DATA_DIR, $target['id'],
-        'Вы исключены из редакции «' . $ed['name'] . '». Причина: ' . $note
+        'Вы исключены из редакции «' . $ed['name'] . '». Причина: ' . rtrim($note, " .!?\t\n") . '.'
         . ($res['roleWas'] !== '' ? ' Роль «' . $res['roleWas'] . '», выданная для работы в редакции, снята.' : '')
         . ' Писать материалы можно и вне редакции.',
         array('kind' => 'editorial', 'ref' => 'edout:' . $target['id'] . ':' . time()));

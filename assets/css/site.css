@@ -7984,3 +7984,85 @@ body.is-maint { overflow: hidden; }
   opacity: 0.7;
 }
 .mail-more[open] summary { opacity: 1; }
+
+/* Общие мелочи для кабинета, редактора и страниц документов =================
+   Плашка «действие закрыто — вот почему и куда идти», кнопка-ссылка, галочка. */
+.gate {
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  background: var(--paper-2);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.gate b {
+  font-weight: 700;
+}
+
+.gate--page {
+  max-width: 780px;
+  padding: clamp(22px, 4vw, 44px);
+  margin: 0;
+}
+
+.gate--page h1 {
+  font-size: clamp(1.5rem, 3.6vw, 2.6rem);
+  line-height: 1.06;
+  margin: 10px 0 14px;
+}
+
+.link-btn {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  padding: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--accent);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.link-btn:hover {
+  color: var(--ink);
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.94rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+/* кнопка видна и нажимается, но ведёт к тому, чего не хватает */
+.btn--waiting {
+  opacity: 0.55;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+a.chip {
+  display: inline-flex;
+  text-decoration: none;
+}
+
+.status--bad {
+  background: rgba(255, 74, 23, 0.18);
+  color: var(--accent);
+}
