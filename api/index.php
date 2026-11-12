@@ -1926,7 +1926,7 @@ if ($act === 'reg') {
         'name' => $name,
         'code' => $confirmCode,
         'minutes' => 30,
-        'link' => 'https://smenakontenta.ru/cabinet/',
+        'link' => 'https://smenakontenta.ru/profile',
     ), array('dedupe' => 'confirm:' . $id));
 
     /* Код из письма — единственный способ включить аккаунт. Если письмо не
@@ -3547,7 +3547,7 @@ if ($act === 'confirm-send') {
         'name' => $user['name'],
         'code' => $code,
         'minutes' => 30,
-        'link' => 'https://smenakontenta.ru/cabinet/',
+        'link' => 'https://smenakontenta.ru/profile',
     ));
     if (!$sent) fail('Сервер почты не принял письмо. Проверьте настройки в админке.', 502);
     respond(array('ok' => true, 'mailSent' => true, 'email' => $email));
@@ -3581,7 +3581,7 @@ if ($act === 'confirm-check') {
     if (!empty($confirmed)) {
         mail_notify($DATA_DIR, 'welcome', $confirmed['email'], array(
             'name' => $confirmed['name'],
-            'link' => 'https://smenakontenta.ru/cabinet/',
+            'link' => 'https://smenakontenta.ru/profile',
         ), array('dedupe' => 'welcome:' . $confirmed['id']));
         audit_log($DATA_DIR, $confirmed['email'], 'почта подтверждена', 'аккаунт ' . $confirmed['id']);
     }

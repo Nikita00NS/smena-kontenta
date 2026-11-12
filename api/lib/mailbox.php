@@ -651,7 +651,7 @@ function mailbox_routes($act, $dir) {
         if (!$tpl) fail('Такого шаблона нет.', 404);
         $vars = array(
             'name' => 'Анна', 'code' => '482913', 'minutes' => '30',
-            'link' => MAIL_SITE . '/cabinet/', 'post' => 'Как прошёл фестиваль уличной фотографии',
+            'link' => MAIL_SITE . '/profile', 'post' => 'Как прошёл фестиваль уличной фотографии',
             'points' => '10', 'reason' => 'Нужно уточнить источник цитаты.',
             'position' => 'Автор текстов', 'message' => 'Здравствуйте! Подскажите, как подать материал?',
             'amount' => '10', 'status' => 'активен', 'sender' => 'Редакция',
@@ -673,7 +673,7 @@ function mailbox_routes($act, $dir) {
         if (!filter_var($to, FILTER_VALIDATE_EMAIL)) fail('Укажите корректный адрес для теста.');
         $ok = mail_notify($dir, $key, $to, array(
             'name' => $me['name'], 'code' => '482913', 'minutes' => '30',
-            'link' => MAIL_SITE . '/cabinet/', 'post' => 'Тестовый материал',
+            'link' => MAIL_SITE . '/profile', 'post' => 'Тестовый материал',
             'points' => '10', 'position' => 'Автор текстов', 'amount' => '10',
             'status' => 'активен', 'sender' => 'Редакция',
         ), array('dedupe' => '', 'by' => $me['email']));

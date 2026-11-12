@@ -204,7 +204,7 @@ function hiring_routes($act, $dir) {
         if (!write_json(hiring_file($dir), $list)) fail('Заявка не сохранилась.', 500);
         audit_log($dir, $me['email'], 'заявка в команду', $position);
         mail_notify($dir, 'staff_invite', $me['email'], array(
-            'name' => $me['name'], 'position' => $position, 'link' => 'https://smenakontenta.ru/cabinet/',
+            'name' => $me['name'], 'position' => $position, 'link' => 'https://smenakontenta.ru/profile',
         ), array('dedupe' => 'hiring:' . $app['id']));
         respond(array('ok' => true, 'application' => hiring_public($app)));
     }
@@ -332,7 +332,7 @@ function hiring_routes($act, $dir) {
             $list[$index]['note'] = $note;
             $list[$index]['history'][] = array('at' => date('c'), 'by' => $me['email'], 'what' => 'Принят в команду: ' . $app['position']);
             mail_notify($dir, 'staff_hired', $target['email'], array(
-                'name' => $target['name'], 'position' => $app['position'], 'link' => 'https://smenakontenta.ru/cabinet/',
+                'name' => $target['name'], 'position' => $app['position'], 'link' => 'https://smenakontenta.ru/profile',
             ), array('dedupe' => 'hired:' . $app['id']));
             audit_log($dir, $me['email'], 'приём в команду', $target['email'] . ' → ' . $app['position']);
         } else {
@@ -347,7 +347,7 @@ function hiring_routes($act, $dir) {
                 if ($u['id'] !== $app['userId']) continue;
                 mail_notify($dir, 'staff_hired', $u['email'], array(
                     'name' => $u['name'], 'position' => $app['position'], 'reason' => $note,
-                    'link' => 'https://smenakontenta.ru/cabinet/',
+                    'link' => 'https://smenakontenta.ru/profile',
                 ), array('dedupe' => 'hired-no:' . $app['id']));
                 break;
             }
