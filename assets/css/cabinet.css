@@ -1636,7 +1636,416 @@ div.adm-row__kv {
   overflow-wrap: anywhere;
 }
 
-/* 6. Медиашкола — блок добавляется вместе с разделом ========================= */
+/* 6. Медиашкола ============================================================= */
+.sch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.sch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  min-width: 0;
+}
+
+.sch-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sch-card h3 {
+  font-size: 1.2rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.sch-card p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.93rem;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.sch-card p.sch-card__meta {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.sch-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.sch-bar {
+  height: 6px;
+  background: var(--paper-3);
+  overflow: hidden;
+}
+
+.sch-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s var(--ease);
+}
+
+/* страница курса */
+.sch-top {
+  border-bottom: 1px solid var(--line);
+  padding: clamp(18px, 3vw, 36px) 0 clamp(16px, 2.4vw, 28px);
+}
+
+.sch-top__row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px 40px;
+  flex-wrap: wrap;
+  margin: 14px 0 16px;
+}
+
+.sch-top__row > div:first-child {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.sch-top h1 {
+  font-size: clamp(1.6rem, 3.6vw, 2.8rem);
+  line-height: 1.06;
+  margin: 8px 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.sch-top p {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--ink-soft);
+}
+
+.sch-top .gate,
+.sch-top .cab-flash,
+.sch-top .sch-done {
+  margin: 12px 0 0;
+}
+
+.sch-top__progress {
+  flex: 0 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sch-top__progress b {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.sch-top__progress span {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.sch-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 44px);
+  align-items: start;
+}
+
+.sch-nav {
+  position: sticky;
+  top: calc(var(--header-h) + 16px);
+  max-height: calc(100vh - var(--header-h) - 32px);
+  overflow-y: auto;
+}
+
+.sch-nav ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.sch-nav__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.sch-nav__item:hover {
+  background: var(--paper-2);
+}
+
+.sch-nav__item.is-current {
+  border-left-color: var(--accent);
+  background: var(--paper-2);
+}
+
+.sch-nav__item.is-locked {
+  color: var(--muted);
+}
+
+.sch-nav__n {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.sch-nav__item.is-done .sch-nav__n {
+  background: var(--good);
+  border-color: var(--good);
+  color: #fff;
+}
+
+.sch-nav__item.is-sent .sch-nav__n,
+.sch-nav__item.is-returned .sch-nav__n,
+.sch-nav__item.is-failed .sch-nav__n {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.sch-nav__item b {
+  display: block;
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.sch-nav__item small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.sch-lesson {
+  min-width: 0;
+  max-width: 820px;
+}
+
+.sch-lesson__head h2 {
+  font-size: clamp(1.4rem, 2.8vw, 2.1rem);
+  line-height: 1.12;
+  margin: 8px 0 18px;
+  overflow-wrap: anywhere;
+}
+
+.sch-lesson__body {
+  margin-bottom: 18px;
+}
+
+.sch-lesson__body h3 {
+  font-size: 1.2rem;
+  margin: 22px 0 8px;
+}
+
+.sch-video-wrap {
+  margin: 0 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.sch-video {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--line);
+}
+
+.sch-video iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.sch-task {
+  margin-top: 22px;
+  padding: clamp(16px, 2.4vw, 26px);
+  border: 1px solid var(--line-strong);
+  background: var(--paper-2);
+}
+
+.sch-task > h3 {
+  font-size: 1.15rem;
+  margin-bottom: 10px;
+}
+
+.sch-task .gate {
+  background: var(--paper);
+  margin: 12px 0;
+}
+
+.sch-form {
+  margin-top: 14px;
+}
+
+.sch-form label small,
+.sch-edit label small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.sch-actions {
+  margin-top: 18px;
+}
+
+.sch-done {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--good);
+  background: var(--good-soft);
+  font-size: 0.94rem;
+}
+
+.sch-done--big {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sch-test {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.sch-q {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sch-q legend {
+  padding: 0 6px;
+  font-weight: 600;
+  font-size: 0.98rem;
+}
+
+.sch-q.is-right {
+  border-color: var(--good);
+}
+
+.sch-q.is-wrong {
+  border-color: var(--bad);
+}
+
+.sch-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.sch-pager .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+/* редактор курса в панели */
+.sch-editor {
+  max-width: 980px;
+}
+
+.sch-edit {
+  margin: 16px 0 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper-2);
+  min-width: 0;
+}
+
+.sch-edit legend {
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sch-edit__bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.sch-edit [hidden] {
+  display: none;
+}
+
+.sch-edit__q {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.sch-edit__q .link-btn {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 860px) {
+  .sch-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sch-nav {
+    position: static;
+    max-height: none;
+  }
+
+  .sch-edit__q {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* адаптив */
 @media (max-width: 820px) {

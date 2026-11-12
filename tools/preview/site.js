@@ -332,6 +332,43 @@ async function seedDemo(site) {
   } });
   if (!second || !second.ok) throw new Error("seedDemo: второе заявление — " + JSON.stringify(second));
 
+  /* Медиашкола: один курс опубликован (автор учится: урок пройден, тест сдан,
+     задание ждёт проверки), второй — черновик, который ждёт публикации. */
+  const lessons = [
+    { title: "Что делает новость новостью", check: "none", video: "https://rutube.ru/video/0123456789abcdef0123456789abcdef/",
+      body: "Новость — это ответ на простые вопросы: **кто, что, где, когда и почему**. Главное стоит в первом предложении.\n\n" +
+        "## С чего начать\n\n- найдите событие, которое только что произошло;\n- проверьте его по двум источникам;\n- запишите факты до того, как писать текст.\n\n" +
+        "> Если факт нельзя подтвердить — его не должно быть в тексте." },
+    { title: "Проверь себя", check: "test", pass: 60, body: "", questions: [
+      { q: "С чего начинается новость?", options: ["С самого главного", "С истории вопроса", "С цитаты героя"], answer: 0 },
+      { q: "Сколько источников нужно спорному факту?", options: ["Достаточно одного", "Не меньше двух"], answer: 1 },
+      { q: "Можно ли менять слова в цитате?", options: ["Да, если так красивее", "Нет, цитата — дословно"], answer: 1 },
+    ] },
+    { title: "Напишите свою новость", check: "task",
+      body: "Выберите событие в своей школе, дворе или городе, которое произошло на этой неделе. Соберите факты и напишите новость на 800–1200 знаков.",
+      task: "Пришлите текст новости: заголовок, первое предложение с главным и два-три абзаца с деталями. Укажите, откуда вы знаете факты." },
+    { title: "Что дальше", check: "none",
+      body: "Вы написали первую новость. Следующий шаг — отправить материал в редакцию: раздел «Написать материал». Редактор проверит факты и поможет с заголовком." },
+  ];
+  const course = await site.call("school-course-save", { token: tokens.teacher, course: {
+    title: "Новость за один день", level: "Начальный", lessons,
+    summary: "Короткий курс для начинающих авторов: как найти событие, проверить факты и написать новость, которую примет редакция.",
+  } });
+  if (!course || !course.ok) throw new Error("seedDemo: курс — " + JSON.stringify(course));
+  await site.call("school-course-status", { token: director, id: course.course.id, status: "published" });
+  const ids2 = course.course.lessons.map((l) => l.id);
+  await site.call("school-enroll", { token: tokens.author, id: course.course.id });
+  await site.call("school-lesson-done", { token: tokens.author, courseId: course.course.id, lessonId: ids2[0] });
+  await site.call("school-test-send", { token: tokens.author, courseId: course.course.id, lessonId: ids2[1], answers: [0, 1, 1] });
+  await site.call("school-task-send", { token: tokens.author, courseId: course.course.id, lessonId: ids2[2],
+    text: "Школьная студия подкастов открылась в лицее № 7. В понедельник ученики девятого класса записали первый выпуск — о том, как выбрать профиль обучения. " +
+      "Студию оборудовали в бывшей лаборантской. Об этом рассказала руководитель студии на открытии, я была там сама." });
+  await site.call("school-course-save", { token: tokens.teacher, course: {
+    title: "Интервью без страха", level: "Средний", ready: true,
+    summary: "Как готовиться к разговору, задавать вопросы и превращать запись в текст. Курс ждёт публикации.",
+    lessons: [{ title: "Подготовка к разговору", check: "none", body: "Перед интервью узнайте о герое всё, что можно найти, и запишите десять вопросов." }],
+  } });
+
   /* обращение в поддержку — чтобы очередь в панели была не пустой */
   await site.call("support-send", { name: "Нина Новичкова", email: "newbie@demo.ru", topic: "Аккаунт",
     message: "Здравствуйте! Подскажите, как отправить согласие, если мне 13 лет и подписывает мама?" });
@@ -339,7 +376,7 @@ async function seedDemo(site) {
   return { tokens, ids, users, password: DEMO_PASSWORD, posts, pendingPost: pending.post.id,
     memberPost: memberPost.post ? memberPost.post.id : "", editorialId, png: PNG,
     cardNumber: granted.number || "", cardId: (granted.card && granted.card.id) || "",
-    openDone: app.application.id, openWaiting: second.application.id };
+    openDone: app.application.id, openWaiting: second.application.id, courseId: course.course.id };
 }
 
 module.exports = { createSite, seedDemo, DEMO_PASSWORD, ROOT };
