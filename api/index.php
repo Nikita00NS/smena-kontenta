@@ -299,8 +299,21 @@ function audit_log($dir, $who, $action, $details = '') {
         'action' => text($action, 60),
         'details' => text($details, 300),
     );
-    if (count($list) > 2000) $list = array_slice($list, -2000);
-    write_json(audit_file($dir), $list);
+    write_json(audit_file($dir), log_trim($list, 'at', 2000));
+}
+
+/* Журналы с адресами и почтой людей хранятся не дольше года — так записано
+   в Политике (раздел 3). Заодно ограничиваем число строк. */
+function log_trim($list, $field, $max) {
+    $edge = date('c', time() - 365 * 86400);
+    $kept = array();
+    foreach ($list as $row) {
+        $at = is_array($row) && isset($row[$field]) ? (string) $row[$field] : '';
+        if ($at !== '' && strcmp($at, $edge) < 0) continue;
+        $kept[] = $row;
+    }
+    if (count($kept) > $max) $kept = array_slice($kept, -$max);
+    return $kept;
 }
 
 function public_audit($row) {
@@ -3886,7 +3899,9 @@ if ($act === 'account-delete') {
        а строки «0», «1», «2» начинали работать как чужие токены. */
     revoke_user_tokens($DATA_DIR, $me['id']);
 
-    /* материалы остаются, но без привязки к человеку */
+    /* Материалы снимаются с сайта: удаление аккаунта — это отзыв согласия и
+       конец лицензии на публикацию (Политика, п. 5.3; Соглашение, п. 4.2).
+       Запись остаётся в журнале редакции без имени человека. */
     $posts = read_json($DATA_DIR . '/posts.json', array());
     if (is_array($posts)) {
         $changed = false;
@@ -3894,6 +3909,15 @@ if ($act === 'account-delete') {
             if (!isset($post['authorId']) || $post['authorId'] !== $me['id']) continue;
             $posts[$i]['authorId'] = '';
             $posts[$i]['authorAccountDeleted'] = true;
+            $posts[$i]['authorName'] = 'Удалённый аккаунт';
+            $posts[$i]['authorRole'] = '';
+            $posts[$i]['authorKey'] = '';
+            $was = isset($post['status']) ? (string) $post['status'] : '';
+            if ($was === 'published' || $was === 'pending') {
+                $posts[$i]['statusBefore'] = $was;
+                $posts[$i]['status'] = 'withdrawn';
+                $posts[$i]['withdrawnAt'] = date('c');
+            }
             $changed = true;
         }
         if ($changed) write_json($DATA_DIR . '/posts.json', $posts);

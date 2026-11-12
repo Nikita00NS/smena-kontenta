@@ -1079,6 +1079,21 @@ const results = [];
   r = await call("profile-save", { token: token4, name: "Имя До Согласия", role: "Автор текстов", region: "moskva" });
   check("26.4 без принятого согласия имя меняется свободно", r.ok === true && r.user.name === "Имя До Согласия", r);
 
+  // 26.4 (продолжение) удаление аккаунта снимает материалы с сайта и стирает имя
+  r = await call("submit", postPayload(lena.token, "Материал автора, который потом удалит аккаунт"));
+  const postL = r.post ? r.post.id : "";
+  r = await call("review", { token: token3, confirm: await makeConfirm(token3), id: postL, decision: "approve" });
+  check("26.4 материал опубликован до удаления аккаунта", r.ok === true && r.post.status === "published", r);
+  r = await call("state", {});
+  check("26.4 материал виден на сайте с именем автора", r.ok === true && r.posts.some((p) => p.id === postL && p.authorName === "Лена Литредактор"), r.posts && r.posts.length);
+  r = await call("account-delete", { token: lena.token, pass: "parol1234", confirm: "УДАЛИТЬ" });
+  check("26.4 автор удалил аккаунт", r.ok === true, r);
+  r = await call("state", {});
+  check("26.4 после удаления аккаунта материал снят с сайта", r.ok === true && !r.posts.some((p) => p.id === postL), r.posts && r.posts.map((p) => p.title));
+  check("26.4 имени удалённого человека в ленте нет", r.ok === true && !r.posts.some((p) => p.authorName === "Лена Литредактор"), r.posts && r.posts.map((p) => p.authorName));
+  r = await call("posts-queue", { token: token3 });
+  check("26.4 в очереди редакции его материалов нет", r.ok === true && !r.posts.some((p) => p.id === postL || p.authorName === "Лена Литредактор"), r.posts && r.posts.map((p) => p.title));
+
   // 26.5 преподаватель: только школа
   const teacherT = await newUser("Тамара Преподаватель", "teacher-t@example.ru", "moskva");
   await setUser(teacherT.id, { access: "Преподаватель" });

@@ -302,7 +302,8 @@ function mail_log_add($dir, $row) {
     $list = read_json(mail_log_file($dir), array());
     if (!is_array($list)) $list = array();
     $list[] = $row;
-    if (count($list) > 3000) $list = array_slice($list, -3000);
+    /* журнал писем — тоже персональные данные (адреса): не дольше года */
+    $list = function_exists('log_trim') ? log_trim($list, 'at', 3000) : array_slice($list, -3000);
     write_json(mail_log_file($dir), $list);
 }
 

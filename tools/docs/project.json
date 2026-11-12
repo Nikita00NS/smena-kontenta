@@ -28,12 +28,14 @@
     "dative": "Ильину Борису Павловичу",
     "instrumental": "Ильиным Борисом Павловичем",
     "role": "сооснователь проекта «Смена контента»",
+    "roleDative": "сооснователю проекта «Смена контента»",
     "address": "",
     "addressNote": "Почтовый адрес оператора ещё не указан владельцем. По п. 3 ч. 4 ст. 9 закона № 152-ФЗ он должен стоять в согласии: впишите его в поле address и пересоберите документы.",
     "rkn": "",
     "inn": "784304154610"
   },
   "mail": {
+    "general": "",
     "personalData": "info@smenakontenta.ru",
     "editorial": "editorial@smenakontenta.ru",
     "support": "support@smenakontenta.ru"
