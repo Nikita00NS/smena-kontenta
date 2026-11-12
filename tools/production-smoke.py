@@ -3,8 +3,9 @@
 """Дымовая проверка продакшена после FTP-выкладки.
 
 Только чтение: главная, /verify, статика с новой версией, PDF согласий,
-публичный API и запрет служебных файлов. Не создаёт аккаунты и не пишет данные.
-Запуск: python3 tools/production-smoke.py --base https://smenakontenta.ru --stamp 2026-11-12-03
+публичный API и запрет служебных PHP/данных. Шрифты Golos Text лежат под OFL
+и могут отдаваться фронт-сервером как статика — это не секрет. Не создаёт аккаунты и не пишет данные.
+Запуск: python3 tools/production-smoke.py --base https://smenakontenta.ru --stamp 2026-11-12-04
 """
 import argparse
 import json
@@ -49,7 +50,7 @@ def checks(base, stamp):
 
     code, body, err = fetch(base + "/assets/js/data.js?v=" + stamp)
     text = body.decode("utf-8", "replace")
-    add("data.js содержит рабочую почту проекта", code == 200 and "info@smenakontenta.ru" in text,
+    add("data.js содержит рабочую почту и версию " + stamp, code == 200 and "info@smenakontenta.ru" in text and stamp in text,
         err or ("HTTP %s" % code))
 
     for name in ("soglasie-na-obrabotku-pd.pdf", "soglasie-na-rasprostranenie-pd.pdf"):
@@ -67,9 +68,9 @@ def checks(base, stamp):
             detail = "не JSON: " + str(e)
     add("публичный API state отвечает ok", ok, detail)
 
-    for path in ("/api/lib/pdf.php", "/api/lib/private-media.php", "/api/lib/fonts/golos-text-regular.ttf"):
+    for path in ("/api/lib/pdf.php", "/api/lib/private-media.php", "/api/data/users.json"):
         code, body, err = fetch(base + path)
-        add("служебный файл закрыт: " + path, code in (403, 404), err or ("HTTP %s" % code))
+        add("служебный файл/данные закрыты: " + path, code in (403, 404), err or ("HTTP %s" % code))
 
     return out
 
@@ -77,7 +78,7 @@ def checks(base, stamp):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="https://smenakontenta.ru")
-    ap.add_argument("--stamp", default="2026-11-12-03")
+    ap.add_argument("--stamp", default="2026-11-12-04")
     ap.add_argument("--attempts", type=int, default=6)
     ap.add_argument("--delay", type=int, default=15)
     args = ap.parse_args()
@@ -91,7 +92,7 @@ def main():
         for name, ok, detail in last:
             print(("  ok   " if ok else "  FAIL ") + name + ("" if ok else " → " + detail))
         if not failed:
-            print("Продакшен отвечает: версия на месте, документы и API доступны, служебные файлы закрыты.")
+            print("Продакшен отвечает: версия на месте, документы и API доступны, служебные PHP и данные закрыты.")
             return 0
         if attempt < args.attempts:
             time.sleep(args.delay)
