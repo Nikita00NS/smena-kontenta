@@ -44,6 +44,9 @@ async function makeConfirm(token) {
   throw new Error("нет папки данных");
 }
 
+/* адрес, с которого «приходит» запрос: меняется в проверках лимита входа */
+let clientIp = "203.0.113.9";
+
 async function call(action, body) {
   body = body || {};
   try {
@@ -51,7 +54,7 @@ async function call(action, body) {
   await php.writeFile(
     "/site/api/driver.php",
     `<?php
-      $_SERVER['REMOTE_ADDR'] = '203.0.113.9';
+      $_SERVER['REMOTE_ADDR'] = ${JSON.stringify(clientIp)};
       $_SERVER['HTTP_USER_AGENT'] = 'smena-test';
       $_GET['action'] = ${JSON.stringify(action)};
       require '/site/api/index.php';
@@ -1398,6 +1401,92 @@ const results = [];
   check("29.2 после закрытия редакции человек остаётся автором", r.ok === true && r.post.status === "pending", r);
   r = await call("report-queue", { token: token3 });
   check("29.2 закрытая редакция не числится в несдавших отчёт", r.ok === true && !r.missing.some((m) => m.editorialId === editorialX), r.missing);
+
+  /* ======================================================================
+     30. ВХОД: лимит считает только неудачные попытки. Класс за одним
+     школьным адресом входит без ограничений, подбор пароля — упирается.
+     ====================================================================== */
+  console.log("\n30. Вход: лимит на подбор пароля");
+  const pupil = await newUser("Ученик Первый", "pupil.one@example.ru");
+  const mate = await newUser("Ученик Второй", "pupil.two@example.ru");
+  await php.writeFile("/smena-data/login-rate.json", "{}");
+  clientIp = "198.51.100.20";
+  let loginsOk = 0;
+  for (let i = 0; i < 25; i++) {
+    r = await call("login", { email: i % 2 ? pupil.email : mate.email, pass: "parol1234" });
+    if (r.ok === true && r.token) loginsOk++;
+  }
+  check("30.1 двадцать пять верных входов с одного адреса проходят все", loginsOk === 25, loginsOk);
+  let rateFile = JSON.parse(await readText("/smena-data/login-rate.json"));
+  check("30.1 удачные входы в счётчик не попадают", Object.keys(rateFile).length === 0, rateFile);
+
+  let wrong = [];
+  for (let i = 0; i < 8; i++) {
+    r = await call("login", { email: pupil.email, pass: "nevernyi-" + i });
+    wrong.push(r.code);
+  }
+  check("30.2 восемь неверных паролей — восемь отказов «пароль не подошёл»", wrong.every((c) => c === 403), wrong);
+  r = await call("login", { email: pupil.email, pass: "parol1234" });
+  check("30.2 девятая попытка с того же адреса закрыта, даже с верным паролем", r.ok === false && r.code === 429 && /для этого аккаунта/.test(r.error), r);
+  r = await call("login", { email: mate.email, pass: "parol1234" });
+  check("30.2 сосед по классу с того же адреса входит как обычно", r.ok === true && !!r.token, r);
+  clientIp = "198.51.100.77";
+  r = await call("login", { email: pupil.email, pass: "parol1234" });
+  check("30.2 сам ученик с другого адреса (из дома) входит", r.ok === true && !!r.token, r);
+  rateFile = JSON.parse(await readText("/smena-data/login-rate.json"));
+  check("30.2 в файле счётчика нет почты в открытом виде", !/pupil\.one|example\.ru/.test(JSON.stringify(rateFile)), Object.keys(rateFile));
+
+  /* подбор с разных адресов: по 7 попыток с адреса, потолок — 30 на почту */
+  await php.writeFile("/smena-data/login-rate.json", "{}");
+  let spread = 0;
+  for (let ip = 1; ip <= 5 && spread < 30; ip++) {
+    clientIp = "198.51.100." + (100 + ip);
+    for (let i = 0; i < 6 && spread < 30; i++) {
+      r = await call("login", { email: mate.email, pass: "podbor-" + ip + "-" + i });
+      if (r.code === 403) spread++;
+    }
+  }
+  clientIp = "198.51.100.200";
+  r = await call("login", { email: mate.email, pass: "parol1234" });
+  check("30.3 тридцать неверных попыток с разных адресов закрывают аккаунт на час", spread === 30 && r.ok === false && r.code === 429, { spread, r });
+
+  /* перебор по списку почт с одного адреса: потолок — 60 на адрес */
+  await php.writeFile("/smena-data/login-rate.json", "{}");
+  clientIp = "198.51.100.250";
+  let sprayed = 0;
+  for (let i = 0; i < 60; i++) {
+    r = await call("login", { email: "nobody" + i + "@example.ru", pass: "parol1234" });
+    if (r.code === 404) sprayed++;
+  }
+  r = await call("login", { email: pupil.email, pass: "parol1234" });
+  check("30.4 шестьдесят промахов по разным почтам закрывают вход с адреса", sprayed === 60 && r.ok === false && r.code === 429 && /с вашего адреса/.test(r.error), { sprayed, r });
+  clientIp = "198.51.100.251";
+  r = await call("login", { email: pupil.email, pass: "parol1234" });
+  check("30.4 с другого адреса тот же человек входит", r.ok === true, r);
+
+  /* опечатки до удачного входа не копятся */
+  await php.writeFile("/smena-data/login-rate.json", "{}");
+  clientIp = "198.51.100.30";
+  for (let i = 0; i < 5; i++) await call("login", { email: pupil.email, pass: "opechatka" });
+  r = await call("login", { email: pupil.email, pass: "parol1234" });
+  const afterOk = JSON.parse(await readText("/smena-data/login-rate.json"));
+  check("30.5 после удачного входа счётчик пары «адрес + почта» сброшен", r.ok === true && Object.keys(afterOk).filter((k) => k.indexOf("pair:") === 0).length === 0, Object.keys(afterOk));
+
+  /* записи старше часа выбрасываются */
+  await php.writeFile("/smena-data/login-rate.json", JSON.stringify({ "ip:198.51.100.30": Array(60).fill(Math.floor(Date.now() / 1000) - 3700) }));
+  r = await call("login", { email: pupil.email, pass: "parol1234" });
+  check("30.6 попытки старше часа не считаются", r.ok === true, r);
+
+  /* код восстановления тоже под лимитом */
+  await php.writeFile("/smena-data/login-rate.json", "{}");
+  let resetCodes = [];
+  for (let i = 0; i < 9; i++) {
+    r = await call("recovery-reset", { email: pupil.email, code: "AAAA-BBBB-CC" + (10 + i), pass: "novyi-parol-1" });
+    resetCodes.push(r.code);
+  }
+  check("30.7 подбор кода восстановления упирается в тот же лимит", resetCodes.slice(0, 8).every((c) => c === 403) && resetCodes[8] === 429, resetCodes);
+  await php.writeFile("/smena-data/login-rate.json", "{}");
+  clientIp = "203.0.113.9";
 
   console.log("\n=== ИТОГ ===");
   let bad = 0;

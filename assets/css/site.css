@@ -2823,16 +2823,22 @@ p:last-child {
   scroll-margin-top: calc(var(--header-h) + 46px);
 }
 
+/* Размеры с !important: правила полей (.field input { width: 100% }) сильнее
+   обычного класса, из-за них спрятанный выбор файла оставался во всю ширину
+   и давал странице горизонтальную прокрутку. */
 .visually-hidden {
   position: absolute !important;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: -1px !important;
+  padding: 0 !important;
   overflow: hidden;
   clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
-  border: 0;
+  border: 0 !important;
 }
 
 .stack {
@@ -4896,6 +4902,8 @@ select option {
 @media (max-width: 1000px) {
   .header-actions {
     gap: 8px;
+    /* пункты меню спрятаны, поэтому кнопки сами уходят к правому краю */
+    margin-left: auto;
   }
   .header-actions [data-theme-toggle],
   .header-actions [data-search-open] {
@@ -7489,11 +7497,13 @@ html[data-theme="light"] .founder__photo--mono {
 }
 .mail-empty b { font-size: 1rem; }
 @media (max-width: 1080px) {
-  .mail-app { grid-template-columns: 220px 1fr; }
+  .mail-app { grid-template-columns: 220px minmax(0, 1fr); }
   .mail-read { grid-column: 1 / -1; min-height: 340px; }
 }
 @media (max-width: 760px) {
-  .mail-app { grid-template-columns: 1fr; }
+  /* minmax(0, …): иначе длинная тема письма растягивает колонку шире экрана */
+  .mail-app { grid-template-columns: minmax(0, 1fr); }
+  .mail-app > * { min-width: 0; }
   .mail-side { position: static; }
   .mail-read { min-height: 260px; }
   .mail-list { max-height: none; }
@@ -8065,4 +8075,54 @@ a.chip {
 .status--bad {
   background: rgba(255, 74, 23, 0.18);
   color: var(--accent);
+}
+
+/* Шапка, которая всегда помещается =========================================
+   Восемь пунктов меню, поиск и кнопки входа шире полосы сайта: на ноутбуках
+   кнопка «Регистрация» уезжала за край и страница прокручивалась вбок.
+   Ступень сжатия выбирает fitHeader() в app.js по настоящей ширине — она
+   зависит от языка интерфейса и от того, вошёл ли человек:
+     tight   — меньше отступы и шрифт меню;
+     compact — ещё плотнее, в кнопке аккаунта остаётся значок;
+     menu    — пункты уходят под кнопку «меню», как на планшете. */
+.masthead[data-fit] {
+  gap: 18px;
+}
+
+.masthead[data-fit] .nav {
+  gap: 14px;
+}
+
+.masthead[data-fit] .nav__link {
+  font-size: 0.88rem;
+}
+
+.masthead[data-fit="compact"],
+.masthead[data-fit="menu"] {
+  gap: 14px;
+}
+
+.masthead[data-fit="compact"] .nav {
+  gap: 11px;
+}
+
+.masthead[data-fit="compact"] .nav__link {
+  font-size: 0.84rem;
+}
+
+.masthead[data-fit="compact"] .user-chip__name,
+.masthead[data-fit="menu"] .user-chip__name {
+  display: none;
+}
+
+.masthead[data-fit="menu"] .nav {
+  display: none;
+}
+
+.masthead[data-fit="menu"] .header-actions {
+  margin-left: auto;
+}
+
+.masthead[data-fit="menu"] .burger {
+  display: inline-grid;
 }

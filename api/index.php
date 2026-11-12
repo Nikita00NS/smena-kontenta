@@ -651,19 +651,77 @@ function media_public_url($name) {
     return '/api/index.php?action=media&id=' . rawurlencode($name);
 }
 
-/* защита от перебора: не больше 20 попыток входа в час с одного адреса */
-function check_login_rate($dir) {
-    $file = $dir . '/login-rate.json';
+/* Защита от перебора пароля. Считаются только НЕУДАЧНЫЕ попытки за час:
+     pair — 8 на пару «адрес + почта»: с одного места чужой пароль не подобрать;
+     mail — 30 на почту с любых адресов: подбор с разных адресов тоже упирается;
+     ip   — 60 на адрес: перебор по списку почт.
+   Удачный вход ничего не тратит. Раньше лимит был «20 любых входов в час
+   с адреса»: школьный класс сидит за одним адресом, и двадцать первый ученик
+   получал «подождите час», хотя пароль ввёл верно. */
+function login_rate_limits() {
+    return array('pair' => 8, 'mail' => 30, 'ip' => 60);
+}
+
+function login_rate_keys($email) {
     $ip = client_ip();
+    $keys = array('ip' => 'ip:' . $ip);
+    $email = (string) $email;
+    if ($email !== '') {
+        /* почта в файл не пишется: только отпечаток */
+        $keys['mail'] = 'mail:' . sha1($email);
+        $keys['pair'] = 'pair:' . sha1($ip . '|' . $email);
+    }
+    return $keys;
+}
+
+/* записи старше часа выбрасываются при каждом чтении, файл не растёт */
+function login_rate_read($dir) {
     $now = time();
-    $data = read_json($file, array());
-    if (!is_array($data)) $data = array();
-    $list = isset($data[$ip]) ? $data[$ip] : array();
-    $list = array_values(array_filter($list, function ($t) use ($now) { return $now - (int) $t < 3600; }));
-    if (count($list) >= 20) fail('Слишком много попыток входа. Подождите час или сбросьте пароль.', 429);
-    $list[] = $now;
-    $data[$ip] = $list;
-    write_json($file, $data);
+    $data = read_json($dir . '/login-rate.json', array());
+    $out = array();
+    if (!is_array($data)) return $out;
+    foreach ($data as $key => $list) {
+        if (!is_array($list)) continue;
+        $fresh = array();
+        foreach ($list as $t) {
+            if ($now - (int) $t < 3600) $fresh[] = (int) $t;
+        }
+        if ($fresh) $out[(string) $key] = $fresh;
+    }
+    return $out;
+}
+
+/* Вызывается ДО проверки пароля: если лимит выбран, пароль даже не сверяется. */
+function check_login_rate($dir, $email = '') {
+    $data = login_rate_read($dir);
+    $limits = login_rate_limits();
+    foreach (login_rate_keys($email) as $kind => $key) {
+        if (!isset($data[$key]) || count($data[$key]) < $limits[$kind]) continue;
+        fail($kind === 'ip'
+            ? 'Слишком много неудачных попыток входа с вашего адреса. Подождите час или сбросьте пароль.'
+            : 'Слишком много неверных попыток для этого аккаунта. Подождите час или сбросьте пароль.', 429);
+    }
+}
+
+/* неудачная попытка: неверный пароль, неверный код, несуществующая почта */
+function login_rate_fail($dir, $email = '') {
+    $data = login_rate_read($dir);
+    $now = time();
+    foreach (login_rate_keys($email) as $key) {
+        if (!isset($data[$key])) $data[$key] = array();
+        $data[$key][] = $now;
+    }
+    write_json($dir . '/login-rate.json', $data);
+}
+
+/* человек вошёл: его опечатки с этого адреса больше не считаются */
+function login_rate_passed($dir, $email) {
+    $keys = login_rate_keys($email);
+    if (!isset($keys['pair'])) return;
+    $data = login_rate_read($dir);
+    if (!isset($data[$keys['pair']])) return;
+    unset($data[$keys['pair']]);
+    write_json($dir . '/login-rate.json', $data);
 }
 
 /* ------------------------------------------------ портфолио автора вне сайта */
@@ -1060,7 +1118,7 @@ if ($act === 'diag') {
     ensure_dir($DATA_DIR);
     $users = read_users($DATA_DIR);
     $posts = read_json($DATA_DIR . '/posts.json', array());
-    $rate = read_json($DATA_DIR . '/login-rate.json', array());
+    $rate = login_rate_read($DATA_DIR);
     $uploads = $DATA_DIR . '/uploads';
     respond(array(
         'ok' => true,
@@ -1970,8 +2028,8 @@ if ($act === 'recovery-code') {
 
 if ($act === 'recovery-reset') {
     $in = body();
-    check_login_rate($DATA_DIR);
     $email = norm_email(isset($in['email']) ? $in['email'] : '');
+    check_login_rate($DATA_DIR, $email);
     $code = isset($in['code']) ? (string) $in['code'] : '';
     $new = isset($in['pass']) ? (string) $in['pass'] : '';
     if (!$email) fail('Введите почту аккаунта.');
@@ -1984,6 +2042,7 @@ if ($act === 'recovery-reset') {
     foreach ($users as $i => $u) {
         if (strtolower((string) $u['email']) !== $email) continue;
         if (!recovery_verify($code, isset($u['recovery']) ? $u['recovery'] : '')) {
+            login_rate_fail($DATA_DIR, $email);
             fail('Код не подошёл. Он выдаётся один раз и действует, пока не сменён.', 403);
         }
         $users[$i]['pass'] = password_hash($new, PASSWORD_DEFAULT);
@@ -1994,8 +2053,12 @@ if ($act === 'recovery-reset') {
         $found = true;
         break;
     }
-    if (!$found) fail('Аккаунт с такой почтой не найден.', 404);
+    if (!$found) {
+        login_rate_fail($DATA_DIR, $email);
+        fail('Аккаунт с такой почтой не найден.', 404);
+    }
     write_json(users_file($DATA_DIR), $users);
+    login_rate_passed($DATA_DIR, $email);
 
     /* все прежние сессии закрываются: новый пароль — новая жизнь */
     $tokens = read_json(tokens_file($DATA_DIR), array());
@@ -3730,17 +3793,19 @@ if ($act === 'support-close') {
 
 if ($act === 'login') {
     $in = body();
-    check_login_rate($DATA_DIR);
     $email = norm_email(isset($in['email']) ? $in['email'] : '');
     $pass = isset($in['pass']) ? (string) $in['pass'] : '';
     if (!$email || $pass === '') fail('Введите почту и пароль.');
+    check_login_rate($DATA_DIR, $email);
 
     $users = read_users($DATA_DIR);
     foreach ($users as $u) {
         if (strtolower((string) $u['email']) === $email) {
             if (!password_verify($pass, (string) $u['pass'])) {
+                login_rate_fail($DATA_DIR, $email);
                 fail('Пароль не подошёл. Проверьте раскладку и регистр.', 403);
             }
+            login_rate_passed($DATA_DIR, $email);
             if (isset($u['status']) && $u['status'] === 'suspended') {
                 fail('Аккаунт приостановлен. Напишите в поддержку — разберёмся.', 403);
             }
@@ -3768,16 +3833,17 @@ if ($act === 'login') {
             respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
         }
     }
+    login_rate_fail($DATA_DIR, $email);
     fail('Аккаунт с такой почтой не найден. Зарегистрируйтесь — это минута.', 404);
 }
 
 /* Вторая ступень входа: почта + код из письма. Пароль уже проверен. */
 if ($act === 'login-2fa') {
     $in = body();
-    check_login_rate($DATA_DIR);
     $email = norm_email(isset($in['email']) ? $in['email'] : '');
     $code = preg_replace('/[^0-9]/', '', (string) (isset($in['code']) ? $in['code'] : ''));
     if (!$email || strlen($code) !== 6) fail('Введите почту и шесть цифр из письма.');
+    check_login_rate($DATA_DIR, $email);
     $users = read_users($DATA_DIR);
     foreach ($users as $i => $u) {
         if (strtolower((string) $u['email']) !== $email) continue;
@@ -3789,16 +3855,19 @@ if ($act === 'login-2fa') {
         if (!password_verify($code, (string) $u['twofaCode'])) {
             $users[$i]['twofaTries'] = $tries + 1;
             write_json(users_file($DATA_DIR), $users);
+            login_rate_fail($DATA_DIR, $email);
             fail('Код не подошёл. Проверьте письмо.', 403);
         }
         $users[$i]['twofaCode'] = '';
         $users[$i]['twofaAt'] = '';
         $users[$i]['twofaTries'] = 0;
         write_json(users_file($DATA_DIR), $users);
+        login_rate_passed($DATA_DIR, $email);
         touch_activity($DATA_DIR, $u['id']);
         audit_log($DATA_DIR, $u['email'], 'вход по коду', 'двухфакторная проверка пройдена');
         respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
     }
+    login_rate_fail($DATA_DIR, $email);
     fail('Аккаунт с такой почтой не найден.', 404);
 }
 

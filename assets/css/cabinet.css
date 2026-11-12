@@ -36,6 +36,12 @@ html[data-theme="light"] {
   --bad-soft: rgba(179, 38, 11, 0.1);
 }
 
+/* выбор файла шире телефона: браузер рисует его с собственной шириной */
+input[type="file"] {
+  max-width: 100%;
+  min-width: 0;
+}
+
 /* статусы: одни и те же в кабинете, панели и документах */
 .status {
   display: inline-flex;
@@ -510,9 +516,15 @@ textarea.adm-input {
   font-weight: 700;
   letter-spacing: 0;
   line-height: 1.3;
-  flex: 1 1 260px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* ширину заголовок берёт, только когда стоит прямо в строке: внутри колонки
+   то же правило превратилось бы в высоту */
+.cab-post__top > h3,
+.cab-card__top > h3 {
+  flex: 1 1 260px;
 }
 
 .cab-card__top > div {
@@ -1011,9 +1023,12 @@ textarea.adm-input {
   font-weight: 700;
   letter-spacing: 0;
   line-height: 1.3;
-  flex: 1 1 280px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.adm-item__top > h3 {
+  flex: 1 1 280px;
 }
 
 .adm-item__meta {

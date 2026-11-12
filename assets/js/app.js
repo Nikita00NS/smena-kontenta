@@ -694,7 +694,8 @@
       (user
         ? '<a class="mobile-menu__link" href="/profile">Личный кабинет<span>' +
           esc(Store.initials(user.name)) + "</span></a>"
-        : '<a class="mobile-menu__link" href="/join">Регистрация<span>+</span></a>') +
+        : '<a class="mobile-menu__link" href="/join">Регистрация<span>+</span></a>' +
+          '<a class="mobile-menu__link" href="/join#login">Войти<span>→</span></a>') +
       '<button class="mobile-menu__theme" type="button" data-theme-toggle>' +
       '<b data-theme-label>Светлая тема</b><span>оформление</span></button>' +
       '<div class="mobile-menu__foot">' +
@@ -717,6 +718,37 @@
         document.body.classList.remove("is-locked");
       });
     });
+
+    /* Шапка обязана помещаться при любой ширине окна, языке и имени. Мерим
+       настоящую ширину и идём по ступеням: плотнее, ещё плотнее, меню под
+       кнопкой. Сами ступени описаны в site.css (.masthead[data-fit]). */
+    var mast = $(".masthead", host);
+    var FIT = ["", "tight", "compact", "menu"];
+    function fitHeader() {
+      if (!mast) return;
+      for (var i = 0; i < FIT.length; i++) {
+        if (FIT[i]) mast.setAttribute("data-fit", FIT[i]);
+        else mast.removeAttribute("data-fit");
+        if (mast.scrollWidth <= mast.clientWidth + 1) break;
+      }
+    }
+    var fitQueued = false;
+    function fitSoon() {
+      if (fitQueued) return;
+      fitQueued = true;
+      var run = function () {
+        fitQueued = false;
+        fitHeader();
+      };
+      if (window.requestAnimationFrame) window.requestAnimationFrame(run);
+      else window.setTimeout(run, 60);
+    }
+    fitHeader();
+    window.addEventListener("resize", fitSoon);
+    /* шрифты догружаются позже разметки и меняют ширину пунктов */
+    if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+      document.fonts.ready.then(fitHeader, function () {});
+    }
   }
 
   function mountFooter() {
