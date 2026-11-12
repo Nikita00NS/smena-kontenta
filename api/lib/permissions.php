@@ -33,62 +33,63 @@ const ROLE_LEVELS = array(
     'Пользователь' => 5,
 );
 
-/* Что роль умеет. Перечислены только отличия: всё, что ниже по уровню,
-   получается наследованием — см. can(). */
+/* Полные наборы полномочий. Номер роли нужен только для сравнения
+   старшинства и НЕ наследует права другой должности: технический
+   администратор не становится редактором или кадровиком автоматически. */
 const ROLE_CAPS = array(
     'Сооснователь' => array('*'),
     'Директор' => array(
         'people.view', 'people.edit', 'people.access', 'people.block', 'people.note',
-        'posts.review', 'posts.remove',
-        'editorials.manage', 'editorials.appoint', 'hiring.view', 'hiring.decide',
+        'posts.review', 'posts.remove', 'portfolio.review',
+        'editorials.manage', 'editorials.appoint', 'editorials.review', 'hiring.view', 'hiring.decide',
         'cards.view', 'cards.issue', 'cards.revoke', 'cards.extend', 'cards.template',
         'school.manage', 'school.teach', 'school.review', 'school.enroll',
-        'docs.manage', 'docs.publish',
+        'docs.manage', 'docs.publish', 'consents.review',
         'points.award', 'points.rule',
         'support.answer', 'recovery.issue',
         'mail.manage', 'mail.use', 'site.manage', 'server.diag', 'audit.view',
     ),
     'Главный администратор' => array(
         'people.view', 'people.edit', 'people.access', 'people.block', 'people.note',
-        'posts.review', 'posts.remove', 'editorials.manage', 'editorials.appoint', 'hiring.view', 'hiring.decide',
+        'posts.review', 'posts.remove', 'portfolio.review', 'editorials.manage', 'editorials.appoint', 'editorials.review', 'hiring.view', 'hiring.decide',
         'cards.view', 'cards.issue', 'cards.revoke', 'cards.extend', 'cards.template',
         'school.manage', 'school.teach', 'school.review', 'school.enroll',
-        'docs.manage', 'points.award', 'support.answer', 'recovery.issue',
+        'docs.manage', 'consents.review', 'points.award', 'support.answer', 'recovery.issue',
         'mail.manage', 'mail.use', 'site.manage', 'server.diag', 'audit.view',
     ),
     'Администрация' => array(
         'people.view', 'people.edit', 'people.access', 'people.block', 'people.note',
-        'posts.review', 'posts.remove', 'editorials.manage', 'editorials.appoint', 'hiring.view', 'hiring.decide',
+        'posts.review', 'posts.remove', 'portfolio.review', 'editorials.manage', 'editorials.appoint', 'editorials.review', 'hiring.view', 'hiring.decide',
         'cards.view', 'cards.issue', 'cards.revoke', 'cards.extend', 'cards.template',
         'school.manage', 'school.teach', 'school.review', 'school.enroll',
-        'docs.manage', 'points.award', 'support.answer', 'recovery.issue',
+        'docs.manage', 'consents.review', 'points.award', 'support.answer', 'recovery.issue',
         'mail.manage', 'mail.use', 'site.manage', 'server.diag', 'audit.view',
     ),
     /* Администратор ведёт людей и карты, но не трогает почту, сайт,
        настройки сервера и документы проекта. */
     'Администратор' => array(
         'people.view', 'people.edit', 'people.block', 'people.note',
-        'posts.review', 'cards.view', 'cards.issue', 'cards.extend',
+        'posts.review', 'portfolio.review', 'cards.view', 'cards.issue', 'cards.extend',
         'school.enroll', 'points.award', 'support.answer', 'audit.view',
     ),
     'Центральная редакция' => array(
-        'people.view', 'posts.review', 'posts.remove',
-        'editorials.manage', 'editorials.appoint', 'hiring.view', 'hiring.decide',
+        'people.view', 'posts.review', 'posts.remove', 'portfolio.review', 'mail.use', 'support.answer',
+        'editorials.manage', 'editorials.appoint', 'editorials.review', 'hiring.view', 'hiring.decide',
         'cards.view', 'cards.issue', 'cards.revoke', 'cards.template',
-        'school.manage', 'school.review', 'docs.manage', 'points.award', 'audit.view',
+        'school.manage', 'school.review', 'docs.manage', 'consents.review', 'points.award', 'audit.view',
     ),
     'Редакционный администратор региона' => array(
-        'people.view', 'posts.review', 'cards.view', 'cards.issue', 'cards.extend',
+        'people.view', 'posts.review', 'portfolio.review', 'cards.view', 'cards.issue', 'cards.extend',
     ),
-    'Редакционный основатель' => array('people.view', 'posts.review'),
+    'Редакционный основатель' => array('people.view', 'posts.review', 'portfolio.review', 'editorials.review', 'mail.use'),
     'Руководитель региональной редакции' => array(
-        'people.view', 'posts.review', 'editorials.manage', 'school.enroll',
+        'people.view', 'posts.review', 'portfolio.review', 'editorials.manage', 'editorials.review', 'school.enroll', 'mail.use',
     ),
-    'Руководитель отдела' => array('people.view', 'posts.review'),
-    'Редактор' => array('people.view', 'posts.review'),
+    'Руководитель отдела' => array('people.view', 'posts.review', 'portfolio.review', 'mail.use'),
+    'Редактор' => array('people.view', 'posts.review', 'portfolio.review', 'mail.use'),
     'Главный редактор' => array(
         'people.view', 'people.edit', 'people.note',
-        'posts.review', 'posts.remove', 'editorials.manage', 'editorials.appoint', 'hiring.view', 'hiring.decide',
+        'posts.review', 'posts.remove', 'portfolio.review', 'editorials.manage', 'editorials.appoint', 'editorials.review', 'hiring.view', 'hiring.decide',
         'cards.view', 'cards.issue', 'cards.revoke', 'cards.extend', 'cards.template',
         'school.manage', 'school.teach', 'school.review', 'school.enroll',
         'docs.manage', 'points.award', 'support.answer', 'audit.view',
@@ -102,24 +103,14 @@ const ROLE_CAPS = array(
     'Сотрудник' => array(),
     'Автор' => array(),
     'Преподаватель' => array('people.view', 'school.teach', 'school.review'),
-    'Модератор' => array('people.view', 'posts.review', 'support.answer'),
+    'Модератор' => array('people.view', 'posts.review', 'portfolio.review', 'support.answer'),
     'Участник' => array(),
     'Пользователь' => array(),
 );
 
-/* Наследование: роль получает полномочия всех ролей ниже по уровню.
-   Так «Администратор» автоматически умеет всё, что умеет «Редактор». */
 function role_caps($role) {
-    if (!isset(ROLE_LEVELS[$role])) return array();
-    $level = ROLE_LEVELS[$role];
-    $caps = array();
-    foreach (ROLE_CAPS as $name => $list) {
-        if (!isset(ROLE_LEVELS[$name])) continue;
-        if (ROLE_LEVELS[$name] <= $level) {
-            foreach ($list as $cap) $caps[$cap] = true;
-        }
-    }
-    return array_keys($caps);
+    if (!isset(ROLE_CAPS[$role])) return array();
+    return ROLE_CAPS[$role];
 }
 
 function role_level($role) {

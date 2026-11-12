@@ -1,0 +1,11 @@
+# Бинарные файлы: git не должен искать в них пробелы и переводы строк
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

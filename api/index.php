@@ -69,14 +69,70 @@ if ($DATA_DIR !== $DATA_DIR_INSIDE && is_dir($DATA_DIR_INSIDE)) {
    защищает и человека (чужой адрес не займут), и редакцию (письма
    уходят только тем, кто действительно подтвердил адрес). */
 function require_verified($user) {
+    if (!$user || (isset($user['status']) && in_array($user['status'], array('deleted', 'suspended'), true))) {
+        fail('Аккаунт недоступен. Войдите заново или напишите в поддержку.', 401);
+    }
     if (empty($user['emailVerified'])) {
         fail('Подтвердите почту. Откройте кабинет, введите код из письма — без этого действие недоступно. Письмо можно запросить заново.', 403);
     }
 }
 
+/* Единая серверная проверка для авторских действий. Роль редакции не
+   отменяет согласие автора. Читатель, вход, поддержка и загрузка самого
+   согласия остаются доступны: иначе человек не смог бы исправить отказ. */
+/* Для работы на сайте нужны оба документа:
+   — согласие на обработку данных: без него закрыты кабинет, файлы и заявки;
+   — согласие на распространение: имя автора, его фотография и работа видны всем
+     посетителям сайта, а это раскрытие данных неопределённому кругу лиц
+     (статья 10.1 № 152-ФЗ). Такое согласие оформляется отдельно от первого.
+   В ответе указываем, какого именно документа не хватает. */
+function require_consent($dir, $user) {
+    require_verified($user);
+    $consent = consent_of_user($dir, $user['id'], 'processing');
+    if (!$consent || (isset($consent['status']) ? $consent['status'] : '') !== 'approved') {
+        respond(array('ok' => false, 'code' => 403, 'needConsent' => true,
+            'consentKind' => 'processing',
+            'consentStatus' => $consent && isset($consent['status']) ? $consent['status'] : 'none',
+            'error' => 'Сначала загрузите согласие на обработку персональных данных в кабинете и дождитесь его принятия редакцией. До этого черновики, файлы и заявки закрыты.'), 403);
+    }
+    $spread = consent_of_user($dir, $user['id'], 'distribution');
+    if (!$spread || (isset($spread['status']) ? $spread['status'] : '') !== 'approved') {
+        respond(array('ok' => false, 'code' => 403, 'needConsent' => true,
+            'consentKind' => 'distribution',
+            'consentStatus' => $spread && isset($spread['status']) ? $spread['status'] : 'none',
+            'error' => 'Нужен второй документ — согласие на распространение персональных данных: имя автора и его работа видны всем посетителям сайта. Загрузите его в кабинете и дождитесь решения редакции.'), 403);
+    }
+    return $consent;
+}
+
+/* Одна общая блокировка на короткий запрос записи: JSON-хранилище иначе
+   теряет изменения при двух одновременных отправках. Чистые чтения не
+   блокируют друг друга. Замок освобождается и при fail/exit. */
+function data_lock($dir) {
+    global $DATA_LOCK;
+    if ($DATA_LOCK) return;
+    $file = $dir . '/.write.lock';
+    $handle = @fopen($file, 'c');
+    if (!$handle) fail('Не удалось открыть хранилище данных.', 500);
+    @chmod($file, 0600);
+    $locked = false;
+    for ($i = 0; $i < 100; $i++) {
+        if (flock($handle, LOCK_EX | LOCK_NB)) { $locked = true; break; }
+        usleep(50000);
+    }
+    if (!$locked) { fclose($handle); fail('Хранилище занято. Повторите запрос через несколько секунд.', 503); }
+    $DATA_LOCK = $handle;
+    register_shutdown_function('data_unlock');
+}
+function data_unlock() {
+    global $DATA_LOCK;
+    if ($DATA_LOCK) { flock($DATA_LOCK, LOCK_UN); fclose($DATA_LOCK); $DATA_LOCK = null; }
+}
+
 function respond($data, $code = 200) {
     http_response_code($code);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    data_unlock();
     exit;
 }
 
@@ -108,15 +164,20 @@ function read_json($file, $fallback) {
 }
 
 function write_json($file, $data) {
-    $tmp = $file . '.tmp';
     $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if ($json === false) return false;
-    if (@file_put_contents($tmp, $json, LOCK_EX) === false) return false;
-    if (!@rename($tmp, $file)) {
-        @unlink($tmp);
-        return false;
-    }
-    @chmod($file, 0644);
+    /* Уникальное имя: два процесса неtruncate-ят один и тот же .tmp.
+      _rename_ атомарен в пределах файловой системы хостинга. */
+    $tmp = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
+    $handle = @fopen($tmp, 'xb');
+    if (!$handle) return false;
+    $written = fwrite($handle, $json);
+    $flushed = fflush($handle);
+    if (function_exists('fsync')) $flushed = @fsync($handle) && $flushed;
+    fclose($handle);
+    if ($written !== strlen($json) || !$flushed) { @unlink($tmp); return false; }
+    @chmod($tmp, 0600);
+    if (!@rename($tmp, $file)) { @unlink($tmp); return false; }
     return true;
 }
 
@@ -136,6 +197,7 @@ define('SMENA_API', true);
 require __DIR__ . '/smtp.php';
 /* новые подсистемы: права, резервные копии, журнал баллов */
 require __DIR__ . '/lib/permissions.php';
+require __DIR__ . '/lib/private-media.php';
 require __DIR__ . '/lib/backup.php';
 require __DIR__ . '/lib/points.php';
 require __DIR__ . '/lib/mailer.php';   /* фирменные письма, шаблоны, журнал доставки */
@@ -144,6 +206,7 @@ require __DIR__ . '/lib/mailbox.php';  /* ящики домена: чтение,
 require __DIR__ . '/lib/tasks.php';    /* задачи команды: сотрудники, редакция, основатели */
 require __DIR__ . '/lib/ai.php';       /* ИИ-помощник писем: только бесплатные тарифы */    /* задачи команды: сотрудники, редакция, основатели */
 require __DIR__ . '/lib/hiring.php';   /* приём в команду: тест, чек-лист, согласование */
+require __DIR__ . '/lib/pdf.php';      /* PDF пресс-карты: встроенный шрифт, без Composer */
 
 function action() {
     if (isset($_GET['action'])) return (string) $_GET['action'];
@@ -193,6 +256,28 @@ function client_ip() {
         if (filter_var($candidate, FILTER_VALIDATE_IP)) return $candidate;
     }
     return $remote;
+}
+
+/* Проверка карт — публичное чтение. Лимит отдельный, чтобы перебор кодов
+   не проходил, а регистрация и вход при этом не блокировались. */
+function check_verify_rate($dir) {
+    $file = $dir . '/rate-verify.json';
+    $now = time();
+    $all = read_json($file, array());
+    $ip = client_ip();
+    $list = isset($all[$ip]) && is_array($all[$ip]) ? $all[$ip] : array();
+    $fresh = array();
+    foreach ($list as $ts) if (is_int($ts) && $now - $ts < 3600) $fresh[] = $ts;
+    if (count($fresh) >= 60) fail('Слишком много проверок подряд. Попробуйте через час.', 429);
+    $fresh[] = $now;
+    $all[$ip] = $fresh;
+    foreach ($all as $key => $rows) {
+        $keep = array();
+        if (is_array($rows)) foreach ($rows as $ts) if (is_int($ts) && $now - $ts < 3600) $keep[] = $ts;
+        if (!$keep) unset($all[$key]); else $all[$key] = $keep;
+    }
+    if (count($all) > 500) $all = array($ip => $fresh);
+    if (!write_json($file, $all)) fail('Не удалось записать попытку проверки. Повторите запрос позже.', 503);
 }
 
 function check_rate($dir) {
@@ -256,7 +341,7 @@ function require_diagnostics($dir, $params) {
     $pass = isset($params['pass']) ? (string) $params['pass'] : '';
     if ($pass !== '' && is_editor($dir, $pass)) return;
     $token = isset($params['token']) ? (string) $params['token'] : '';
-    if ($token !== '' && is_top_admin(user_by_token($dir, $token))) return;
+    if ($token !== '' && can(user_by_token($dir, $token), 'server.diag')) return;
     respond(array('ok' => false, 'error' => 'Неизвестное действие.', 'code' => 404), 404);
 }
 
@@ -470,6 +555,7 @@ function public_user($u) {
         'status' => isset($u['status']) ? $u['status'] : 'active',
         'position' => isset($u['position']) ? $u['position'] : '',
         'hiredAt' => isset($u['hiredAt']) ? $u['hiredAt'] : '',
+        'editorialId' => isset($u['editorialId']) ? $u['editorialId'] : '',
         'caps' => function_exists('user_caps') ? user_caps($u) : array(),
         'canUseMail' => function_exists('can') ? can($u, 'mail.use') : false,
     );
@@ -526,7 +612,9 @@ function user_by_token($dir, $token) {
     if ((int) $info['exp'] < time()) return null;
     $users = read_users($dir);
     foreach ($users as $user) {
-        if ($user['id'] === $info['id']) return $user;
+        if ($user['id'] === $info['id']) {
+            return isset($user['status']) && in_array($user['status'], array('deleted', 'suspended'), true) ? null : $user;
+        }
     }
     return null;
 }
@@ -632,17 +720,40 @@ function read_consents($dir) {
     return is_array($list) ? $list : array();
 }
 
-function consent_of_user($dir, $userId) {
+/* Два разных документа, два разных согласия:
+   processing   — согласие на обработку персональных данных. Без него закрыты
+                  черновики, файлы и заявки: это условие работы на сайте.
+   distribution — согласие на распространение персональных данных (ст. 10.1
+                  152-ФЗ). Нужно только для конкурсов и активностей, которые
+                  выходят в открытые площадки проекта. Обычную публикацию на
+                  сайте не блокирует и не заменяет первое согласие.
+   Записи, созданные до разделения, считаются согласием на обработку. */
+function consent_kind($raw) {
+    $kind = is_string($raw) ? strtolower(trim($raw)) : '';
+    return $kind === 'distribution' ? 'distribution' : 'processing';
+}
+
+function consent_record_kind($c) {
+    return isset($c['kind']) && $c['kind'] === 'distribution' ? 'distribution' : 'processing';
+}
+
+function consent_of_user($dir, $userId, $kind = 'processing') {
+    $kind = consent_kind($kind);
     foreach (read_consents($dir) as $c) {
-        if (isset($c['userId']) && $c['userId'] === $userId) return $c;
+        if (!isset($c['userId']) || $c['userId'] !== $userId) continue;
+        if (consent_record_kind($c) === $kind) return $c;
     }
     return null;
 }
 
-function public_consent($c) {
-    if (!$c) return array('status' => 'none', 'note' => '', 'decidedAt' => '', 'createdAt' => '', 'scan' => '');
+function public_consent($c, $viewer = null, $dir = '', $kind = 'processing') {
+    $kind = consent_kind($kind);
+    if (!$c) return array('status' => 'none', 'kind' => $kind, 'purpose' => '', 'note' => '',
+        'decidedAt' => '', 'createdAt' => '', 'scan' => '');
     return array(
         'id' => isset($c['id']) ? $c['id'] : '',
+        'kind' => consent_record_kind($c),
+        'purpose' => isset($c['purpose']) ? $c['purpose'] : '',
         'status' => isset($c['status']) ? $c['status'] : 'pending',
         'note' => isset($c['note']) ? $c['note'] : '',
         'createdAt' => isset($c['createdAt']) ? $c['createdAt'] : '',
@@ -650,7 +761,7 @@ function public_consent($c) {
         'name' => isset($c['name']) ? $c['name'] : '',
         'email' => isset($c['email']) ? $c['email'] : '',
         'userRegion' => isset($c['userRegion']) ? $c['userRegion'] : '',
-        'scan' => isset($c['scan']) ? $c['scan'] : '',
+        'scan' => $dir ? private_media_visible($dir, $viewer, isset($c['scan']) ? $c['scan'] : '') : (isset($c['scan']) ? $c['scan'] : ''),
     );
 }
 
@@ -662,14 +773,16 @@ function read_portfolio($dir) {
     return is_array($list) ? $list : array();
 }
 
-function public_portfolio($item) {
+function public_portfolio($item, $viewer = null, $dir = '') {
     return array(
         'id' => isset($item['id']) ? $item['id'] : '',
         'userId' => isset($item['userId']) ? $item['userId'] : '',
         'name' => isset($item['name']) ? $item['name'] : '',
         'title' => isset($item['title']) ? $item['title'] : '',
         'about' => isset($item['about']) ? $item['about'] : '',
-        'files' => isset($item['files']) && is_array($item['files']) ? $item['files'] : array(),
+        'files' => $dir ? array_values(array_filter(array_map(function ($u) use ($viewer, $dir) {
+            return private_media_visible($dir, $viewer, $u);
+        }, isset($item['files']) && is_array($item['files']) ? $item['files'] : array()))) : (isset($item['files']) && is_array($item['files']) ? $item['files'] : array()),
         'publish' => !empty($item['publish']),
         'status' => isset($item['status']) ? $item['status'] : 'pending',
         'note' => isset($item['note']) ? $item['note'] : '',
@@ -782,7 +895,7 @@ function public_editorial($e, $apps) {
     );
 }
 
-function public_editorial_app($a) {
+function public_editorial_app($a, $viewer = null, $dir = '') {
     return array(
         'id' => $a['id'],
         'editorialId' => $a['editorialId'],
@@ -792,7 +905,10 @@ function public_editorial_app($a) {
         'email' => isset($a['email']) ? $a['email'] : '',
         'birthDate' => isset($a['birthDate']) ? $a['birthDate'] : '',
         'why' => isset($a['why']) ? $a['why'] : '',
-        'portfolio' => isset($a['portfolio']) && is_array($a['portfolio']) ? $a['portfolio'] : array(),
+        'portfolio' => $dir ? array_values(array_filter(array_map(function ($u) use ($viewer, $dir) {
+            return private_media_visible($dir, $viewer, $u);
+        }, isset($a['portfolio']) && is_array($a['portfolio']) ? $a['portfolio'] : array()))) : (isset($a['portfolio']) && is_array($a['portfolio']) ? $a['portfolio'] : array()),
+        'history' => isset($a['history']) && is_array($a['history']) ? $a['history'] : array(),
         'sitePosts' => isset($a['sitePosts']) && is_array($a['sitePosts']) ? $a['sitePosts'] : array(),
         'status' => $a['status'],
         'note' => isset($a['note']) ? $a['note'] : '',
@@ -878,10 +994,19 @@ if (!ensure_dir($DATA_DIR)) {
    первой неудачной попытки входа. */
 editor_hash($DATA_DIR);
 
-/* раз в сутки — копия данных: случайную правку всегда можно откатить */
-backup_maybe_run($DATA_DIR);
-
 $act = action();
+/* Маршруты чтения не меняют пользовательские записи. Остальные, включая
+   неизвестные и служебные, сериализуем до первого чтения JSON. */
+$read_actions = array('state', 'media', 'private-media', 'top-authors', 'authors-show',
+    'site-status', 'founders', 'editorial-list', 'points-rules', 'points-leaderboard', 'hiring-positions');
+if (!in_array($act, $read_actions, true) || !is_file($DATA_DIR . '/private-media-migrated-v1.json')) data_lock($DATA_DIR);
+$migration = private_media_migrate($DATA_DIR);
+if (empty($migration['ok'])) fail('Перенос личных документов не завершён. Старые файлы сохранены; повторите запрос или обратитесь в поддержку.', 503);
+
+/* Копия снимается под блокировкой записи. Обычное чтение не запускает
+   тяжёлое копирование и не ждёт его. */
+global $DATA_LOCK;
+if ($DATA_LOCK) backup_maybe_run($DATA_DIR);
 
 if ($act === 'selftest') {
     require_diagnostics($DATA_DIR, array_merge(body(), $_GET));
@@ -1090,7 +1215,11 @@ if ($act === 'state') {
 
 if ($act === 'submit') {
     $in = body();
-    check_rate($DATA_DIR);
+    $authorUser = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$authorUser) fail('Войдите в аккаунт перед отправкой материала.', 401);
+    require_consent($DATA_DIR, $authorUser);
+    $requestId = text(isset($in['requestId']) ? $in['requestId'] : '', 80);
+    if (!preg_match('/^[A-Za-z0-9_-]{8,80}$/', $requestId)) fail('Нет ключа повторной отправки. Обновите черновик и попробуйте снова.');
 
     $title = text(isset($in['title']) ? $in['title'] : '', 200);
     $excerpt = text(isset($in['excerpt']) ? $in['excerpt'] : '', 600);
@@ -1100,11 +1229,7 @@ if ($act === 'submit') {
     $authorKey = substr($authorKey, 0, 64);
     /* кто именно отправил: по токену, если он есть. Нужно, чтобы баллы
        за публикацию начислялись конкретному аккаунту, а не «какому-то». */
-    $authorUser = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
-    /* Материал от аккаунта принимаем только с подтверждённой почтой:
-       иначе баллы и статус автора уходят «в никуда». Гостевую отправку
-       не трогаем — она была и остаётся. */
-    if ($authorUser) require_verified($authorUser);
+    $authorName = $authorUser['name'];
 
     if (slen($title) < 8) fail('Заголовок короче восьми символов.');
     if (slen($excerpt) < 20) fail('Описание короче двадцати символов.');
@@ -1113,9 +1238,19 @@ if ($act === 'submit') {
     if (strlen($authorKey) < 8) fail('Не передан ключ автора.');
 
     $posts = read_json($DATA_DIR . '/posts.json', array());
+    $fingerprint = hash('sha256', json_encode(array($title, $excerpt, $content, $authorUser['id'])));
+    foreach ($posts as $existing) {
+        if ((string) (isset($existing['authorId']) ? $existing['authorId'] : '') !== $authorUser['id'] ||
+            (string) (isset($existing['requestId']) ? $existing['requestId'] : '') !== $requestId) continue;
+        if (!hash_equals((string) $existing['requestHash'], $fingerprint)) fail('Этот ключ уже использован для другого текста. Сохраните черновик заново.', 409);
+        respond(array('ok' => true, 'post' => public_post($existing), 'direct' => false, 'replayed' => true));
+    }
+    check_rate($DATA_DIR);
     if (count($posts) >= MAX_POSTS) fail('Хранилище заполнено, напишите редакции.', 507);
 
-    $direct = !empty($in['direct']);
+    /* Даже редактор отправляет материал в очередь. Публикация — отдельное
+       решение review с полномочием и кодом подтверждения, а не флаг браузера. */
+    $direct = false;
     $now = date('c');
     $id = new_id('s_');
 
@@ -1130,7 +1265,9 @@ if ($act === 'submit') {
     $post = array(
         'id' => $id,
         'authorKey' => $authorKey,
-        'authorId' => $authorUser ? $authorUser['id'] : '',
+        'authorId' => $authorUser['id'],
+        'requestId' => $requestId,
+        'requestHash' => $fingerprint,
         'authorName' => $authorName,
         'authorRole' => text(isset($in['authorRole']) ? $in['authorRole'] : '', 80),
         'authorRegion' => text(isset($in['authorRegion']) ? $in['authorRegion'] : '', 80),
@@ -1176,11 +1313,138 @@ function card_min_posts() {
 }
 
 function read_cards($dir) {
-    return read_json($dir . '/cards.json', array());
+    $cards = read_json($dir . '/cards.json', array());
+    return is_array($cards) ? $cards : array();
+}
+
+/* Пресс-карта живёт на сервере. Браузер показывает только этот статус:
+   номер, срок, отзыв и продление нельзя «выдать» локальным подсчётом. */
+const CARD_VALID_MONTHS = 12;
+
+function card_add_months($from, $months) {
+    $base = strtotime((string) $from);
+    if ($base === false) $base = time();
+    return date('c', strtotime('+' . (int) $months . ' months', $base));
+}
+
+function card_valid_until($card) {
+    if (!empty($card['validUntil'])) return (string) $card['validUntil'];
+    /* Старые карты без срока получают срок от даты выдачи, а не из браузера. */
+    if (!empty($card['issuedAt'])) return card_add_months($card['issuedAt'], CARD_VALID_MONTHS);
+    return '';
+}
+
+function card_effective_status($card) {
+    $status = isset($card['status']) ? (string) $card['status'] : 'pending';
+    if ($status === 'annulled') return 'revoked';
+    if ($status === 'issued') {
+        $until = card_valid_until($card);
+        if ($until !== '' && strtotime($until) < time()) return 'expired';
+    }
+    return $status;
+}
+
+/* Код проверки. Печатается на карте рядом с номером. Проверить карту может
+   только тот, у кого она на руках: одного номера недостаточно, поэтому
+   открытого списка участников из проверки не получить. */
+function card_verify_code_new($cards = array()) {
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    $max = strlen($alphabet) - 1;
+    $taken = array();
+    foreach ($cards as $card) {
+        if (!empty($card['verifyCode'])) $taken[strtoupper((string) $card['verifyCode'])] = true;
+    }
+    for ($attempt = 0; $attempt < 20; $attempt++) {
+        $out = '';
+        for ($i = 0; $i < 8; $i++) $out .= $alphabet[random_int(0, $max)];
+        if (!isset($taken[$out])) return $out;
+    }
+    /* Практически недостижимо при 32^8, но молча выдать дубль нельзя. */
+    throw new RuntimeException('Не удалось подобрать уникальный код проверки карты.');
+}
+
+/* Карты, выданные до появления проверки, получают код при первом обращении
+   владельца или редакции. Номер карты при этом не меняется. */
+function card_ensure_verify_codes($dir, $userId = '') {
+    $cards = read_cards($dir);
+    $changed = false;
+    foreach ($cards as $id => $card) {
+        if ($userId !== '' && (!isset($card['userId']) || (string) $card['userId'] !== (string) $userId)) continue;
+        if (!isset($card['number']) || (string) $card['number'] === '') continue;
+        if (!empty($card['verifyCode'])) continue;
+        $cards[$id]['verifyCode'] = card_verify_code_new($cards);
+        $changed = true;
+    }
+    if ($changed && !write_json($dir . '/cards.json', $cards)) fail('Не удалось подготовить код проверки карты. Повторите запрос.', 500);
+    return $cards;
+}
+
+function card_public($card, $withDelivery = false) {
+    $out = array(
+        'id' => isset($card['id']) ? $card['id'] : '',
+        'userId' => isset($card['userId']) ? $card['userId'] : '',
+        'status' => card_effective_status($card),
+        'storedStatus' => isset($card['status']) ? $card['status'] : '',
+        'number' => isset($card['number']) ? $card['number'] : '',
+        'note' => isset($card['note']) ? $card['note'] : '',
+        'authorName' => isset($card['authorName']) ? $card['authorName'] : '',
+        'authorRegion' => isset($card['authorRegion']) ? $card['authorRegion'] : '',
+        'authorRole' => isset($card['authorRole']) ? $card['authorRole'] : '',
+        'byRole' => !empty($card['byRole']),
+        'posts' => isset($card['posts']) && is_array($card['posts']) ? $card['posts'] : array(),
+        'createdAt' => isset($card['createdAt']) ? $card['createdAt'] : '',
+        'decidedAt' => isset($card['decidedAt']) ? $card['decidedAt'] : '',
+        'issuedAt' => isset($card['issuedAt']) ? $card['issuedAt'] : '',
+        'validUntil' => card_valid_until($card),
+        'revokedAt' => isset($card['revokedAt']) ? $card['revokedAt'] : '',
+        'issuePlace' => isset($card['issuePlace']) ? $card['issuePlace'] : '',
+        'history' => isset($card['history']) && is_array($card['history']) ? $card['history'] : array(),
+    );
+    if ($withDelivery) {
+        $out['delivery'] = isset($card['delivery']) ? $card['delivery'] : null;
+        $out['dispatch'] = isset($card['dispatch']) ? $card['dispatch'] : null;
+        /* код видит только владелец и редакция: он нужен для печати карты */
+        $out['verifyCode'] = isset($card['verifyCode']) ? $card['verifyCode'] : '';
+    }
+    return $out;
+}
+
+function card_active($cards, $userId) {
+    $best = null;
+    foreach ($cards as $card) {
+        if (!isset($card['userId']) || (string) $card['userId'] !== (string) $userId) continue;
+        if (card_effective_status($card) !== 'issued') continue;
+        if ($best === null || strcmp((string) $card['createdAt'], (string) $best['createdAt']) > 0) $best = $card;
+    }
+    return $best;
+}
+
+function card_pending($cards, $userId) {
+    foreach ($cards as $card) {
+        if (isset($card['userId']) && (string) $card['userId'] === (string) $userId
+            && card_effective_status($card) === 'pending') return $card;
+    }
+    return null;
+}
+
+function card_current($cards, $userId) {
+    $active = card_active($cards, $userId);
+    if ($active) return $active;
+    $pending = card_pending($cards, $userId);
+    if ($pending) return $pending;
+    $best = null;
+    foreach ($cards as $card) {
+        if (!isset($card['userId']) || (string) $card['userId'] !== (string) $userId) continue;
+        if ($best === null || strcmp((string) $card['createdAt'], (string) $best['createdAt']) > 0) $best = $card;
+    }
+    return $best;
 }
 
 if ($act === 'card-request') {
     $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Войдите в аккаунт.', 401);
+    require_consent($DATA_DIR, $me);
     $key = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : ''));
     if (strlen($key) < 8) fail('Не передан ключ автора.');
 
@@ -1196,7 +1460,7 @@ if ($act === 'card-request') {
         $id = (string) $rawId;
         if (!isset($posts[$id])) fail('Материал не найден: ' . text($id, 40));
         $post = $posts[$id];
-        if ($post['authorKey'] !== $key) fail('В заявке есть чужой материал.');
+        if ($post['authorKey'] !== $key || (isset($post['authorId']) && $post['authorId'] !== $me['id'])) fail('В заявке есть чужой материал.');
         if ($post['status'] !== 'published') fail('В заявке есть неопубликованный материал.');
         $attached[] = array(
             'id' => $post['id'],
@@ -1209,18 +1473,16 @@ if ($act === 'card-request') {
     }
 
     $cards = read_cards($DATA_DIR);
-    foreach ($cards as $card) {
-        if ($card['authorKey'] === $key && $card['status'] === 'pending') {
-            fail('Заявка уже отправлена и рассматривается редакцией.');
-        }
-    }
+    if (card_active($cards, $me['id'])) fail('У вас уже есть действующая пресс-карта.', 409);
+    if (card_pending($cards, $me['id'])) fail('Заявка уже отправлена и рассматривается редакцией.', 409);
 
     $now = date('c');
     $cardId = new_id('c_');
     $cards[$cardId] = array(
         'id' => $cardId,
         'authorKey' => $key,
-        'authorName' => text(isset($in['authorName']) ? $in['authorName'] : '', 120),
+        'userId' => $me['id'],
+        'authorName' => $me['name'],
         'authorRegion' => text(isset($in['authorRegion']) ? $in['authorRegion'] : '', 80),
         'authorRole' => text(isset($in['authorRole']) ? $in['authorRole'] : '', 80),
         'posts' => $attached,
@@ -1232,35 +1494,37 @@ if ($act === 'card-request') {
     );
     if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить заявку.', 500);
     check_rate($DATA_DIR);
-    respond(array('ok' => true, 'request' => $cards[$cardId]));
+    respond(array('ok' => true, 'request' => card_public($cards[$cardId], true)));
 }
 
 if ($act === 'card-status') {
     $in = body();
-    $key = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : ''));
-    $cardUser = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
-    $cardUserId = $cardUser ? $cardUser['id'] : '';
-    if (strlen($key) < 8) fail('Не передан ключ автора.');
-    $cards = read_cards($DATA_DIR);
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Войдите в аккаунт, чтобы увидеть пресс-карту.', 401);
+    $cards = card_ensure_verify_codes($DATA_DIR, $me['id']);
     $mine = array();
     foreach ($cards as $card) {
-        if ($card['authorKey'] === $key || ($cardUserId !== '' && isset($card['userId']) && $card['userId'] === $cardUserId)) {
-            $mine[] = array(
-                'id' => $card['id'],
-                'status' => $card['status'],
-                'number' => $card['number'],
-                'note' => $card['note'],
-                'createdAt' => $card['createdAt'],
-                'decidedAt' => $card['decidedAt'],
-                'posts' => $card['posts'],
-                'delivery' => isset($card['delivery']) ? $card['delivery'] : null,
-                'issuedAt' => isset($card['issuedAt']) ? $card['issuedAt'] : null,
-                'issuePlace' => isset($card['issuePlace']) ? $card['issuePlace'] : '',
-                'dispatch' => isset($card['dispatch']) ? $card['dispatch'] : null,
-            );
+        if (isset($card['userId']) && (string) $card['userId'] === (string) $me['id']) {
+            $mine[] = card_public($card, true);
         }
     }
-    respond(array('ok' => true, 'requests' => $mine, 'minPosts' => card_min_posts()));
+    usort($mine, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+    $current = card_current($cards, $me['id']);
+    $published = 0;
+    foreach (read_json($DATA_DIR . '/posts.json', array()) as $post) {
+        if (isset($post['authorId'], $post['status']) && $post['authorId'] === $me['id'] && $post['status'] === 'published') $published++;
+    }
+    $byRole = role_level(isset($me['access']) ? $me['access'] : '') >= ROLE_LEVELS['Сотрудник'];
+    respond(array(
+        'ok' => true,
+        'requests' => $mine,
+        'current' => $current ? card_public($current, true) : null,
+        'minPosts' => card_min_posts(),
+        'validMonths' => CARD_VALID_MONTHS,
+        'published' => $published,
+        'byRole' => $byRole,
+        'canApply' => !card_active($cards, $me['id']) && !card_pending($cards, $me['id']),
+    ));
 }
 
 /* Заявка на пресс-карту: подаёт сам автор из кабинета.
@@ -1270,7 +1534,7 @@ if ($act === 'card-apply') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    require_verified($me);
+    require_consent($DATA_DIR, $me);
 
     $posts = read_json($DATA_DIR . '/posts.json', array());
     $mine = array();
@@ -1285,18 +1549,16 @@ if ($act === 'card-apply') {
 
     /* Сотруднику редакции карта положена по должности: пять опубликованных
        материалов требуем только от внешних авторов. */
-    $byRole = isset($me['access']) && (string) $me['access'] !== '' && (string) $me['access'] !== 'Пользователь';
+    $byRole = role_level(isset($me['access']) ? $me['access'] : '') >= ROLE_LEVELS['Сотрудник'];
     $need = card_min_posts();
     if (!$byRole && count($mine) < $need) {
         fail('Для заявки нужно не меньше ' . $need . ' опубликованных материалов. У вас: ' . count($mine) . '.', 400);
     }
 
     $cards = read_cards($DATA_DIR);
-    foreach ($cards as $card) {
-        if (!isset($card['userId']) || $card['userId'] !== $me['id']) continue;
-        if ($card['status'] === 'issued') fail('У вас уже есть пресс-карта: ' . $card['number'], 409);
-        if ($card['status'] === 'pending') fail('Заявка уже отправлена и ждёт решения редакции.', 409);
-    }
+    $active = card_active($cards, $me['id']);
+    if ($active) fail('У вас уже есть действующая пресс-карта: ' . $active['number'], 409);
+    if (card_pending($cards, $me['id'])) fail('Заявка уже отправлена и ждёт решения редакции.', 409);
 
     $method = isset($in['delivery']) ? (string) $in['delivery'] : '';
     if ($method !== 'personal' && $method !== 'post') {
@@ -1363,16 +1625,16 @@ if ($act === 'card-apply') {
         'dispatch' => array('tracking' => '', 'sentAt' => ''),
     );
     if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить заявку.', 500);
-    respond(array('ok' => true, 'request' => $cards[$id]));
+    respond(array('ok' => true, 'request' => card_public($cards[$id], true)));
 }
 
 if ($act === 'card-queue') {
     $in = body();
-    require_staff($DATA_DIR, $in, 'cards.issue');
-    $cards = read_cards($DATA_DIR);
+    require_staff($DATA_DIR, $in, 'cards.view');
+    $cards = card_ensure_verify_codes($DATA_DIR);
     $out = array();
     foreach ($cards as $card) {
-        $out[] = $card;
+        $out[] = card_public($card, true);
     }
     usort($out, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
@@ -1389,20 +1651,32 @@ if ($act === 'card-review') {
     $place = text(isset($in['place']) ? $in['place'] : '', 200);
     $tracking = text(isset($in['tracking']) ? $in['tracking'] : '', 60);
     if ($decision !== 'approve' && $decision !== 'reject') fail('Неизвестное решение.');
+    if ($decision === 'reject' && slen($note) < 5) fail('Для отказа нужно основание — не короче пяти символов.');
 
     $cards = read_cards($DATA_DIR);
     if (!isset($cards[$id])) fail('Заявка не найдена.', 404);
+    $want = $decision === 'approve' ? 'issued' : 'rejected';
+    if ((isset($cards[$id]['status']) ? $cards[$id]['status'] : '') === $want) {
+        respond(array('ok' => true, 'replayed' => true, 'request' => card_public($cards[$id], true)));
+    }
+    if ($cards[$id]['status'] !== 'pending') fail('Заявка уже рассмотрена.', 409);
 
     $now = date('c');
     if ($decision === 'approve') {
-        $year = date('Y');
-        $seq = 0;
-        foreach ($cards as $card) {
-            if (!empty($card['number']) && strpos((string) $card['number'], 'СК-' . $year) === 0) $seq++;
-        }
-        $cards[$id]['number'] = 'СК-' . $year . '-' . str_pad((string) ($seq + 1), 3, '0', STR_PAD_LEFT);
+        $owner = null;
+        foreach (read_users($DATA_DIR) as $u) if (isset($cards[$id]['userId']) && $u['id'] === $cards[$id]['userId']) $owner = $u;
+        if (!$owner) fail('Аккаунт заявителя не найден.', 409);
+        require_consent($DATA_DIR, $owner);
+        $other = card_active($cards, $owner['id']);
+        if ($other && $other['id'] !== $id) fail('У участника уже есть действующая карта: ' . $other['number'], 409);
+        $award = points_award_rule($DATA_DIR, $owner['id'], 'card.issued', $me['email'],
+            'Пресс-карта ' . $id, 'card:' . $id);
+        if (empty($award['ok'])) fail('Баллы не записаны, карта не выдана. Повторите решение: дубля не будет. ' . $award['error'], 500);
+        $cards[$id]['number'] = card_number_next($cards, date('Y'));
+        $cards[$id]['verifyCode'] = card_verify_code_new($cards);
         $cards[$id]['status'] = 'issued';
         $cards[$id]['issuedAt'] = $now;
+        $cards[$id]['validUntil'] = card_add_months($now, CARD_VALID_MONTHS);
         $cards[$id]['issuePlace'] = $place;
         if ($tracking !== '') {
             if (!isset($cards[$id]['dispatch']) || !is_array($cards[$id]['dispatch'])) {
@@ -1416,28 +1690,159 @@ if ($act === 'card-review') {
     }
     $cards[$id]['note'] = $note;
     $cards[$id]['decidedAt'] = $now;
+    $cards[$id]['decidedBy'] = $me['email'];
+    $cards[$id]['history'][] = array('at' => $now, 'by' => $me['email'], 'decision' => $decision, 'note' => $note);
     if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить решение.', 500);
     audit_log($DATA_DIR, (string) $me['email'], 'card-review',
         ($decision === 'approve' ? 'карта выдана ' : 'в заявке отказано ') . $cards[$id]['authorName']);
-    respond(array(
-        'ok' => true,
-        'request' => array(
-            'id' => $cards[$id]['id'],
-            'status' => $cards[$id]['status'],
-            'number' => $cards[$id]['number'],
-            'note' => $cards[$id]['note'],
-        ),
-    ));
+    respond(array('ok' => true, 'request' => card_public($cards[$id], true)));
+}
+
+/* Проверка подлинности карты. Открытый маршрут, но отвечает только на пару
+   «номер + код с карты». Ни списка карт, ни почты, ни телефона, ни адреса
+   доставки здесь нет: проверяющий и так держит карту в руках. */
+if ($act === 'card-verify') {
+    $in = body();
+    check_verify_rate($DATA_DIR);
+    /* Номер содержит кириллицу («СК-»), поэтому регистр приводим через supper:
+       обычный strtoupper работает побайтово и русские буквы не меняет. */
+    $number = supper(preg_replace('/\s+/', '', text(isset($in['number']) ? $in['number'] : '', 40)));
+    $code = strtoupper(preg_replace('/\s+/', '', text(isset($in['code']) ? $in['code'] : '', 20)));
+    if ($number === '' || $code === '') fail('Введите номер карты и код с её обратной стороны.');
+    $found = null;
+    foreach (read_cards($DATA_DIR) as $card) {
+        if (isset($card['number']) && supper((string) $card['number']) === $number) { $found = $card; break; }
+    }
+    $known = $found && !empty($found['verifyCode']) && hash_equals(strtoupper((string) $found['verifyCode']), $code);
+    if (!$known) {
+        respond(array('ok' => true, 'found' => false,
+            'error' => 'Карта с таким номером и кодом не найдена. Проверьте символы: код указан на обратной стороне карты.'));
+    }
+    $status = card_effective_status($found);
+    respond(array('ok' => true, 'found' => true, 'card' => array(
+        'number' => (string) $found['number'],
+        'status' => $status,
+        'authorName' => isset($found['authorName']) ? $found['authorName'] : '',
+        'authorRegion' => isset($found['authorRegion']) ? $found['authorRegion'] : '',
+        'authorRole' => isset($found['authorRole']) ? $found['authorRole'] : '',
+        'byRole' => !empty($found['byRole']),
+        'issuedAt' => isset($found['issuedAt']) ? $found['issuedAt'] : '',
+        'validUntil' => card_valid_until($found),
+        'revokedAt' => isset($found['revokedAt']) ? $found['revokedAt'] : '',
+        'issuePlace' => isset($found['issuePlace']) ? $found['issuePlace'] : '',
+        'checkedAt' => date('c'),
+    )));
+}
+
+/* PDF действующей карты. Файл собирается на сервере из тех же данных, что
+   и кабинет; код проверки попадает только владельцу и ответственной редакции.
+   Ответ — JSON с base64: так проще проверить права и отдать ошибку словом. */
+if ($act === 'card-pdf') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Войдите в аккаунт, чтобы скачать карту.', 401);
+    $id = text(isset($in['id']) ? $in['id'] : '', 60);
+    $cards = card_ensure_verify_codes($DATA_DIR);
+    if (!isset($cards[$id])) fail('Карта не найдена.', 404);
+    $card = $cards[$id];
+    $isOwner = isset($card['userId']) && (string) $card['userId'] === (string) $me['id'];
+    if (!$isOwner && !can($me, 'cards.view')) fail('Скачать карту может её владелец или ответственная редакция.', 403);
+    if (card_effective_status($card) !== 'issued') fail('Скачать PDF можно только для действующей карты.', 409);
+    if (empty($card['verifyCode'])) fail('Код проверки карты не подготовлен. Повторите запрос.', 500);
+    try {
+        $bytes = card_pdf_bytes($card, (string) $card['verifyCode']);
+    } catch (Exception $e) {
+        fail('Не удалось собрать PDF карты. Обратитесь в поддержку.', 500);
+    }
+    $safe = preg_replace('/[^A-Za-z0-9_-]/', '', (string) $card['number']);
+    $safe = trim($safe, '-');
+    if ($safe === '') $safe = 'card';
+    respond(array('ok' => true, 'filename' => 'press-karta-' . $safe . '.pdf',
+        'mime' => 'application/pdf', 'data' => base64_encode($bytes)));
+}
+
+/* Отметка редакции: карта отправлена почтой. Трек-номер видит владелец. */
+if ($act === 'card-dispatch') {
+    $in = body();
+    $me = require_staff($DATA_DIR, $in, 'cards.issue');
+    $id = text(isset($in['id']) ? $in['id'] : '', 60);
+    $tracking = text(isset($in['tracking']) ? $in['tracking'] : '', 60);
+    $cards = card_ensure_verify_codes($DATA_DIR);
+    if (!isset($cards[$id])) fail('Карта не найдена.', 404);
+    if (card_effective_status($cards[$id]) !== 'issued') fail('Отметить отправку можно только для действующей карты.', 409);
+    $now = date('c');
+    $old = isset($cards[$id]['dispatch']) && is_array($cards[$id]['dispatch']) ? $cards[$id]['dispatch'] : array();
+    $sentAt = !empty($old['sentAt']) ? (string) $old['sentAt'] : $now;
+    $cards[$id]['dispatch'] = array('tracking' => $tracking, 'sentAt' => $sentAt, 'updatedAt' => $now, 'by' => $me['email']);
+    $note = $tracking !== '' ? 'Трек-номер: ' . $tracking : 'Отправлена без трек-номера';
+    if ($sentAt === $now) $note = 'Отправлена. ' . $note;
+    $cards[$id]['history'][] = array('at' => $now, 'by' => $me['email'], 'decision' => 'dispatched', 'note' => $note);
+    if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить отметку об отправке.', 500);
+    audit_log($DATA_DIR, $me['email'], 'card-dispatch', ($cards[$id]['number'] ?: $id) . ': ' . ($tracking !== '' ? $tracking : 'без трек-номера'));
+    respond(array('ok' => true, 'request' => card_public($cards[$id], true)));
+}
+
+if ($act === 'card-revoke') {
+    $in = body();
+    $me = require_confirm($DATA_DIR, $in, 'cards.revoke');
+    $id = text(isset($in['id']) ? $in['id'] : '', 60);
+    $note = text(isset($in['note']) ? $in['note'] : '', 600);
+    if (slen($note) < 5) fail('Для отзыва карты нужно основание — не короче пяти символов.');
+    $cards = read_cards($DATA_DIR);
+    if (!isset($cards[$id])) fail('Карта не найдена.', 404);
+    $stored = isset($cards[$id]['status']) ? $cards[$id]['status'] : '';
+    $status = card_effective_status($cards[$id]);
+    if ($status === 'revoked' || $stored === 'annulled') {
+        respond(array('ok' => true, 'replayed' => true, 'request' => card_public($cards[$id], true)));
+    }
+    if (!in_array($status, array('issued', 'expired'), true)) fail('Отозвать можно только выданную карту.', 409);
+    $now = date('c');
+    $cards[$id]['status'] = 'revoked';
+    $cards[$id]['revokedAt'] = $now;
+    $cards[$id]['note'] = $note;
+    $cards[$id]['decidedAt'] = $now;
+    $cards[$id]['decidedBy'] = $me['email'];
+    $cards[$id]['history'][] = array('at' => $now, 'by' => $me['email'], 'decision' => 'revoked', 'note' => $note);
+    if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось сохранить отзыв карты.', 500);
+    audit_log($DATA_DIR, $me['email'], 'card-revoke', ($cards[$id]['number'] ?: $id) . ': ' . $note);
+    respond(array('ok' => true, 'request' => card_public($cards[$id], true)));
+}
+
+if ($act === 'card-extend') {
+    $in = body();
+    $me = require_confirm($DATA_DIR, $in, 'cards.extend');
+    $id = text(isset($in['id']) ? $in['id'] : '', 60);
+    $months = isset($in['months']) ? (int) $in['months'] : CARD_VALID_MONTHS;
+    if ($months < 1 || $months > 24) fail('Продлить можно на срок от 1 до 24 месяцев.');
+    $note = text(isset($in['note']) ? $in['note'] : '', 600);
+    $cards = read_cards($DATA_DIR);
+    if (!isset($cards[$id])) fail('Карта не найдена.', 404);
+    $status = card_effective_status($cards[$id]);
+    if (!in_array($status, array('issued', 'expired'), true)) fail('Продлить можно только выданную карту.', 409);
+    $now = date('c');
+    $from = card_valid_until($cards[$id]);
+    if ($from === '') $from = isset($cards[$id]['issuedAt']) ? $cards[$id]['issuedAt'] : $now;
+    if (strtotime($from) < time()) $from = $now;
+    $cards[$id]['validUntil'] = card_add_months($from, $months);
+    $cards[$id]['status'] = 'issued';
+    $cards[$id]['history'][] = array('at' => $now, 'by' => $me['email'], 'decision' => 'extended',
+        'note' => $note !== '' ? $note : 'Продлено на ' . $months . ' мес.', 'months' => $months,
+        'validUntil' => $cards[$id]['validUntil']);
+    if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось продлить карту.', 500);
+    audit_log($DATA_DIR, $me['email'], 'card-extend', ($cards[$id]['number'] ?: $id) . ' до ' . $cards[$id]['validUntil']);
+    respond(array('ok' => true, 'request' => card_public($cards[$id], true)));
 }
 
 if ($act === 'mine') {
     $in = body();
     $key = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) (isset($in['authorKey']) ? $in['authorKey'] : ''));
-    if (strlen($key) < 8) fail('Не передан ключ автора.');
-    $posts = read_json($DATA_DIR . '/posts.json', array());
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me && strlen($key) < 8) fail('Войдите в аккаунт или передайте ключ автора.');
     $mine = array();
-    foreach ($posts as $post) {
-        if (isset($post['authorKey']) && $post['authorKey'] === $key) $mine[] = public_post($post);
+    foreach (read_json($DATA_DIR . '/posts.json', array()) as $post) {
+        $owned = $me && isset($post['authorId']) && $post['authorId'] === $me['id'];
+        $legacy = strlen($key) >= 8 && isset($post['authorKey']) && hash_equals($post['authorKey'], $key) && empty($post['authorId']);
+        if ($owned || $legacy) $mine[] = array_merge(public_post($post), array('requestId' => isset($post['requestId']) ? $post['requestId'] : ''));
     }
     respond(array('ok' => true, 'posts' => $mine));
 }
@@ -1466,21 +1871,33 @@ if ($act === 'review') {
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
     $note = text(isset($in['note']) ? $in['note'] : '', 600);
     if ($decision !== 'approve' && $decision !== 'reject') fail('Неизвестное решение.');
+    if ($decision === 'reject' && slen($note) < 5) fail('Для возврата на правки нужно замечание — не короче пяти символов.');
 
     $posts = read_json($DATA_DIR . '/posts.json', array());
     if (!isset($posts[$id])) fail('Материал не найден.', 404);
 
+    if ($posts[$id]['status'] === ($decision === 'approve' ? 'published' : 'rejected')) {
+        respond(array('ok' => true, 'post' => public_post($posts[$id]), 'replayed' => true));
+    }
+    if ($posts[$id]['status'] !== 'pending') fail('Материал уже рассмотрен. Обновите очередь.', 409);
+    if ($decision === 'approve' && !empty($posts[$id]['authorId'])) {
+        $owner = null;
+        foreach (read_users($DATA_DIR) as $u) if ($u['id'] === $posts[$id]['authorId']) $owner = $u;
+        if (!$owner || (isset($owner['status']) && $owner['status'] === 'deleted')) fail('Автор недоступен: публикация с начислением баллов невозможна.', 409);
+        require_consent($DATA_DIR, $owner);
+    }
+    if ($decision === 'approve' && !empty($posts[$id]['authorId'])) {
+        $rule = 'post.' . (isset($posts[$id]['format']) ? $posts[$id]['format'] : 'Статья');
+        $award = points_award_rule($DATA_DIR, $posts[$id]['authorId'], $rule, 'редакция',
+            'Материал «' . $posts[$id]['title'] . '»', 'post:' . $id);
+        if (empty($award['ok'])) fail('Баллы не записаны, материал не опубликован. Повторите одобрение: дубля не будет. ' . $award['error'], 500);
+    }
     $posts[$id]['status'] = $decision === 'approve' ? 'published' : 'rejected';
     $posts[$id]['reviewNote'] = $note;
     $posts[$id]['reviewedAt'] = date('c');
     if ($decision === 'approve') $posts[$id]['date'] = date('c');
 
     if (!write_json($DATA_DIR . '/posts.json', $posts)) fail('Не удалось сохранить решение.', 500);
-    if ($decision === 'approve' && !empty($posts[$id]['authorId'])) {
-        $rule = 'post.' . (isset($posts[$id]['format']) ? $posts[$id]['format'] : 'Статья');
-        points_award_rule($DATA_DIR, $posts[$id]['authorId'], $rule, 'редакция',
-            'Материал «' . $posts[$id]['title'] . '»', 'post:' . $id);
-    }
     audit_log($DATA_DIR, (string) $me['email'], 'review',
         ($decision === 'approve' ? 'опубликован' : 'отклонён') . ' материал ' . $id . ' — ' . $posts[$id]['title']);
     respond(array('ok' => true, 'post' => public_post($posts[$id])));
@@ -1513,6 +1930,27 @@ if ($act === 'remove') {
     respond(array('ok' => true));
 }
 
+/* Удаление своего материала из кабинета. Опубликованный материал снимает
+   редакция через remove: автор не убирает уже проверенную публикацию сам. */
+if ($act === 'post-delete') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Нужно войти в аккаунт.', 401);
+    $id = text(isset($in['id']) ? $in['id'] : '', 80);
+    $posts = read_json($DATA_DIR . '/posts.json', array());
+    if (!isset($posts[$id])) fail('Материал не найден.', 404);
+    $post = $posts[$id];
+    $isOwner = isset($post['authorId']) && (string) $post['authorId'] === (string) $me['id'];
+    if (!$isOwner) fail('Удалять можно только свои материалы.', 403);
+    if (isset($post['status']) && $post['status'] === 'published') {
+        fail('Опубликованный материал снимает редакция. Напишите в поддержку или редактору.', 409);
+    }
+    unset($posts[$id]);
+    if (!write_json($DATA_DIR . '/posts.json', $posts)) fail('Не удалось удалить материал.', 500);
+    audit_log($DATA_DIR, $me['email'], 'post-delete', 'автор удалил материал ' . $id);
+    respond(array('ok' => true, 'id' => $id));
+}
+
 /* ------------------------------------------------------------- редакции */
 
 if ($act === 'editorial-list') {
@@ -1532,6 +1970,8 @@ if ($act === 'editorial-create') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
+    require_consent($DATA_DIR, $user);
+    if (!can($user, 'editorials.manage')) fail('Новую внутреннюю редакцию открывает администрация проекта после согласования.', 403);
 
     $region = text(isset($in['region']) ? $in['region'] : '', 80);
     $name = text(isset($in['name']) ? $in['name'] : '', 120);
@@ -1557,16 +1997,8 @@ if ($act === 'editorial-create') {
     $list[] = $editorial;
     if (!write_json(editorials_file($DATA_DIR), $list)) fail('Не удалось создать редакцию.', 500);
 
-    /* основатель получает права регионального редактора */
-    $users = read_users($DATA_DIR);
-    foreach ($users as $i => $u) {
-        if ($u['id'] === $user['id']) {
-            $users[$i]['access'] = 'Редакционный основатель';
-            $users[$i]['editorialId'] = $editorial['id'];
-            write_json(users_file($DATA_DIR), $users);
-            break;
-        }
-    }
+    /* Создание записи не выдаёт роль и не понижает действующую. */
+    audit_log($DATA_DIR, $user['email'], 'editorial-create', $name . ' · ' . $region);
 
     respond(array('ok' => true, 'editorial' => public_editorial($editorial, array())));
 }
@@ -1575,7 +2007,7 @@ if ($act === 'editorial-apply') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    require_verified($user);
+    require_consent($DATA_DIR, $user);
 
     $editorialId = text(isset($in['editorialId']) ? $in['editorialId'] : '', 60);
     $target = null;
@@ -1605,11 +2037,9 @@ if ($act === 'editorial-apply') {
             'application/pdf' => 'pdf',
         ), 6000000, $err);
         if (!$file) continue;
-        $dir = media_dir($DATA_DIR);
-        $fname = 'ed_' . $user['id'] . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $file['ext'];
-        if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) continue;
-        @chmod($dir . '/' . $fname, 0644);
-        $portfolio[] = media_public_url($fname);
+        $saved = private_media_store($DATA_DIR, $user['id'], 'editorial', $file, $editorialId);
+        if (!$saved) fail('Не удалось сохранить вложение. Заявление не отправлено.', 500);
+        $portfolio[] = $saved['url'];
     }
 
     $sitePosts = array();
@@ -1639,7 +2069,7 @@ if ($act === 'editorial-apply') {
     );
     $apps[] = $app;
     if (!write_json(editorial_apps_file($DATA_DIR), $apps)) fail('Не удалось отправить заявку.', 500);
-    respond(array('ok' => true, 'application' => public_editorial_app($app)));
+    respond(array('ok' => true, 'application' => public_editorial_app($app, $user, $DATA_DIR)));
 }
 
 if ($act === 'editorial-mine') {
@@ -1650,7 +2080,7 @@ if ($act === 'editorial-mine') {
     $apps = read_editorial_apps($DATA_DIR);
     $myApps = array();
     foreach ($apps as $a) {
-        if ($a['userId'] === $user['id']) $myApps[] = public_editorial_app($a);
+        if ($a['userId'] === $user['id']) $myApps[] = public_editorial_app($a, $user, $DATA_DIR);
     }
 
     $owned = null;
@@ -1659,25 +2089,29 @@ if ($act === 'editorial-mine') {
         if ($e['founderId'] !== $user['id']) continue;
         $owned = public_editorial($e, $apps);
         foreach ($apps as $a) {
-            if ($a['editorialId'] === $e['id']) $incoming[] = public_editorial_app($a);
+            if ($a['editorialId'] === $e['id']) $incoming[] = public_editorial_app($a, $user, $DATA_DIR);
+        }
+    }
+    $membership = null;
+    if (!empty($user['editorialId'])) {
+        foreach (read_editorials($DATA_DIR) as $e) {
+            if ($e['id'] === $user['editorialId']) $membership = public_editorial($e, $apps);
         }
     }
     usort($myApps, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
     usort($incoming, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
-    respond(array('ok' => true, 'applications' => $myApps, 'editorial' => $owned, 'incoming' => $incoming));
+    respond(array('ok' => true, 'applications' => $myApps, 'editorial' => $owned, 'membership' => $membership, 'incoming' => $incoming));
 }
 
 if ($act === 'editorial-queue') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    if (!in_array(isset($user['access']) ? $user['access'] : '', array('Директор', 'Администрация'), true)) {
-        fail('Очередь заявок видят только директор и администрация.', 403);
-    }
+    if (!can($user, 'editorials.appoint')) fail('Общую очередь заявок видит центральная редакция.', 403);
     $out = array();
     foreach (read_editorial_apps($DATA_DIR) as $a) {
         if ($a['status'] !== 'pending') continue;
-        $out[] = public_editorial_app($a);
+        $out[] = public_editorial_app($a, $user, $DATA_DIR);
     }
     usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
     respond(array('ok' => true, 'applications' => $out));
@@ -1685,8 +2119,7 @@ if ($act === 'editorial-queue') {
 
 if ($act === 'editorial-review') {
     $in = body();
-    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
-    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    $user = require_confirm($DATA_DIR, $in, 'editorials.review');
 
     $id = text(isset($in['id']) ? $in['id'] : '', 60);
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
@@ -1705,44 +2138,37 @@ if ($act === 'editorial-review') {
         }
         if (!$owner) fail('Редакция не найдена.', 404);
 
-        $isFounder = $owner['founderId'] === $user['id'];
-        $isAdmin = in_array(isset($user['access']) ? $user['access'] : '', array('Директор', 'Администрация'), true);
-        if (!$isFounder && !$isAdmin) fail('Решение принимает основатель редакции или администрация.', 403);
+        $isFounder = $owner['founderId'] === $user['id'] && can($user, 'editorials.review');
+        $isAdmin = can($user, 'editorials.appoint');
+        if (!$isFounder && !$isAdmin) fail('Решение принимает основатель этой редакции или центральная редакция.', 403);
         /* если заявка уже ушла в центральную комиссию, решает только администрация */
         if (editorial_escalated($a) && !$isAdmin) {
             fail('Заявка передана в центральную комиссию: семь дней прошло, решает она.', 403);
         }
 
+        if ($a['status'] !== 'pending') {
+            if ($a['status'] === $decision) respond(array('ok' => true, 'replayed' => true));
+            fail('Заявка уже рассмотрена.', 409);
+        }
+        $target = null;
+        foreach (read_users($DATA_DIR) as $u) if ($u['id'] === $a['userId']) $target = $u;
+        if (!$target) fail('Аккаунт заявителя не найден.', 404);
+        if ($decision === 'approved') require_consent($DATA_DIR, $target);
         $apps[$i]['status'] = $decision;
         $apps[$i]['note'] = $note;
         $apps[$i]['decidedAt'] = date('c');
+        $apps[$i]['decidedBy'] = $user['email'];
+        $apps[$i]['history'][] = array('at' => date('c'), 'by' => $user['email'], 'what' => $decision === 'approved' ? 'Принято в редакцию' : 'Отказ: ' . $note);
         $found = true;
 
         if ($decision === 'approved') {
-            /* индивидуальная пресс-карта аннулируется: у автора теперь редакционная */
-            if (!empty($a['authorKey'])) {
-                $cards = read_cards($DATA_DIR);
-                $touched = false;
-                foreach ($cards as $k => $card) {
-                    if ($card['authorKey'] !== $a['authorKey']) continue;
-                    if (!in_array($card['status'], array('pending', 'issued'), true)) continue;
-                    $cards[$k]['status'] = 'annulled';
-                    $cards[$k]['note'] = 'Аннулирована: автор вступил в редакцию региона — ' .
-                        $owner['name'] . '. Действует редакционная пресс-карта после трёх постов.';
-                    $cards[$k]['decidedAt'] = date('c');
-                    $touched = true;
-                }
-                if ($touched) write_json($DATA_DIR . '/cards.json', $cards);
-            }
-
+            /* Членство не понижает должность и не аннулирует карту. Отзыв
+               карты — отдельное решение с собственным правом и историей. */
             $users = read_users($DATA_DIR);
             foreach ($users as $j => $u) {
                 if ($u['id'] !== $a['userId']) continue;
                 $users[$j]['editorialId'] = $a['editorialId'];
-                if (!in_array($u['access'], array('Директор', 'Администрация'), true)) {
-                    $users[$j]['access'] = 'Пользователь';
-                }
-                write_json(users_file($DATA_DIR), $users);
+                if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить членство в редакции.', 500);
                 break;
             }
         }
@@ -1750,6 +2176,7 @@ if ($act === 'editorial-review') {
     }
     if (!$found) fail('Заявка не найдена.', 404);
     if (!write_json(editorial_apps_file($DATA_DIR), $apps)) fail('Не удалось сохранить решение.', 500);
+    audit_log($DATA_DIR, $user['email'], 'editorial-review', $id . ' → ' . $decision);
     respond(array('ok' => true));
 }
 
@@ -1760,7 +2187,7 @@ if ($act === 'portfolio-send') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    require_verified($user);
+    require_consent($DATA_DIR, $user);
 
     $title = text(isset($in['title']) ? $in['title'] : '', 160);
     $about = text(isset($in['about']) ? $in['about'] : '', 1200);
@@ -1788,11 +2215,9 @@ if ($act === 'portfolio-send') {
             $err
         );
         if (!$file) continue;
-        $dir = media_dir($DATA_DIR);
-        $fname = 'pf_' . $user['id'] . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $file['ext'];
-        if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) continue;
-        @chmod($dir . '/' . $fname, 0644);
-        $files[] = media_public_url($fname);
+        $saved = private_media_store($DATA_DIR, $user['id'], 'portfolio', $file);
+        if (!$saved) fail('Не удалось сохранить вложение. Работа не отправлена.', 500);
+        $files[] = $saved['url'];
     }
     if (!count($files)) fail('Приложите хотя бы один файл: фото, аудио или видео.');
 
@@ -1812,7 +2237,7 @@ if ($act === 'portfolio-send') {
     );
     $list[] = $item;
     if (!write_json(portfolio_file($DATA_DIR), $list)) fail('Не удалось сохранить работу.', 500);
-    respond(array('ok' => true, 'item' => public_portfolio($item)));
+    respond(array('ok' => true, 'item' => public_portfolio($item, isset($user) ? $user : $me, $DATA_DIR)));
 }
 
 if ($act === 'portfolio-mine') {
@@ -1821,7 +2246,7 @@ if ($act === 'portfolio-mine') {
     if (!$user) fail('Нужно войти в аккаунт.', 401);
     $mine = array();
     foreach (read_portfolio($DATA_DIR) as $item) {
-        if (isset($item['userId']) && $item['userId'] === $user['id']) $mine[] = public_portfolio($item);
+        if (isset($item['userId']) && $item['userId'] === $user['id']) $mine[] = public_portfolio($item, isset($user) ? $user : $me, $DATA_DIR);
     }
     usort($mine, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
@@ -1831,45 +2256,58 @@ if ($act === 'portfolio-mine') {
 
 if ($act === 'portfolio-queue') {
     $in = body();
-    require_staff($DATA_DIR, $in, 'points.award');
+    $me = require_staff($DATA_DIR, $in, 'portfolio.review');
     $list = read_portfolio($DATA_DIR);
     usort($list, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
     });
     $out = array();
-    foreach ($list as $item) $out[] = public_portfolio($item);
+    foreach ($list as $item) $out[] = public_portfolio($item, $me, $DATA_DIR);
     respond(array('ok' => true, 'items' => $out));
+}
+
+function portfolio_decide($dir, $in, $id, $decision, $note, $points, $publish = null) {
+    $me = require_confirm($dir, $in, 'portfolio.review');
+    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение должно быть «одобрено» или «отклонено».');
+    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание.');
+    $points = max(0, min(50, (int) $points));
+    if ($points > 0 && !can($me, 'points.award')) fail('Для начисления баллов нужно право points.award.', 403);
+    $list = read_portfolio($dir); $index = -1;
+    foreach ($list as $i => $item) if ($item['id'] === $id) { $index = $i; break; }
+    if ($index < 0) fail('Работа не найдена.', 404);
+    $item = $list[$index];
+    if ($item['status'] !== 'pending') {
+        if ($item['status'] === $decision) return array('ok' => true, 'replayed' => true, 'points' => (int) $item['points']);
+        fail('Работа уже рассмотрена. Исправление баллов оформляется отдельной записью журнала.', 409);
+    }
+    $owner = null;
+    foreach (read_users($dir) as $u) if ($u['id'] === $item['userId']) $owner = $u;
+    if (!$owner) fail('Автор работы не найден.', 404);
+    if ($decision === 'approved') {
+        require_consent($dir, $owner);
+        if ($points > 0) {
+            $award = points_add($dir, $owner['id'], $points, 'portfolio', $me['email'], 'Портфолио «' . $item['title'] . '»', 'portfolio:' . $id);
+            if (empty($award['ok'])) fail('Баллы не записаны, решение не сохранено: ' . $award['error'], 500);
+        }
+    }
+    $list[$index]['status'] = $decision;
+    $list[$index]['note'] = $note;
+    $list[$index]['decidedAt'] = date('c');
+    $list[$index]['decidedBy'] = $me['email'];
+    $list[$index]['points'] = $decision === 'approved' ? $points : 0;
+    if ($publish !== null) $list[$index]['publish'] = (bool) $publish;
+    $list[$index]['history'][] = array('at' => date('c'), 'by' => $me['email'], 'decision' => $decision, 'points' => $list[$index]['points'], 'note' => $note);
+    if (!write_json(portfolio_file($dir), $list)) fail('Журнал баллов сохранён, но решение не записалось. Повторите это же решение — дубля начисления не будет.', 500);
+    audit_log($dir, $me['email'], 'portfolio-review', $id . ' → ' . $decision . ' · ' . $list[$index]['points'] . ' б.');
+    return array('ok' => true, 'points' => $list[$index]['points'], 'balance' => points_balance($dir, $owner['id']));
 }
 
 if ($act === 'portfolio-review') {
     $in = body();
-    $password = isset($in['password']) ? (string) $in['password'] : '';
-    require_confirm($DATA_DIR, $in, 'points.award');
-
-    $id = isset($in['id']) ? (string) $in['id'] : '';
-    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
-    $note = text(isset($in['note']) ? $in['note'] : '', 400);
-    $points = isset($in['points']) ? max(0, min(50, (int) $in['points'])) : 5;
-    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение должно быть «одобрено» или «отклонено».');
-    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание.');
-
-    $list = read_portfolio($DATA_DIR);
-    $found = false;
-    foreach ($list as $i => $item) {
-        if ($item['id'] !== $id) continue;
-        $list[$i]['status'] = $decision;
-        $list[$i]['note'] = $note;
-        $list[$i]['decidedAt'] = date('c');
-        $list[$i]['points'] = $decision === 'approved' ? $points : 0;
-        if ($decision === 'approved' && isset($in['publish'])) {
-            $list[$i]['publish'] = !empty($in['publish']);
-        }
-        $found = true;
-        break;
-    }
-    if (!$found) fail('Работа не найдена.', 404);
-    if (!write_json(portfolio_file($DATA_DIR), $list)) fail('Не удалось сохранить решение.', 500);
-    respond(array('ok' => true));
+    $points = isset($in['points']) ? (int) $in['points'] : 5;
+    respond(portfolio_decide($DATA_DIR, $in, text(isset($in['id']) ? $in['id'] : '', 60),
+        isset($in['decision']) ? (string) $in['decision'] : '', text(isset($in['note']) ? $in['note'] : '', 400),
+        $points, isset($in['publish']) ? !empty($in['publish']) : null));
 }
 
 if ($act === 'change-password') {
@@ -1891,6 +2329,7 @@ if ($act === 'change-password') {
            старые устройства не должны остаться в аккаунте */
         revoke_user_tokens($DATA_DIR, $user['id'],
             isset($in['token']) ? (string) $in['token'] : '');
+        private_media_revoke_user($DATA_DIR, $user['id']);
         audit_log($DATA_DIR, $user['name'], 'change-password', 'пароль изменён, прочие сессии закрыты');
         respond(array('ok' => true));
     }
@@ -1914,21 +2353,24 @@ if ($act === 'consent-send') {
     );
     if (!$file) fail($err, 413);
 
-    $dir = media_dir($DATA_DIR);
-    $fname = 'pd_' . $user['id'] . '_' . time() . '.' . $file['ext'];
-    if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) {
-        fail('Не удалось сохранить скан. Попробуйте файл поменьше.', 500);
-    }
-    @chmod($dir . '/' . $fname, 0644);
+    $saved = private_media_store($DATA_DIR, $user['id'], 'consent', $file);
+    if (!$saved) fail('Не удалось сохранить скан. Попробуйте файл поменьше.', 500);
+
+    $kind = consent_kind(isset($in['kind']) ? $in['kind'] : '');
+    $purpose = $kind === 'distribution'
+        ? text(isset($in['purpose']) ? $in['purpose'] : '', 160)
+        : '';
 
     $list = read_consents($DATA_DIR);
     $record = array(
         'id' => 'c_' . bin2hex(random_bytes(5)),
         'userId' => $user['id'],
+        'kind' => $kind,
+        'purpose' => $purpose,
         'name' => $user['name'],
         'email' => $user['email'],
         'userRegion' => isset($user['region']) ? $user['region'] : '',
-        'scan' => media_public_url($fname),
+        'scan' => $saved['url'],
         'status' => 'pending',
         'note' => '',
         'createdAt' => date('c'),
@@ -1936,8 +2378,10 @@ if ($act === 'consent-send') {
     );
     $replaced = false;
     foreach ($list as $i => $c) {
-        if (isset($c['userId']) && $c['userId'] === $user['id']) {
+        if (isset($c['userId']) && $c['userId'] === $user['id'] && consent_record_kind($c) === $kind) {
             $record['id'] = $c['id'];
+            $record['history'] = isset($c['history']) && is_array($c['history']) ? $c['history'] : array();
+            $record['history'][] = array('at' => date('c'), 'by' => $user['email'], 'decision' => 'resubmitted', 'note' => 'Загружен новый скан');
             $list[$i] = $record;
             $replaced = true;
             break;
@@ -1946,32 +2390,42 @@ if ($act === 'consent-send') {
     if (!$replaced) $list[] = $record;
     if (!write_json(consents_file($DATA_DIR), $list)) fail('Не удалось сохранить заявку.', 500);
 
-    respond(array('ok' => true, 'consent' => public_consent($record)));
+    respond(array('ok' => true, 'consent' => public_consent($record, $user, $DATA_DIR, $kind)));
 }
 
 if ($act === 'consent-status') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    respond(array('ok' => true, 'consent' => public_consent(consent_of_user($DATA_DIR, $user['id']))));
+    /* consent — обработка (как раньше), distribution — согласие для конкурсов.
+       Клиент получает оба статуса сразу, чтобы не делать два запроса. */
+    respond(array(
+        'ok' => true,
+        'consent' => public_consent(consent_of_user($DATA_DIR, $user['id'], 'processing'), $user, $DATA_DIR, 'processing'),
+        'distribution' => public_consent(consent_of_user($DATA_DIR, $user['id'], 'distribution'), $user, $DATA_DIR, 'distribution'),
+    ));
 }
 
 if ($act === 'consent-queue') {
     $in = body();
-    require_staff($DATA_DIR, $in, 'docs.manage');
+    $me = require_staff($DATA_DIR, $in, 'consents.review');
+    $filter = isset($in['kind']) ? (string) $in['kind'] : '';
+    $filter = in_array($filter, array('processing', 'distribution'), true) ? $filter : '';
     $list = read_consents($DATA_DIR);
     usort($list, function ($a, $b) {
         return strcmp((string) $b['createdAt'], (string) $a['createdAt']);
     });
     $out = array();
-    foreach ($list as $c) $out[] = public_consent($c);
+    foreach ($list as $c) {
+        if ($filter && consent_record_kind($c) !== $filter) continue;
+        $out[] = public_consent($c, $me, $DATA_DIR);
+    }
     respond(array('ok' => true, 'consents' => $out));
 }
 
 if ($act === 'consent-review') {
     $in = body();
-    $password = isset($in['password']) ? (string) $in['password'] : '';
-    require_confirm($DATA_DIR, $in, 'docs.manage');
+    require_confirm($DATA_DIR, $in, 'consents.review');
 
     $id = isset($in['id']) ? (string) $in['id'] : '';
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
@@ -1979,10 +2433,14 @@ if ($act === 'consent-review') {
     if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение должно быть «одобрено» или «отклонено».');
     if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание — напишите причину.');
 
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     $list = read_consents($DATA_DIR);
     $found = false;
     foreach ($list as $i => $c) {
         if ($c['id'] !== $id) continue;
+        if ($c['status'] === $decision) respond(array('ok' => true, 'replayed' => true));
+        $list[$i]['history'][] = array('at' => date('c'), 'by' => $me['email'], 'decision' => $decision, 'note' => $note);
+        $list[$i]['decidedBy'] = $me['email'];
         $list[$i]['status'] = $decision;
         $list[$i]['note'] = $note;
         $list[$i]['decidedAt'] = date('c');
@@ -1991,6 +2449,7 @@ if ($act === 'consent-review') {
     }
     if (!$found) fail('Заявка не найдена.', 404);
     if (!write_json(consents_file($DATA_DIR), $list)) fail('Не удалось сохранить решение.', 500);
+    audit_log($DATA_DIR, $me['email'], 'consent-review', $id . ' (' . consent_record_kind($list[$i]) . ') → ' . $decision);
     respond(array('ok' => true));
 }
 
@@ -2057,6 +2516,7 @@ if ($act === 'reg') {
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить аккаунт.', 500);
 
     $token = new_token($DATA_DIR, $id);
+    private_media_cookie($DATA_DIR, $user, $token);
     $mailSent = mail_notify($DATA_DIR, 'confirm_code', $email, array(
         'name' => $name,
         'code' => $confirmCode,
@@ -2133,6 +2593,7 @@ if ($act === 'recovery-reset') {
     write_json(users_file($DATA_DIR), $users);
 
     /* все прежние сессии закрываются: новый пароль — новая жизнь */
+    private_media_revoke_user($DATA_DIR, $userId);
     $tokens = read_json(tokens_file($DATA_DIR), array());
     if (is_array($tokens)) {
         foreach ($tokens as $t => $info) {
@@ -2521,11 +2982,7 @@ if ($act === 'posts-queue') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    $role = isset($me['access']) ? $me['access'] : 'Пользователь';
-    if (!in_array($role, array('Директор', 'Администрация', 'Редакционный администратор региона',
-        'Редакционный основатель'), true)) {
-        fail('Очередь материалов видят только роли редакции.', 403);
-    }
+    if (!can($me, 'posts.review')) fail('Очередь материалов видят только роли редакции.', 403);
     $posts = read_json($DATA_DIR . '/posts.json', array());
     $out = array();
     foreach ($posts as $post) {
@@ -2708,37 +3165,26 @@ if ($act === 'user-card') {
     $editorialApps = array();
     foreach (read_editorial_apps($DATA_DIR) as $a) {
         if ($a['userId'] !== $id) continue;
-        $editorialApps[] = public_editorial_app($a);
+        $editorialApps[] = public_editorial_app($a, $me, $DATA_DIR);
     }
 
     $consents = array();
     foreach (read_consents($DATA_DIR) as $c) {
-        if (isset($c['userId']) && $c['userId'] === $id) $consents[] = public_consent($c);
+        if (isset($c['userId']) && $c['userId'] === $id) $consents[] = public_consent($c, $me, $DATA_DIR);
     }
 
     $cards = array();
     foreach (read_cards($DATA_DIR) as $c) {
         $mineByUser = isset($c['userId']) && $c['userId'] === $id;
-        $mineByName = isset($c['authorName']) && $c['authorName'] === $name;
-        if ($mineByUser || $mineByName) {
-            $cards[] = array(
-                'id' => $c['id'],
-                'status' => $c['status'],
-                'number' => isset($c['number']) ? $c['number'] : '',
-                'note' => isset($c['note']) ? $c['note'] : '',
-                'delivery' => isset($c['delivery']) ? $c['delivery'] : null,
-                'issuePlace' => isset($c['issuePlace']) ? $c['issuePlace'] : '',
-                'issuedAt' => isset($c['issuedAt']) ? $c['issuedAt'] : '',
-                'createdAt' => $c['createdAt'],
-                'decidedAt' => isset($c['decidedAt']) ? $c['decidedAt'] : '',
-            );
+        if ($mineByUser) {
+            $cards[] = card_public($c, true);
         }
     }
 
     $portfolio = array();
     foreach (read_portfolio($DATA_DIR) as $item) {
         if ($item['userId'] !== $id) continue;
-        $portfolio[] = public_portfolio($item);
+        $portfolio[] = public_portfolio($item, $me, $DATA_DIR);
     }
 
     $recovery = array();
@@ -2829,6 +3275,9 @@ if ($act === 'user-update') {
                 $users[$i]['emailVerified'] = false;
                 $users[$i]['emailChangedAt'] = date('c');
                 $users[$i]['emailChangedBy'] = (string) $me['email'];
+                $users[$i]['confirm'] = '';
+                revoke_user_tokens($DATA_DIR, $u['id']);
+                private_media_revoke_user($DATA_DIR, $u['id']);
                 $emailChanged = true;
             }
         }
@@ -2836,11 +3285,13 @@ if ($act === 'user-update') {
         if (isset($in['role'])) $users[$i]['role'] = text($in['role'], 60);
         if (isset($in['bio'])) $users[$i]['bio'] = text($in['bio'], 600);
         if (isset($in['avatar'])) $users[$i]['avatar'] = safe_media_url($in['avatar']);
-        if (isset($in['emailVerified'])) $users[$i]['emailVerified'] = !empty($in['emailVerified']);
-        if (isset($in['access'])) {
+        /* Подтверждение почты нельзя включить полем профиля: только код владельца адреса. */
+        if (isset($in['access']) && $in['access'] !== (isset($u['access']) ? $u['access'] : '')) {
             $access = text($in['access'], 60);
-            if (!in_array($access, access_list(), true)) fail('Такой роли нет.');
+            guard_role_change($me, $u, $access, $users);
             $users[$i]['access'] = $access;
+            $users[$i]['accessGrantedAt'] = date('c');
+            $users[$i]['accessGrantedBy'] = $me['email'];
         }
         $updated = $users[$i];
         $found = true;
@@ -2855,11 +3306,7 @@ if ($act === 'user-update') {
 
 if ($act === 'card-grant') {
     $in = body();
-    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
-    if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!can($me, 'cards.issue')) {
-        fail('Карту выдаёт директор, администрация или редакционный администратор региона.', 403);
-    }
+    $me = require_confirm($DATA_DIR, $in, 'cards.issue');
     $id = text(isset($in['id']) ? $in['id'] : '', 40);
 
     $target = null;
@@ -2867,18 +3314,24 @@ if ($act === 'card-grant') {
         if ($u['id'] === $id) $target = $u;
     }
     if (!$target) fail('Участник не найден.', 404);
+    require_consent($DATA_DIR, $target);
 
     $cards = read_cards($DATA_DIR);
-    foreach ($cards as $c) {
-        if (isset($c['userId']) && $c['userId'] === $id && $c['status'] === 'issued') {
-            fail('У участника уже есть действующая карта: ' . $c['number'], 409);
+    $active = card_active($cards, $id);
+    if ($active) fail('У участника уже есть действующая карта: ' . $active['number'], 409);
+    $number = text(isset($in['number']) ? $in['number'] : '', 40);
+    if ($number !== '') {
+        foreach ($cards as $c) {
+            if (isset($c['number']) && (string) $c['number'] === $number) fail('Такой номер карты уже занят.', 409);
         }
     }
+    $award = points_award_rule($DATA_DIR, $id, 'card.issued', $me['email'], 'Пресс-карта выдана редакцией', 'card-grant:' . $id);
+    if (empty($award['ok'])) fail('Баллы не записаны, карта не выдана. ' . $award['error'], 500);
 
     $year = date('Y');
-    $number = text(isset($in['number']) ? $in['number'] : '', 40);
     if ($number === '') $number = card_number_next($cards, $year);
     $cardId = new_id('c_');
+    $now = date('c');
     $cards[$cardId] = array(
         'id' => $cardId,
         'authorKey' => '',
@@ -2889,9 +3342,14 @@ if ($act === 'card-grant') {
         'posts' => array(),
         'status' => 'issued',
         'number' => $number,
+        'verifyCode' => card_verify_code_new($cards),
         'note' => 'Выдана редакцией вручную: ' . $me['name'],
-        'createdAt' => date('c'),
-        'decidedAt' => date('c'),
+        'createdAt' => $now,
+        'decidedAt' => $now,
+        'decidedBy' => $me['email'],
+        'issuedAt' => $now,
+        'validUntil' => card_add_months($now, CARD_VALID_MONTHS),
+        'history' => array(array('at' => $now, 'by' => $me['email'], 'decision' => 'issued', 'note' => 'Выдана редакцией вручную')),
     );
     if (!write_json($DATA_DIR . '/cards.json', $cards)) fail('Не удалось выдать карту.', 500);
     audit_log($DATA_DIR, $me['name'], 'card-grant', 'карта ' . $number . ' — ' . $target['name']);
@@ -2902,7 +3360,7 @@ if ($act === 'card-grant') {
             if ($e['id'] === $target['editorialId']) $editorial = $e;
         }
     }
-    respond(array('ok' => true, 'number' => $number, 'editorial' => $editorial));
+    respond(array('ok' => true, 'number' => $number, 'editorial' => $editorial, 'request' => card_public($cards[$cardId], true)));
 }
 
 if ($act === 'user-message') {
@@ -2990,7 +3448,7 @@ if ($act === 'team-chat-send') {
     );
     $list[] = $row;
     if (count($list) > 500) $list = array_slice($list, -500);
-    write_json($file, $list);
+    if (!write_json($file, $list)) fail('Не удалось сохранить сообщение. Попробуйте ещё раз.', 500);
     respond(array('ok' => true, 'message' => $row));
 }
 
@@ -3023,16 +3481,23 @@ if ($act === 'consent-decide') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!can($me, 'people.edit')) fail('Решение по согласию принимает директор и администрация.', 403);
+    if (!can($me, 'consents.review')) fail('Решение по согласию принимает ответственная редакция.', 403);
+    require_confirm($DATA_DIR, $in, 'consents.review');
     $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    $kind = consent_kind(isset($in['kind']) ? $in['kind'] : '');
     $decision = isset($in['decision']) ? (string) $in['decision'] : '';
     $note = text(isset($in['note']) ? $in['note'] : '', 400);
     if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение — «принять» или «отклонить».');
+    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание — напишите причину.');
 
     $list = read_consents($DATA_DIR);
     $found = false;
     foreach ($list as $i => $c) {
         if ((isset($c['userId']) ? $c['userId'] : '') !== $userId) continue;
+        if (consent_record_kind($c) !== $kind) continue;
+        if ($c['status'] === $decision) respond(array('ok' => true, 'replayed' => true));
+        $list[$i]['history'][] = array('at' => date('c'), 'by' => $me['email'], 'decision' => $decision, 'note' => $note);
+        $list[$i]['decidedBy'] = $me['email'];
         $list[$i]['status'] = $decision;
         $list[$i]['note'] = $note;
         $list[$i]['decidedAt'] = date('c');
@@ -3040,41 +3505,36 @@ if ($act === 'consent-decide') {
         break;
     }
     if (!$found) fail('Согласие не найдено.', 404);
-    write_json(consents_file($DATA_DIR), $list);
-    audit_log($DATA_DIR, $me['name'], 'consent-decide', $decision . ': ' . $userId);
+    if (!write_json(consents_file($DATA_DIR), $list)) fail('Не удалось сохранить решение.', 500);
+    audit_log($DATA_DIR, $me['name'], 'consent-decide', $decision . ': ' . $userId . ' (' . $kind . ')');
     respond(array('ok' => true));
 }
 
 if ($act === 'portfolio-decide') {
     $in = body();
-    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
-    if (!$me) fail('Нужно войти в аккаунт.', 401);
-    if (!can($me, 'posts.review')) fail('Решение по портфолио принимает директор и администрация.', 403);
-    $id = text(isset($in['id']) ? $in['id'] : '', 40);
-    $decision = isset($in['decision']) ? (string) $in['decision'] : '';
-    $note = text(isset($in['note']) ? $in['note'] : '', 400);
-    $points = (int) (isset($in['points']) ? $in['points'] : 0);
-    if (!in_array($decision, array('approved', 'rejected'), true)) fail('Решение — «принять» или «отклонить».');
-    if ($decision === 'rejected' && slen($note) < 5) fail('Для отказа нужно основание.');
-
-    $list = read_portfolio($DATA_DIR);
-    $found = false;
-    foreach ($list as $i => $item) {
-        if ($item['id'] !== $id) continue;
-        $list[$i]['status'] = $decision;
-        $list[$i]['note'] = $note;
-        $list[$i]['points'] = $decision === 'approved' ? max(0, min(50, $points)) : 0;
-        $list[$i]['decidedAt'] = date('c');
-        $found = true;
-        break;
-    }
-    if (!$found) fail('Работа не найдена.', 404);
-    write_json(portfolio_file($DATA_DIR), $list);
-    audit_log($DATA_DIR, $me['name'], 'portfolio-decide', $decision . ': ' . $id);
-    respond(array('ok' => true));
+    respond(portfolio_decide($DATA_DIR, $in, text(isset($in['id']) ? $in['id'] : '', 60),
+        isset($in['decision']) ? (string) $in['decision'] : '', text(isset($in['note']) ? $in['note'] : '', 400),
+        isset($in['points']) ? (int) $in['points'] : 0));
 }
 
 /* ------------------------------------------------- права участников */
+
+function guard_role_change($me, $target, $access, $users) {
+    if (!can($me, 'people.access')) fail('Для изменения роли нужно право people.access.', 403);
+    if (!in_array($access, access_list(), true)) fail('Такой роли нет.');
+    if (!can_manage_user($me, $target)) fail('Этот участник не ниже вас по роли.', 403);
+    if (!can_manage_role($me, $access)) fail('Нельзя выдать роль выше своей.', 403);
+    if (isset($target['status']) && $target['status'] === 'deleted') fail('Удалённому аккаунту роль не выдаётся.', 409);
+    $current = isset($target['access']) ? $target['access'] : '';
+    if ($current === 'Директор' && $access !== 'Директор') {
+        $left = 0;
+        foreach ($users as $u) {
+            if ((isset($u['access']) ? $u['access'] : '') === 'Директор' &&
+                (!isset($u['status']) || !in_array($u['status'], array('deleted', 'suspended'), true))) $left++;
+        }
+        if ($left <= 1) fail('Нельзя снять последнего действующего директора. Сначала назначьте другого.', 409);
+    }
+}
 
 function access_list() {
     return roles_list();
@@ -3092,12 +3552,10 @@ if ($act === 'users') {
     $editorialNames = array();
     foreach (read_editorials($DATA_DIR) as $e) $editorialNames[$e['id']] = $e['name'];
     $cardByUser = array();
-    foreach (read_cards($DATA_DIR) as $c) {
-        if (empty($c['userId'])) continue;
-        $prev = isset($cardByUser[$c['userId']]) ? $cardByUser[$c['userId']] : null;
-        if ($prev === null || strcmp((string) $c['createdAt'], (string) $prev['createdAt']) > 0) {
-            $cardByUser[$c['userId']] = $c;
-        }
+    $allCards = read_cards($DATA_DIR);
+    foreach (read_users($DATA_DIR) as $u) {
+        $current = card_current($allCards, $u['id']);
+        if ($current) $cardByUser[$u['id']] = $current;
     }
     $consentByUser = array();
     foreach (read_consents($DATA_DIR) as $c) {
@@ -3127,8 +3585,9 @@ if ($act === 'users') {
             'lastSeen' => last_seen_of($DATA_DIR, $u['id'], $activity),
             'editorialId' => isset($u['editorialId']) ? $u['editorialId'] : '',
             'editorialName' => isset($u['editorialId'], $editorialNames[$u['editorialId']]) ? $editorialNames[$u['editorialId']] : '',
-            'cardStatus' => $card ? $card['status'] : 'none',
+            'cardStatus' => $card ? card_effective_status($card) : 'none',
             'cardNumber' => $card && !empty($card['number']) ? $card['number'] : '',
+            'cardValidUntil' => $card ? card_valid_until($card) : '',
             'consent' => isset($consentByUser[$u['id']]) ? $consentByUser[$u['id']] : 'none',
         );
     }
@@ -3264,6 +3723,14 @@ if ($act === 'person-status') {
         if ($u['id'] !== $userId) continue;
         $target = $u;
         if (!can_manage_user($me, $u)) fail('Этот участник не ниже вас по роли.', 403);
+        if ($status === 'suspended' && (isset($u['access']) ? $u['access'] : '') === 'Директор') {
+            $left = 0;
+            foreach ($users as $other) {
+                if ((isset($other['access']) ? $other['access'] : '') === 'Директор' &&
+                    (!isset($other['status']) || !in_array($other['status'], array('deleted', 'suspended'), true))) $left++;
+            }
+            if ($left <= 1) fail('Нельзя приостановить последнего действующего директора.', 409);
+        }
         $users[$i]['status'] = $status;
         $users[$i]['statusChangedAt'] = date('c');
         $users[$i]['statusReason'] = $reason;
@@ -3272,7 +3739,7 @@ if ($act === 'person-status') {
     }
     if (!$found) fail('Участник не найден.', 404);
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось сохранить статус.', 500);
-    if ($status === 'suspended') revoke_user_tokens($DATA_DIR, $userId);
+    if ($status === 'suspended') { revoke_user_tokens($DATA_DIR, $userId); private_media_revoke_user($DATA_DIR, $userId); }
     audit_log($DATA_DIR, $me['name'], 'person-status',
         $target['name'] . ' → ' . ($status === 'suspended' ? 'приостановлен' : 'восстановлен') .
         ($reason !== '' ? ' (' . $reason . ')' : ''));
@@ -3322,10 +3789,7 @@ if ($act === 'boss-grant') {
     $email = norm_email(isset($in['email']) ? $in['email'] : '6804979@mail.ru');
     if (!$email) fail('Укажите почту.');
     $access = text((string) (isset($in['access']) ? $in['access'] : 'Главный администратор'), 60);
-    if (!in_array($access, array('Директор', 'Главный администратор', 'Администрация', 'Администратор',
-        'Технический администратор', 'Главный редактор', 'Сотрудник', 'Модератор'), true)) {
-        fail('Такой роли нет.');
-    }
+    if (!in_array($access, access_list(), true)) fail('Такой роли нет.');
     if (!can_manage_role($me, $access)) fail('Эту роль выдать нельзя: она выше вашей.', 403);
 
     $users = read_users($DATA_DIR);
@@ -3334,12 +3798,11 @@ if ($act === 'boss-grant') {
     $tempPass = '';
     foreach ($users as $i => $u) {
         if (strtolower((string) $u['email']) !== $email) continue;
+        guard_role_change($me, $u, $access, $users);
+        require_verified($u);
         $users[$i]['access'] = $access;
-        $users[$i]['emailVerified'] = true;
-        if (!isset($users[$i]['status']) || $users[$i]['status'] === 'pending_email') {
-            $users[$i]['status'] = 'active';
-        }
         $users[$i]['accessGrantedAt'] = date('c');
+        $users[$i]['accessGrantedBy'] = $me['email'];
         $found = true;
         break;
     }
@@ -3353,8 +3816,8 @@ if ($act === 'boss-grant') {
             'region' => '',
             'role' => 'Автор текстов',
             'access' => $access,
-            'status' => 'active',
-            'emailVerified' => true,
+            'status' => 'pending_email',
+            'emailVerified' => false,
             'bio' => '',
             'avatar' => '',
             'createdAt' => date('c'),
@@ -3365,15 +3828,25 @@ if ($act === 'boss-grant') {
         $created = true;
     }
     if (!write_json(users_file($DATA_DIR), $users)) fail('Не удалось выдать доступ.', 500);
-    mail_notify($DATA_DIR, 'access_granted', $email, array(
+    $mailSent = mail_notify($DATA_DIR, 'access_granted', $email, array(
         'name' => 'коллега', 'access' => $access, 'link' => 'https://smenakontenta.ru/join#login',
         'temp_pass' => $tempPass,
     ), array('dedupe' => 'access:' . $email . ':' . date('Ymd')));
+    if ($created) {
+        $code = (string) random_int(100000, 999999);
+        foreach ($users as $i => $u) if ($u['email'] === $email) {
+            $users[$i]['confirm'] = password_hash($code, PASSWORD_DEFAULT);
+            $users[$i]['confirmAt'] = date('c');
+        }
+        if (!write_json(users_file($DATA_DIR), $users)) fail('Роль сохранена, но код подтверждения не записан. Запросите письмо в кабинете.', 500);
+        $mailSent = mail_notify($DATA_DIR, 'confirm_code', $email, array('name' => 'коллега', 'code' => $code,
+            'minutes' => 30, 'link' => 'https://smenakontenta.ru/profile'), array('dedupe' => 'boss-confirm:' . $email)) && $mailSent;
+    }
     audit_log($DATA_DIR, $me['email'], 'выдача доступа', $email . ' → ' . $access . ($created ? ' (аккаунт создан)' : ''));
     respond(array('ok' => true, 'email' => $email, 'access' => $access, 'created' => $created,
-        'mailSent' => true,
+        'mailSent' => $mailSent,
         'note' => $created
-            ? 'Аккаунт создан, пароль отправлен на почту. Пусть сменит его при первом входе.'
+            ? 'Аккаунт создан. Пароль и код подтверждения отправлены на почту; до подтверждения права не действуют.'
             : 'Доступ выдан. Пусть войдёт заново, чтобы права обновились.'));
 }
 
@@ -3383,23 +3856,18 @@ if ($act === 'grant-admin') {
     $email = norm_email(isset($in['email']) ? $in['email'] : '');
     if (!$email) fail('Укажите почту аккаунта.');
     $access = text(isset($in['access']) ? $in['access'] : '', 60);
-    $allowed = array('Директор', 'Главный администратор', 'Администрация', 'Администратор',
-        'Технический администратор', 'Главный редактор', 'Сотрудник', 'Модератор');
-    if (!in_array($access, $allowed, true)) fail('Такой роли нет: ' . implode(', ', $allowed) . '.');
+    if (!in_array($access, access_list(), true)) fail('Такой роли нет.');
 
     $users = read_users($DATA_DIR);
     $updated = null;
     $found = false;
     foreach ($users as $i => $u) {
         if (strtolower((string) $u['email']) !== $email) continue;
+        guard_role_change($me, $u, $access, $users);
+        require_verified($u);
         $users[$i]['access'] = $access;
-        /* доступ даёт владелец лично, поэтому почта считается проверенной:
-           иначе администратор не сможет пользоваться панелью */
-        $users[$i]['emailVerified'] = true;
-        if (!isset($users[$i]['status']) || $users[$i]['status'] === 'pending_email') {
-            $users[$i]['status'] = 'active';
-        }
         $users[$i]['accessGrantedAt'] = date('c');
+        $users[$i]['accessGrantedBy'] = $me['email'];
         $updated = $users[$i];
         $found = true;
         break;
@@ -3423,23 +3891,9 @@ if ($act === 'user-access') {
 
     $users = read_users($DATA_DIR);
     $target = null;
-    $directors = 0;
-    foreach ($users as $u) {
-        if ((isset($u['access']) ? $u['access'] : '') === 'Директор') $directors++;
-        if ($u['id'] === $id) $target = $u;
-    }
+    foreach ($users as $u) if ($u['id'] === $id) $target = $u;
     if (!$target) fail('Участник не найден.', 404);
-    /* нельзя менять того, кто равен или выше по роли, и нельзя выдать
-       роль выше собственной: иначе администратор поднимает себя до директора */
-    if (!can_manage_user($me, $target)) {
-        fail('Этот участник не ниже вас по роли — права меняет старший.', 403);
-    }
-    if (!can_manage_role($me, $access)) {
-        fail('Нельзя выдать роль выше своей.', 403);
-    }
-    if ((isset($target['access']) ? $target['access'] : '') === 'Директор' && $access !== 'Директор' && $directors <= 1) {
-        fail('Директор один: сначала назначьте другого директора, потом снимайте этого.');
-    }
+    guard_role_change($me, $target, $access, $users);
 
     foreach ($users as $i => $u) {
         if ($u['id'] !== $id) continue;
@@ -3908,7 +4362,9 @@ if ($act === 'login') {
                     'message' => 'Код подтверждения отправлен на ' . $u['email'] . '. Он действует 10 минут.'));
             }
             touch_activity($DATA_DIR, $u['id']);
-            respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
+            $newToken = new_token($DATA_DIR, $u['id']);
+            private_media_cookie($DATA_DIR, $u, $newToken);
+            respond(array('ok' => true, 'user' => public_user($u), 'token' => $newToken));
         }
     }
     fail('Аккаунт с такой почтой не найден. Зарегистрируйтесь — это минута.', 404);
@@ -3940,7 +4396,9 @@ if ($act === 'login-2fa') {
         write_json(users_file($DATA_DIR), $users);
         touch_activity($DATA_DIR, $u['id']);
         audit_log($DATA_DIR, $u['email'], 'вход по коду', 'двухфакторная проверка пройдена');
-        respond(array('ok' => true, 'user' => public_user($u), 'token' => new_token($DATA_DIR, $u['id'])));
+        $newToken = new_token($DATA_DIR, $u['id']);
+            private_media_cookie($DATA_DIR, $u, $newToken);
+            respond(array('ok' => true, 'user' => public_user($u), 'token' => $newToken));
     }
     fail('Аккаунт с такой почтой не найден.', 404);
 }
@@ -3996,6 +4454,7 @@ if ($act === 'me') {
         fail('Аккаунт приостановлен.', 403);
     }
     touch_activity($DATA_DIR, $user['id']);
+    private_media_cookie($DATA_DIR, $user, $token);
     respond(array(
         'ok' => true,
         'user' => public_user($user),
@@ -4006,6 +4465,7 @@ if ($act === 'me') {
 
 if ($act === 'logout') {
     $in = body();
+    private_media_clear_cookie($DATA_DIR);
     $token = isset($in['token']) ? (string) $in['token'] : '';
     $tokens = read_json(tokens_file($DATA_DIR), array());
     if (is_array($tokens) && isset($tokens[$token])) {
@@ -4028,10 +4488,11 @@ if ($act === 'account-delete') {
     if (!password_verify($pass, (string) $me['pass'])) fail('Пароль не подошёл — удаление отменено.', 403);
     $word = supper(trim((string) (isset($in['confirm']) ? $in['confirm'] : '')));
     if ($word !== 'УДАЛИТЬ') fail('Напишите слово УДАЛИТЬ в поле подтверждения.', 400);
-    if (!empty($me['access']) && strpos((string) $me['access'], 'Директор') !== false) {
+    if ((isset($me['access']) ? $me['access'] : '') === 'Директор') {
         $directors = 0;
         foreach (read_users($DATA_DIR) as $u) {
-            if (!empty($u['access']) && strpos((string) $u['access'], 'Директор') !== false && empty($u['deletedAt'])) $directors++;
+            if ((isset($u['access']) ? $u['access'] : '') === 'Директор' &&
+                (!isset($u['status']) || !in_array($u['status'], array('deleted', 'suspended'), true))) $directors++;
         }
         if ($directors <= 1) fail('Единственного директора удалить нельзя: сначала назначьте другого.', 409);
     }
@@ -4042,16 +4503,9 @@ if ($act === 'account-delete') {
         'reason' => 'Вы удалили аккаунт в личном кабинете.',
     ), array('dedupe' => 'deleted:' . $me['id']));
 
-    /* токены: все сессии закрываем */
-    $tokens = read_json($DATA_DIR . '/tokens.json', array());
-    if (is_array($tokens)) {
-        $left = array();
-        foreach ($tokens as $row) {
-            if (isset($row['userId']) && $row['userId'] === $me['id']) continue;
-            $left[] = $row;
-        }
-        write_json($DATA_DIR . '/tokens.json', $left);
-    }
+    /* токены и доступ к личным документам закрываем */
+    private_media_revoke_user($DATA_DIR, $me['id']);
+    revoke_user_tokens($DATA_DIR, $me['id']);
 
     /* материалы остаются, но без привязки к человеку */
     $posts = read_json($DATA_DIR . '/posts.json', array());
@@ -4167,6 +4621,7 @@ if ($act === 'media-upload') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Загружать файлы можно только из аккаунта. Войдите.', 401);
+    require_consent($DATA_DIR, $user);
 
     $allowed = array(
         'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
@@ -4179,7 +4634,7 @@ if ($act === 'media-upload') {
 
     $dir = media_dir($DATA_DIR);
     if (!is_dir($dir)) fail('Папка для файлов недоступна.', 500);
-    $fname = 'm_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $file['ext'];
+    $fname = 'm_' . bin2hex(random_bytes(20)) . '.' . $file['ext'];
     if (@file_put_contents($dir . '/' . $fname, $file['bin']) === false) {
         fail('Файл слишком большой для хостинга или нет прав на запись.', 500);
     }
@@ -4187,11 +4642,30 @@ if ($act === 'media-upload') {
     respond(array('ok' => true, 'url' => media_public_url($fname), 'mime' => $file['mime'], 'size' => strlen($file['bin'])));
 }
 
+if ($act === 'private-media') {
+    $viewer = private_media_user($DATA_DIR);
+    if (!$viewer) fail('Войдите, чтобы открыть личный документ.', 401);
+    $record = private_media_record($DATA_DIR, isset($_GET['id']) ? (string) $_GET['id'] : '');
+    if (!$record) { fail('Документ не найден.', 404); }
+    if (!private_media_can_view($DATA_DIR, $viewer, $record)) fail('Этот документ доступен только владельцу и ответственной редакции.', 403);
+    private_media_serve($DATA_DIR, $record);
+}
+
 if ($act === 'media') {
     $id = isset($_GET['id']) ? basename((string) $_GET['id']) : '';
     if ($id === '' || !preg_match('/^[A-Za-z0-9_.-]+$/', $id)) {
         http_response_code(404);
         exit;
+    }
+    if (preg_match('/^(pd_|pf_|ed_)/', $id)) {
+        $viewer = private_media_user($DATA_DIR);
+        if (!$viewer) fail('Войдите, чтобы открыть личный документ.', 401);
+        foreach (private_media_read($DATA_DIR) as $private) {
+            if (isset($private['legacyName']) && $private['legacyName'] === $id && private_media_can_view($DATA_DIR, $viewer, $private)) {
+                private_media_serve($DATA_DIR, $private);
+            }
+        }
+        fail('Документ недоступен.', 403);
     }
     $path = media_dir($DATA_DIR) . '/' . $id;
     if (!file_exists($path)) {
@@ -4329,7 +4803,7 @@ function confirm_valid($dir, $me, $token) {
 function require_confirm($dir, $in, $cap = '') {
     $me = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Сначала войдите в аккаунт.', 401);
-    if ($cap !== '' && !can($me, $cap) && !is_top_admin($me)) {
+    if ($cap !== '' && !can($me, $cap)) {
         fail('Для этого действия нужны права администрации.', 403);
     }
     $confirm = isset($in['confirm']) ? (string) $in['confirm'] : '';
@@ -4350,7 +4824,7 @@ function require_confirm($dir, $in, $cap = '') {
 function require_staff($dir, $in, $cap = '') {
     $me = user_by_token($dir, isset($in['token']) ? (string) $in['token'] : '');
     if (!$me) fail('Сначала войдите в аккаунт.', 401);
-    if ($cap !== '' && !can($me, $cap) && !is_top_admin($me)) {
+    if ($cap !== '' && !can($me, $cap)) {
         fail('Для этого действия нужны права администрации.', 403);
     }
     return $me;

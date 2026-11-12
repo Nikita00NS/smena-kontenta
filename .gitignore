@@ -7,6 +7,7 @@ api/data/probe.json
 .DS_Store
 *.log
 node_modules/
+__pycache__/
 
 # локальные проверки и черновики
 .scratch/
