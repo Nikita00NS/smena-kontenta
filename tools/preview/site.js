@@ -109,7 +109,14 @@ async function createSite(opts) {
       $_SERVER['REMOTE_ADDR'] = ${JSON.stringify(meta.ip || "203.0.113.9")};
       $_SERVER['HTTP_USER_AGENT'] = ${JSON.stringify(meta.ua || "smena-preview")};
       foreach (json_decode(${JSON.stringify(JSON.stringify(query))}, true) as $k => $v) { $_GET[$k] = (string) $v; }
-      require '/site/api/index.php';
+      /* ошибка PHP не должна выглядеть как «сервер молчит»: пишем её в ответ */
+      try {
+          require '/site/api/index.php';
+      } catch (\\Throwable $e) {
+          $text = 'Ошибка PHP: ' . $e->getMessage() . ' (' . basename((string) $e->getFile()) . ':' . $e->getLine() . ')';
+          file_put_contents('/site/api/out.json', json_encode(array('__code' => 500,
+              '__body' => json_encode(array('ok' => false, 'error' => $text, 'code' => 500, 'phpError' => true), JSON_UNESCAPED_UNICODE))));
+      }
     `);
     try { await php.unlink("/site/api/out.json"); } catch (e) { /* не было */ }
     try { php.refresh(); await php.run("<?php require '/site/api/driver.php';"); } catch (e) { /* exit внутри PHP */ }
@@ -214,10 +221,10 @@ async function seedDemo(site) {
     ["admin", "Алина Админова", "admin@demo.ru", "Администрация", "moskva"],
     ["editor", "Егор Главред", "editor@demo.ru", "Главный редактор", "moskva"],
     ["teacher", "Тамара Учителева", "teacher@demo.ru", "Преподаватель", "moskva"],
-    ["head", "Глеб Руководин", "head@demo.ru", "Пользователь", "tatarstan"],
-    ["member", "Мила Участница", "member@demo.ru", "Пользователь", "tatarstan"],
+    ["head", "Глеб Руководин", "head@demo.ru", "Пользователь", "respublika-tatarstan"],
+    ["member", "Мила Участница", "member@demo.ru", "Пользователь", "respublika-tatarstan"],
     ["author", "Анна Авторова", "author@demo.ru", "Пользователь", "moskva"],
-    ["waiting", "Вера Ожидаева", "waiting@demo.ru", "Пользователь", "spb"],
+    ["waiting", "Вера Ожидаева", "waiting@demo.ru", "Пользователь", "sankt-peterburg"],
     ["newbie", "Нина Новичкова", "newbie@demo.ru", "Пользователь", "moskva"],
   ];
   const tokens = {}; const ids = {}; const users = {};
@@ -266,7 +273,7 @@ async function seedDemo(site) {
 
   /* редакция в регионе: заявление руководителя → решение директора → участник */
   const form = {
-    name: "Казанский школьный вестник", region: "tatarstan", city: "Казань", base: "school", baseName: "Лицей № 7",
+    name: "Казанский школьный вестник", region: "respublika-tatarstan", city: "Казань", base: "school", baseName: "Лицей № 7",
     about: "Редакция лицея № 7: новости, репортажи с городских событий, подкаст и фотолетопись учебного года.",
     headName: "Руководин Глеб Андреевич", headBirth: "2005-04-12", headPhone: "+7 900 123-45-67",
     team: [{ name: "Мила Участница", role: "Корреспондент", age: 16 }, { name: "Тимур Камеров", role: "Фотограф", age: 15 }],
@@ -281,7 +288,7 @@ async function seedDemo(site) {
     birthDate: "03.09.2009", why: "Хочу писать репортажи о событиях лицея и города каждую неделю." });
   await site.call("editorial-review", { token: tokens.head, id: join.application.id, decision: "approved" });
   const memberPost = await site.call("submit", { token: tokens.member, title: "Лицей № 7 открыл собственную студию подкастов",
-    excerpt: "Материал участника редакции ждёт проверки руководителя.", body, topic: "Школа", format: "Новость", region: "tatarstan" });
+    excerpt: "Материал участника редакции ждёт проверки руководителя.", body, topic: "Школа", format: "Новость", region: "respublika-tatarstan" });
 
   await site.call("card-apply", { token: tokens.author });
 

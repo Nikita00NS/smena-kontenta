@@ -22,6 +22,60 @@
 
 window.SC = {
   build: "2026-11-07-10",
+  /* project:begin — блок собирается из tools/docs/project.json, руками не править */
+  project: {
+    "name": "Смена контента",
+    "nameQuoted": "«Смена контента»",
+    "kind": "молодёжное медиа, медиашкола и сообщество авторов",
+    "site": "https://smenakontenta.ru",
+    "siteShort": "smenakontenta.ru",
+    "city": "Москва",
+    "director": {
+      "name": "Сирик Никита Сергеевич",
+      "short": "Н. С. Сирик",
+      "dative": "Сирику Никите Сергеевичу",
+      "position": "Генеральный директор",
+      "positionDative": "Генеральному директору"
+    },
+    "cofounder": {
+      "name": "Ильин Борис Павлович",
+      "short": "Б. П. Ильин",
+      "position": "Сооснователь"
+    },
+    "operator": {
+      "name": "Ильин Борис Павлович",
+      "short": "Б. П. Ильин",
+      "dative": "Ильину Борису Павловичу",
+      "instrumental": "Ильиным Борисом Павловичем",
+      "role": "сооснователь проекта «Смена контента»",
+      "address": "",
+      "rkn": ""
+    },
+    "mail": {
+      "personalData": "info@smenakontenta.ru",
+      "editorial": "editorial@smenakontenta.ru",
+      "support": "support@smenakontenta.ru"
+    },
+    "hosting": {
+      "provider": "ООО «СпринтХост»",
+      "datacenter": "дата-центр Xelent, Санкт-Петербург",
+      "country": "Российская Федерация"
+    },
+    "processingStart": "2026-11-05",
+    "docsDate": "2026-11-12",
+    "docsVersion": "2.0",
+    "card": {
+      "validYears": 1,
+      "minPosts": 5,
+      "renewDays": 30
+    },
+    "editorial": {
+      "headMinAge": 14,
+      "teamMin": 2,
+      "reportDay": 5
+    }
+  },
+  /* project:end */
   brand: {
     name: "Смена контента",
     latin: "SMENA",

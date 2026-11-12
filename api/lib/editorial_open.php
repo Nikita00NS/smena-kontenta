@@ -522,6 +522,19 @@ function editorial_open_routes($act, $dir) {
             $users = read_users($dir);
             foreach ($users as $i => $u) {
                 if ($u['id'] !== $app['userId']) continue;
+                /* был участником другой редакции — оттуда он выходит */
+                $before = isset($u['editorialId']) ? (string) $u['editorialId'] : '';
+                if ($before !== '') {
+                    $apps = read_editorial_apps($dir);
+                    foreach ($apps as $k => $a) {
+                        if ((string) $a['userId'] === (string) $u['id'] && (string) $a['editorialId'] === $before && $a['status'] === 'approved') {
+                            $apps[$k]['status'] = 'left';
+                            $apps[$k]['leftAt'] = $now;
+                            $apps[$k]['note'] = 'открыл свою редакцию';
+                        }
+                    }
+                    write_json(editorial_apps_file($dir), $apps);
+                }
                 $users[$i]['editorialId'] = $editorial['id'];
                 if (role_level(isset($u['access']) ? $u['access'] : '') < ROLE_LEVELS['Редакционный основатель']) {
                     $users[$i]['access'] = 'Редакционный основатель';

@@ -1751,18 +1751,20 @@ window.Store = (function () {
 
   function editorialMine() {
     var token = readToken();
-    if (!token) return Promise.resolve({ applications: [], editorial: null, incoming: [] });
+    if (!token) return Promise.resolve({ applications: [], editorial: null, member: null, incoming: [], roster: [] });
     return api("editorial-mine", { token: token }).then(function (res) {
       if (res && res.ok) {
         return {
           applications: res.applications || [],
           editorial: res.editorial || null,
+          member: res.member || null,
           incoming: res.incoming || [],
+          roster: res.roster || [],
         };
       }
-      return { applications: [], editorial: null, incoming: [] };
+      return { applications: [], editorial: null, member: null, incoming: [], roster: [] };
     }, function () {
-      return { applications: [], editorial: null, incoming: [] };
+      return { applications: [], editorial: null, member: null, incoming: [], roster: [] };
     });
   }
 
@@ -1784,6 +1786,15 @@ window.Store = (function () {
         if (res && res.ok) return true;
         throw new Error((res && res.error) || "Решение не сохранилось.");
       });
+  }
+
+  /* выйти из редакции самому; руководитель исключает участника с причиной */
+  function editorialLeave() {
+    return withToken("editorial-leave", {});
+  }
+
+  function editorialExclude(userId, note) {
+    return withToken("editorial-exclude", { userId: userId, note: note });
   }
 
   /* смена пароля: сервер проверяет текущий пароль и хранит только хеш */
@@ -1937,6 +1948,8 @@ window.Store = (function () {
     editorialApply: editorialApply,
     editorialMine: editorialMine,
     editorialReview: editorialReview,
+    editorialLeave: editorialLeave,
+    editorialExclude: editorialExclude,
     editorialQueue: editorialQueue,
     changePassword: changePassword,
     portfolio: portfolio,

@@ -2782,12 +2782,16 @@
       slot.innerHTML = confirmRowHtml();
       bindConfirmDelegation();
       if (noteEl) noteEl.textContent = "Подтвердите действие: пришлём шесть цифр на вашу почту.";
+      /* одно ожидание на место: повторное нажатие не должно дать два повтора */
+      if (slot._waiting) document.removeEventListener("smena:confirmed", slot._waiting);
       var once = function () {
         document.removeEventListener("smena:confirmed", once);
+        slot._waiting = null;
         slot.innerHTML = "";
         slot.style.display = "none";
         if (typeof retry === "function") retry();
       };
+      slot._waiting = once;
       document.addEventListener("smena:confirmed", once);
     }
 
@@ -4411,103 +4415,6 @@
   }
 
   /* Моя редакция: статусы моих заявлений и решения основателя. */
-  function mountMyEditorial(user) {
-    var host = $("[data-my-editorial]");
-    if (!host || !user) return;
-
-    var STATUS_ED = {
-      pending: "на рассмотрении",
-      approved: "приняли",
-      rejected: "отказ",
-    };
-
-    function draw(data) {
-      var html = '<div class="sec-head" style="margin:10px 0 8px"><div class="sec-head__left">' +
-        '<span class="kicker">Редакции</span><h2 style="font-size:1.35rem">Моя редакция</h2></div></div>';
-
-      if (data.applications.length) {
-        html += '<div class="editorial-list">' + data.applications.map(function (a) {
-          var esc2 = esc;
-          return '<div class="editorial-card"><div class="editorial-card__top"><b>Заявка ' +
-            esc2(fmtDate(a.createdAt)) + "</b><span>" + esc2(STATUS_ED[a.status] || a.status) +
-            "</span></div>" +
-            (a.note ? "<p>Основание: " + esc2(a.note) + "</p>" : "") +
-            (a.escalated && a.status === "pending"
-              ? "<p>Семь дней без решения — заявка передана в центральную комиссию.</p>"
-              : "") +
-            "</div>";
-        }).join("") + "</div>";
-      } else if (!data.editorial) {
-        html += '<div class="fill-note fill-note--flat"><b>Вы пока вне редакции</b><p>' +
-          "Можно писать индивидуально или вступить в редакцию своего региона — выбор за вами.</p>" +
-          '<p><a class="link-accent" href="/region?r=' + esc(Store.currentUser().region || "moskva") +
-          '">Выбрать редакцию региона →</a></p></div>';
-      }
-
-      if (data.editorial) {
-        html += '<div class="editorial-card"><div class="editorial-card__top"><b>' +
-          esc(data.editorial.name) + "</b><span>вы основатель</span></div>" +
-          "<p>" + esc(data.editorial.about || "") + "</p>" +
-          '<div class="editorial-card__meta">' + (data.editorial.members || 0) +
-          " в штате</div></div>";
-
-        if (data.incoming.length) {
-          html += '<div class="editorial-queue">' + data.incoming.map(function (a) {
-            var body = '<div class="editorial-card"><div class="editorial-card__top"><b>' +
-              esc(a.name) + "</b><span>" + esc(STATUS_ED[a.status] || a.status) + "</span></div>" +
-              '<div class="editorial-card__meta">' + esc(a.birthDate) + " · " + esc(a.email) + "</div>" +
-              "<p>" + esc(a.why) + "</p>" +
-              (a.sitePosts && a.sitePosts.length
-                ? '<div class="editorial-card__meta">На сайте: ' +
-                  a.sitePosts.map(function (t) { return esc(t); }).join(" · ") + "</div>"
-                : "") +
-              (a.portfolio && a.portfolio.length
-                ? '<div class="editorial-card__meta">Портфолио: ' + a.portfolio.length + " файл(а)</div>"
-                : "");
-            if (a.status === "pending") {
-              body += '<div class="row" style="margin-top:10px">' +
-                '<button class="btn btn--accent btn--sm" type="button" data-ed-ok="' + esc(a.id) + '">Принять</button>' +
-                '<button class="btn btn--ghost btn--sm" type="button" data-ed-no="' + esc(a.id) + '">Отказать</button>' +
-                "</div>";
-            }
-            if (a.escalated && a.status === "pending") {
-              body += '<p class="form__note">Семь дней прошло — решает центральная комиссия.</p>';
-            }
-            return body + "</div>";
-          }).join("") + "</div>";
-        } else {
-          html += '<p class="form__note">Заявлений в редакцию пока нет. Ссылку на страницу ' +
-            "региона можно отправлять авторам.</p>";
-        }
-      }
-
-      host.innerHTML = html;
-
-      $$("[data-ed-ok]", host).forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          Store.editorialReview(btn.getAttribute("data-ed-ok"), "approved", "").then(function () {
-            return Store.editorialMine();
-          }).then(draw, function (err) { window.alert(err.message); });
-        });
-      });
-      $$("[data-ed-no]", host).forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var note = window.prompt("Основание отказа (его увидит автор):", "");
-          if (note === null) return;
-          if (note.trim().length < 5) {
-            window.alert("Отказ без основания недопустим: напишите хотя бы 5 символов.");
-            return;
-          }
-          Store.editorialReview(btn.getAttribute("data-ed-no"), "rejected", note.trim())
-            .then(function () { return Store.editorialMine(); })
-            .then(draw, function (err) { window.alert(err.message); });
-        });
-      });
-    }
-
-    Store.editorialMine().then(draw, function () {});
-  }
-
   /* 12. Личный кабинет =====================================================
      Сам кабинет живёт в assets/js/cabinet.js. Здесь остались блоки, которые
      он подключает: сообщения, почта, задачи, редакция, безопасность. */
@@ -5406,19 +5313,68 @@
     }
   }
 
+  /* Скан документа: фото ужимаем до разумного размера, PDF отдаём как есть.
+     Лист согласия должен читаться, но не весить десять мегабайт. */
+  function docScanToDataUrl(file) {
+    var LIMIT = 2300000;
+    if (file.type === "application/pdf") {
+      if (file.size > LIMIT) return Promise.reject(new Error("PDF больше 2,3 МБ. Сохраните его в меньшем качестве или загрузите фотографию листа."));
+      return fileToDataUrl(file);
+    }
+    if (file.type.indexOf("image/") !== 0) {
+      return Promise.reject(new Error("Нужна фотография (JPG, PNG) или PDF."));
+    }
+    return fileToDataUrl(file).then(function (dataUrl) {
+      return new Promise(function (resolve) {
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var max = 1900;
+            var k = Math.min(1, max / Math.max(img.width, img.height));
+            var canvas = document.createElement("canvas");
+            canvas.width = Math.round(img.width * k);
+            canvas.height = Math.round(img.height * k);
+            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+            var out = canvas.toDataURL("image/jpeg", 0.82);
+            resolve(out && out.length > 100 ? out : dataUrl);
+          } catch (e) {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = function () { resolve(dataUrl); };
+        img.src = dataUrl;
+      });
+    });
+  }
+
+  /* data-URL нельзя открыть в новой вкладке напрямую — превращаем во временный адрес */
+  function dataUrlToBlobUrl(dataUrl) {
+    try {
+      var parts = String(dataUrl).split(",");
+      var mime = (/data:([^;]+)/.exec(parts[0]) || [])[1] || "application/octet-stream";
+      var bin = window.atob(parts[1]);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return window.URL.createObjectURL(new window.Blob([bytes], { type: mime }));
+    } catch (e) {
+      return "";
+    }
+  }
+
   /* Что получают страницы из отдельных файлов (cabinet.js, admin.js,
      pages.js, school.js): те же помощники, что использует этот файл. */
   var UI = {
     $: $, $$: $$, esc: esc, inlineMd: inlineMd, fmtDate: fmtDate, fmtTime: fmtTime, fmtWhen: fmtWhen,
     plural: plural, param: param, regionName: regionName, regionOptions: regionOptions,
     fileToDataUrl: fileToDataUrl, avatarToSquare: avatarToSquare, swatchesHtml: swatchesHtml,
+    docScanToDataUrl: docScanToDataUrl, dataUrlToBlobUrl: dataUrlToBlobUrl,
     syncAccent: function () { syncSwatches(readAccent()); },
     initAnimations: function () { initAnimations(); },
     articleUrl: articleUrl, regionUrl: regionUrl,
     SC: SC, MAP: MAP, Store: Store,
     mounts: {
       inbox: mountInbox, emailCard: mountEmailCard, recovery: mountRecoveryCard,
-      myEditorial: mountMyEditorial, tasks: mountTasksCabinet, twofa: mountTwofaCard,
+      tasks: mountTasksCabinet, twofa: mountTwofaCard,
       danger: mountDangerZone, hiring: mountHiringCabinet,
     },
   };

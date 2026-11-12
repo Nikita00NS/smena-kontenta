@@ -56,56 +56,6 @@
     return '<span class="status ' + pair[1] + '">' + pair[0] + "</span>";
   }
 
-  /* Скан документа: фото ужимаем до разумного размера, PDF отдаём как есть.
-     Лист согласия должен читаться, но не весить десять мегабайт. */
-  function docScanToDataUrl(file, ui) {
-    var LIMIT = 2300000;
-    if (file.type === "application/pdf") {
-      if (file.size > LIMIT) return Promise.reject(new Error("PDF больше 2,3 МБ. Сохраните его в меньшем качестве или загрузите фотографию листа."));
-      return ui.fileToDataUrl(file);
-    }
-    if (file.type.indexOf("image/") !== 0) {
-      return Promise.reject(new Error("Нужна фотография (JPG, PNG) или PDF."));
-    }
-    return ui.fileToDataUrl(file).then(function (dataUrl) {
-      return new Promise(function (resolve) {
-        var img = new Image();
-        img.onload = function () {
-          try {
-            var max = 1900;
-            var k = Math.min(1, max / Math.max(img.width, img.height));
-            var canvas = document.createElement("canvas");
-            canvas.width = Math.round(img.width * k);
-            canvas.height = Math.round(img.height * k);
-            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-            var out = canvas.toDataURL("image/jpeg", 0.82);
-            resolve(out && out.length > 100 ? out : dataUrl);
-          } catch (e) {
-            resolve(dataUrl);
-          }
-        };
-        img.onerror = function () { resolve(dataUrl); };
-        img.src = dataUrl;
-      });
-    });
-  }
-
-  /* data-URL нельзя открыть в новой вкладке напрямую — превращаем во временный адрес */
-  function dataUrlToBlobUrl(dataUrl) {
-    try {
-      var parts = String(dataUrl).split(",");
-      var mime = (/data:([^;]+)/.exec(parts[0]) || [])[1] || "application/octet-stream";
-      var bin = window.atob(parts[1]);
-      var bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return window.URL.createObjectURL(new window.Blob([bytes], { type: mime }));
-    } catch (e) {
-      return "";
-    }
-  }
-
-  window.SCDocs = { docScanToDataUrl: docScanToDataUrl, dataUrlToBlobUrl: dataUrlToBlobUrl };
-
   window.SCPages.profile = function (ui) {
     var $ = ui.$, $$ = ui.$$, esc = ui.esc, Store = ui.Store, SC = ui.SC;
     var host = $("[data-profile]");
@@ -185,7 +135,8 @@
     }
 
     function badgeFor(name) {
-      if (name === "docs" && !consentOk()) return "!";
+      /* знак — только когда от человека что-то нужно; «на проверке» ждёт редакцию */
+      if (name === "docs" && !consentOk() && consentKey() !== "pending") return "!";
       if (name === "posts") {
         var n = myPosts().filter(function (p) { return p.status === "rejected"; }).length;
         return n ? String(n) : "";
@@ -246,6 +197,12 @@
       if (name === "messages") drawMessages(body, flash);
       if (name === "settings") drawSettings(body, flash);
       bindCommon(body);
+    }
+
+    /* значение поля по имени: form.name — это ещё и имя самой формы */
+    function fieldValue(form, name) {
+      var el = form.querySelector('[name="' + name + '"]');
+      return el ? String(el.value || "") : "";
     }
 
     function head(kicker, title, text) {
@@ -475,10 +432,10 @@
         note.textContent = "Загружаем…";
         Promise.all(files.map(ui.fileToDataUrl)).then(function (urls) {
           return Store.portfolioSend({
-            title: form.title.value.trim(),
-            about: form.about.value.trim(),
+            title: fieldValue(form, "title").trim(),
+            about: fieldValue(form, "about").trim(),
             files: urls,
-            publish: form.publish.checked,
+            publish: !!form.querySelector('[name="publish"]').checked,
           });
         }).then(function () {
           state.flash = "Работа отправлена комиссии.";
@@ -551,7 +508,7 @@
           var note = $("[data-consent-view-note]", body);
           note.textContent = "Открываем…";
           Store.consentFile("", Number(btn.getAttribute("data-consent-view"))).then(function (res) {
-            var url = dataUrlToBlobUrl(res.data);
+            var url = ui.dataUrlToBlobUrl(res.data);
             note.textContent = "";
             if (url) window.open(url, "_blank", "noopener");
             else note.textContent = "Не удалось открыть файл.";
@@ -570,7 +527,7 @@
           var btn = $("button[type=submit]", form);
           btn.disabled = true;
           note.textContent = "Готовим файлы…";
-          Promise.all(files.map(function (f) { return docScanToDataUrl(f, ui); })).then(function (pages) {
+          Promise.all(files.map(function (f) { return ui.docScanToDataUrl(f); })).then(function (pages) {
             note.textContent = "Отправляем…";
             return Store.sendConsent(pages);
           }).then(function (consent) {
@@ -688,14 +645,177 @@
           "Редакция — это команда авторов в регионе: школа, вуз, молодёжный центр или самостоятельная группа. " +
           'Вступить в существующую можно на <a class="link-accent" href="/region' +
           (user.region ? "?r=" + encodeURIComponent(user.region) : "") + '">странице региона</a>.') +
-        '<div data-my-editorial class="cab-block"></div>' +
+        '<div data-my-editorial class="cab-block"><p class="no-data">Загружаем…</p></div>' +
         '<div data-editorial-reports class="cab-block"></div>' +
         '<div data-editorial-open class="cab-block"></div>';
-      ui.mounts.myEditorial(user);
+      mountMyEditorial(body);
       mountEditorialOpen(body);
-      if (window.SCReports && window.SCReports.cabinet) {
-        window.SCReports.cabinet($("[data-editorial-reports]", body), user, ui);
+    }
+
+    /* Моя редакция: участник видит, где состоит; руководитель — штат и заявки. */
+    function mountMyEditorial(body) {
+      var box = $("[data-my-editorial]", body);
+      if (!box) return;
+      var APP = {
+        pending: ["на рассмотрении", "status--pending"],
+        approved: ["приняты", "status--pub"],
+        rejected: ["отказ", "status--bad"],
+        left: ["вы вышли", "status--draft"],
+        excluded: ["исключены", "status--bad"],
+      };
+
+      function reload(note) {
+        Store.editorialMine().then(function (data) { state.editorial = data; paint(data, note || ""); });
       }
+      /* первая загрузка идёт общим обновлением кабинета — второй раз не спрашиваем */
+      function first() {
+        if (state.editorial) paint(state.editorial, "");
+        else if (state.loaded) reload();
+      }
+
+      function paint(data, note) {
+        var html = note ? '<p class="cab-flash" role="status">' + esc(note) + "</p>" : "";
+        var ed = data.editorial;
+        var mem = data.member;
+
+        if (ed) {
+          var waiting = data.incoming.filter(function (a) { return a.status === "pending"; });
+          html +=
+            '<div class="cab-card"><div class="cab-card__top"><div><span class="kicker">Вы руководитель</span><h3>' + esc(ed.name) + "</h3></div>" +
+            pill(["открыта", "status--pub"]) + "</div>" +
+            '<p class="cab-card__text">' + esc(ed.about || "") + "</p>" +
+            '<p class="form__note">' + esc(ui.regionName(ed.region) || "") + " · в штате " + data.roster.length +
+            ' · <a class="link-accent" href="/region?r=' + encodeURIComponent(ed.region) + '">страница региона</a>' +
+            (Store.isStaff(user) ? ' · <a class="link-accent" href="/admin#queue">материалы редакции на проверке</a>' : "") + "</p></div>" +
+
+            '<h3 class="cab-sub">Заявки в редакцию' + (waiting.length ? " · " + waiting.length : "") + "</h3>" +
+            (waiting.length
+              ? waiting.map(function (a) {
+                  return '<div class="cab-card" data-app="' + esc(a.id) + '"><div class="cab-card__top"><h3>' + esc(a.name) + "</h3>" + pill(APP.pending) + "</div>" +
+                    '<p class="form__note">Дата рождения: ' + esc(a.birthDate || "—") + " · " + esc(a.email || "") + " · заявка " + esc(ui.fmtDate(a.createdAt)) + "</p>" +
+                    '<p class="cab-card__text">' + esc(a.why || "") + "</p>" +
+                    (a.sitePosts && a.sitePosts.length ? '<p class="form__note">Материалы на сайте: ' + a.sitePosts.map(esc).join(" · ") + "</p>" : "") +
+                    (a.portfolio && a.portfolio.length
+                      ? '<p class="form__note">Файлы: ' + a.portfolio.map(function (url, i) {
+                          return '<a class="link-accent" href="' + esc(url) + '" target="_blank" rel="noopener">файл ' + (i + 1) + "</a>";
+                        }).join(" · ") + "</p>"
+                      : "") +
+                    (a.escalated
+                      ? '<p class="form__note">Прошло семь дней — заявку решает центральная редакция.</p>'
+                      : '<div class="cab-actions"><input type="text" placeholder="Причина отказа — человек её увидит" maxlength="400" data-app-note aria-label="Причина отказа">' +
+                        '<button class="btn btn--sm btn--accent" type="button" data-app-ok>Принять</button>' +
+                        '<button class="btn btn--sm btn--ghost" type="button" data-app-no>Отказать</button></div>') +
+                    "</div>";
+                }).join("")
+              : '<p class="form__note">Новых заявок нет. Авторы подают их на странице региона.</p>') +
+
+            '<h3 class="cab-sub">Штат редакции · ' + data.roster.length + "</h3>" +
+            '<div class="cab-list">' + data.roster.map(function (m) {
+              return '<div class="cab-list__row" data-member="' + esc(m.id) + '"><div><b>' + esc(m.name) + "</b><small>" +
+                (m.head ? "руководитель" : esc(m.craft || "участник")) + (m.number ? " · № " + m.number : "") +
+                (m.email ? " · " + esc(m.email) : "") + (m.joinedAt ? " · с " + esc(ui.fmtDate(m.joinedAt)) : "") + "</small></div>" +
+                (m.head ? "" : '<button class="btn btn--sm btn--ghost" type="button" data-member-out>Исключить</button>') + "</div>";
+            }).join("") + "</div>" +
+            '<div class="cab-actions" data-out-form hidden><input type="text" placeholder="Причина исключения — человек её увидит" maxlength="400" data-out-note aria-label="Причина исключения">' +
+            '<button class="btn btn--sm" type="button" data-out-go>Исключить из редакции</button>' +
+            '<button class="btn btn--sm btn--ghost" type="button" data-out-cancel>Отмена</button></div>' +
+            '<p class="form__note">Руководителя редакции меняет и редакцию закрывает директор проекта: напишите в <a class="link-accent" href="/support">поддержку</a>.</p>';
+        } else if (mem) {
+          html +=
+            '<div class="cab-card"><div class="cab-card__top"><div><span class="kicker">Вы участник</span><h3>' + esc(mem.name) + "</h3></div>" +
+            pill(["в штате", "status--pub"]) + "</div>" +
+            '<p class="cab-card__text">' + esc(mem.about || "") + "</p>" +
+            '<p class="form__note">' + esc(ui.regionName(mem.region) || "") + " · руководитель — " + esc(mem.founderName || "—") +
+            " · в штате " + (mem.members || 1) + "</p>" +
+            '<p class="form__note">Ваши материалы первым проверяет руководитель редакции.</p>' +
+            '<div class="cab-actions"><button class="btn btn--sm btn--ghost" type="button" data-leave>Выйти из редакции</button></div></div>';
+        } else {
+          html +=
+            '<div class="fill-note fill-note--flat"><b>Вы пока вне редакции</b><p>Можно писать самостоятельно или вступить в редакцию своего региона.</p>' +
+            '<p><a class="link-accent" href="/region' + (user.region ? "?r=" + encodeURIComponent(user.region) : "") + '">Выбрать редакцию региона →</a></p></div>';
+        }
+
+        /* свои заявки на вступление — история */
+        var mine = data.applications.filter(function (a) { return !(mem && a.status === "approved" && a.editorialId === mem.id); });
+        if (mine.length) {
+          html += '<h3 class="cab-sub">Мои заявки на вступление</h3><div class="cab-list">' + mine.map(function (a) {
+            return '<div class="cab-list__row"><div><b>' + esc(a.editorialName || "Редакция") + "</b><small>" + esc(ui.fmtDate(a.createdAt)) +
+              (a.note ? " · " + esc(a.note) : "") +
+              (a.escalated ? " · семь дней без решения: заявка передана в центральную редакцию" : "") + "</small></div>" +
+              pill(APP[a.status] || [a.status, "status--draft"]) + "</div>";
+          }).join("") + "</div>";
+        }
+
+        box.innerHTML = html;
+        var say = function (text) {
+          var el = $(".cab-flash", box);
+          if (!el) { el = document.createElement("p"); el.className = "cab-flash"; el.setAttribute("role", "status"); box.insertBefore(el, box.firstChild); }
+          el.textContent = text;
+        };
+
+        $$("[data-app]", box).forEach(function (el) {
+          var id = el.getAttribute("data-app");
+          var noteEl = $("[data-app-note]", el);
+          var ok = $("[data-app-ok]", el);
+          var no = $("[data-app-no]", el);
+          if (ok) ok.addEventListener("click", function () {
+            ok.disabled = true;
+            Store.editorialReview(id, "approved", "").then(function () { reload("Заявка принята: человек в штате редакции."); },
+              function (err) { ok.disabled = false; say(err.message); });
+          });
+          if (no) no.addEventListener("click", function () {
+            var text = noteEl.value.trim();
+            if (text.length < 5) { say("Напишите причину отказа: человек увидит её в кабинете."); noteEl.focus(); return; }
+            no.disabled = true;
+            Store.editorialReview(id, "rejected", text).then(function () { reload("В заявке отказано, человек получил причину."); },
+              function (err) { no.disabled = false; say(err.message); });
+          });
+        });
+
+        var outForm = $("[data-out-form]", box);
+        var outId = "";
+        $$("[data-member-out]", box).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            outId = btn.closest("[data-member]").getAttribute("data-member");
+            outForm.hidden = false;
+            $("[data-out-note]", outForm).focus();
+          });
+        });
+        if (outForm) {
+          $("[data-out-cancel]", outForm).addEventListener("click", function () { outForm.hidden = true; outId = ""; });
+          $("[data-out-go]", outForm).addEventListener("click", function () {
+            var text = $("[data-out-note]", outForm).value.trim();
+            if (text.length < 5) { say("Напишите причину исключения."); return; }
+            Store.editorialExclude(outId, text).then(function () { reload("Участник исключён и получил уведомление с причиной."); },
+              function (err) { say(err.message); });
+          });
+        }
+
+        var leave = $("[data-leave]", box);
+        if (leave) leave.addEventListener("click", function () {
+          if (leave.getAttribute("data-sure") !== "1") {
+            leave.setAttribute("data-sure", "1");
+            leave.textContent = "Точно выйти?";
+            say("После выхода ваши материалы снова проверяет центральная редакция. Нажмите ещё раз, чтобы выйти.");
+            return;
+          }
+          leave.disabled = true;
+          Store.editorialLeave().then(function (res) {
+            /* меняется и сам аккаунт (редакция, возможно роль) — обновляем кабинет целиком */
+            state.flash = res.roleReset ? "Вы вышли из редакции. Роль «" + res.roleWas + "», выданная для работы в ней, снята." : "Вы вышли из редакции.";
+            refresh();
+          }, function (err) { leave.disabled = false; say(err.message); });
+        });
+
+        /* отчёты редакции — у руководителя (этап «Отчёты») */
+        var reports = $("[data-editorial-reports]", body);
+        if (reports && ed && window.SCReports && window.SCReports.cabinet) window.SCReports.cabinet(reports, user, ui, ed);
+        /* открыть свою редакцию участнику чужой незачем: сначала выход */
+        var openBox = $("[data-editorial-open]", body);
+        if (openBox && mem) openBox.hidden = true;
+      }
+
+      first();
     }
 
     /* Заявление на открытие редакции: анкета → документ → подпись → письмо. */
@@ -703,12 +823,19 @@
       var box = $("[data-editorial-open]", body);
       if (!box) return;
       box.innerHTML = '<p class="no-data">Загружаем заявление…</p>';
-      Store.editorialOpenMine().then(function (res) {
-        state.open = res;
-        paint(res);
-      }, function (err) {
-        box.innerHTML = '<p class="form__note">' + esc((err && err.message) || "Не удалось загрузить заявление.") + "</p>";
-      });
+      var fetchOpen = function () {
+        Store.editorialOpenMine().then(function (res) {
+          state.open = res;
+          paint(res);
+        }, function (err) {
+          box.innerHTML = '<p class="form__note">' + esc((err && err.message) || "Не удалось загрузить заявление.") + "</p>";
+        });
+      };
+      /* первая загрузка идёт общим обновлением кабинета; после действий — свежий запрос */
+      var startOpen = function () {
+        if (state.open && !state.openStale) paint(state.open);
+        else if (state.loaded) { state.openStale = false; fetchOpen(); }
+      };
 
       var STATUS = {
         draft: ["черновик", "status--draft"],
@@ -770,7 +897,7 @@
         w.addEventListener("click", function () {
           if (w.getAttribute("data-sure") !== "1") { w.setAttribute("data-sure", "1"); w.textContent = "Точно отозвать?"; return; }
           w.disabled = true;
-          Store.editorialOpenWithdraw().then(function () { mountEditorialOpen(body); }, function (err) {
+          Store.editorialOpenWithdraw().then(function () { state.openStale = true; mountEditorialOpen(body); }, function (err) {
             w.disabled = false;
             $("[data-eo-note]", box).textContent = (err && err.message) || "Не получилось.";
           });
@@ -803,9 +930,9 @@
         var team = (f.team && f.team.length ? f.team : [{}, {}]).slice();
         while (team.length < res.teamMin) team.push({});
         var bases = res.bases || {};
-        var fld = function (label, name, value, extra) {
+        var fld = function (label, name, value, extra, type) {
           return '<div class="field"><label for="eo-' + name + '">' + label + '</label><input id="eo-' + name + '" name="' + name +
-            '" type="text" value="' + esc(value || "") + '" ' + (extra || "") + "></div>";
+            '" type="' + (type || "text") + '" value="' + esc(value || "") + '" ' + (extra || "") + "></div>";
         };
         box.innerHTML =
           head("Своя редакция", "Анкета на открытие редакции",
@@ -834,14 +961,14 @@
           fld("Фамилия, имя, отчество", "headName", f.headName || user.name, 'maxlength="120"') +
           '<div class="field"><label for="eo-headBirth">Дата рождения (не младше ' + (res.headMinAge || 14) + ' лет)</label>' +
           '<input id="eo-headBirth" name="headBirth" type="date" value="' + esc(f.headBirth || "") + '"></div>' +
-          fld("Телефон", "headPhone", f.headPhone, 'type="tel" maxlength="20" placeholder="+7 900 000-00-00"') +
+          fld("Телефон", "headPhone", f.headPhone, 'maxlength="20" placeholder="+7 900 000-00-00"', "tel") +
           '<div class="field"><label>Почта аккаунта</label><input type="text" value="' + esc(user.email) + '" disabled></div>' +
 
           '<h3 class="form__full eo-form__h">Куратор <small>обязателен, если руководителю меньше 18 лет</small></h3>' +
           fld("Фамилия, имя, отчество куратора", "curatorName", cur.name, 'maxlength="120"') +
           fld("Должность или кем приходится", "curatorRole", cur.role, 'maxlength="120" placeholder="учитель, руководитель медиацентра, родитель"') +
-          fld("Телефон куратора", "curatorPhone", cur.phone, 'type="tel" maxlength="20"') +
-          fld("Почта куратора (если есть)", "curatorEmail", cur.email, 'type="email" maxlength="120"') +
+          fld("Телефон куратора", "curatorPhone", cur.phone, 'maxlength="20"', "tel") +
+          fld("Почта куратора (если есть)", "curatorEmail", cur.email, 'maxlength="120"', "email") +
 
           '<h3 class="form__full eo-form__h">Команда <small>кроме руководителя — не меньше ' + res.teamMin + " человек, каждому не меньше " + (res.headMinAge || 14) + " лет</small></h3>" +
           '<div class="form__full eo-team" data-eo-team>' + team.map(teamRow).join("") + "</div>" +
@@ -870,11 +997,12 @@
         }
 
         function collect() {
+          var v = function (name) { return fieldValue(form, name); };
           return {
-            name: form.name.value, region: form.region.value, city: form.city.value, base: form.base.value,
-            baseName: form.baseName.value, about: form.about.value, plan: form.plan.value, links: form.links.value,
-            headName: form.headName.value, headBirth: form.headBirth.value, headPhone: form.headPhone.value,
-            curator: { name: form.curatorName.value, role: form.curatorRole.value, phone: form.curatorPhone.value, email: form.curatorEmail.value },
+            name: v("name"), region: v("region"), city: v("city"), base: v("base"),
+            baseName: v("baseName"), about: v("about"), plan: v("plan"), links: v("links"),
+            headName: v("headName"), headBirth: v("headBirth"), headPhone: v("headPhone"),
+            curator: { name: v("curatorName"), role: v("curatorRole"), phone: v("curatorPhone"), email: v("curatorEmail") },
             team: $$("[data-eo-member]", teamBox).map(function (row) {
               return {
                 name: $('[data-m="name"]', row).value.trim(),
@@ -893,6 +1021,8 @@
           note.textContent = submit ? "Проверяем анкету…" : "Сохраняем…";
           problems.hidden = true;
           Store.editorialOpenSave(collect(), submit).then(function (r) {
+            /* сохранённое на сервере новее копии в кабинете — в следующий раз спросим заново */
+            state.openStale = true;
             if (r && r.ok) {
               if (submit) { state.flash = "Заявление сформировано. Распечатайте, подпишите и отправьте скан на " + res.mailTo + "."; }
               if (submit) { drawTab(); return; }
@@ -926,9 +1056,11 @@
         var drop = $("[data-eo-drop]", form);
         if (drop) drop.addEventListener("click", function () {
           if (drop.getAttribute("data-sure") !== "1") { drop.setAttribute("data-sure", "1"); drop.textContent = "Точно удалить?"; return; }
-          Store.editorialOpenWithdraw().then(function () { mountEditorialOpen(body); }, function () {});
+          Store.editorialOpenWithdraw().then(function () { state.openStale = true; mountEditorialOpen(body); }, function () {});
         });
       }
+
+      startOpen();
     }
 
     /* ---------------------------------------------------------- медиашкола */
@@ -974,6 +1106,8 @@
 
     /* ------------------------------------------------------------- профиль */
     function drawSettings(body, flash) {
+      /* согласие проверено на конкретное имя — после этого имя меняет редакция */
+      var nameLocked = consentKey() === "approved";
       body.innerHTML = flash +
         '<div data-email-card class="cab-block cab-block--first"></div>' +
         head("Настройки", "Профиль автора") +
@@ -986,7 +1120,9 @@
         '<input type="file" accept="image/jpeg,image/png,image/webp" hidden data-avatar-input>' +
         '<span class="form__note" data-avatar-note></span></div></div>' +
         '<form class="form cab-form" data-profile-form>' +
-        '<div class="field"><label for="p-name">Имя и фамилия</label><input id="p-name" name="name" type="text" maxlength="80" value="' + esc(user.name) + '"></div>' +
+        '<div class="field"><label for="p-name">Имя и фамилия</label><input id="p-name" name="name" type="text" maxlength="80" value="' + esc(user.name) + '"' +
+        (nameLocked ? " disabled" : "") + ">" +
+        (nameLocked ? '<small class="form__note">Имя закреплено согласием на обработку данных. Изменить его можно через <a class="link-accent" href="/support">поддержку</a>.</small>' : "") + "</div>" +
         '<div class="field"><label>Почта</label><input type="text" value="' + esc(user.email) + '" disabled></div>' +
         '<div class="field"><label for="p-role">Направление</label><select id="p-role" name="role">' +
         Store.ROLES.map(function (r) { return "<option" + (r === user.role ? " selected" : "") + ">" + esc(r) + "</option>"; }).join("") + "</select></div>" +
@@ -1018,7 +1154,8 @@
       form.addEventListener("submit", function (e) {
         e.preventDefault();
         status.textContent = "Сохраняем…";
-        Store.saveProfile({ name: form.name.value.trim(), bio: form.bio.value.trim(), region: form.region.value, role: form.role.value })
+        Store.saveProfile({ name: nameLocked ? user.name : fieldValue(form, "name").trim(), bio: fieldValue(form, "bio").trim(),
+          region: fieldValue(form, "region"), role: fieldValue(form, "role") })
           .then(function (res) {
             if (res && res.ok) { state.flash = "Профиль сохранён."; drawShell(); drawTab(); }
             else status.textContent = (res && res.error) || "Не сохранилось.";
@@ -1029,7 +1166,7 @@
       var passNote = $("[data-pass-note]", passForm);
       passForm.addEventListener("submit", function (e) {
         e.preventDefault();
-        var oldPass = passForm.oldPass.value, newPass = passForm.newPass.value;
+        var oldPass = fieldValue(passForm, "oldPass"), newPass = fieldValue(passForm, "newPass");
         if (!oldPass || newPass.length < 8) { passNote.textContent = "Введите текущий пароль и новый — не короче 8 символов."; return; }
         passNote.textContent = "Меняем…";
         Store.changePassword(oldPass, newPass).then(function (res) {
@@ -1083,6 +1220,7 @@
       var redraw = function () {
         left--;
         if (left > 0) return;
+        state.loaded = true;
         if (!Store.hasToken()) { window.location.replace("/join?next=profile#login"); return; }
         /* не перерисовываем вкладку, если человек уже печатает в форме */
         var active = document.activeElement;

@@ -111,20 +111,30 @@ const ROLE_CAPS = array(
     ),
     'Сотрудник' => array(),
     'Автор' => array(),
-    'Преподаватель' => array('people.view', 'school.teach', 'school.review'),
+    /* Преподаватель ведёт медиашколу: уроки своих курсов и проверка заданий.
+       Материалы сайта, людей и поддержку он не видит — см. ROLE_STANDALONE. */
+    'Преподаватель' => array('school.teach', 'school.review'),
     'Модератор' => array('people.view', 'posts.review', 'support.answer'),
     'Участник' => array(),
     'Пользователь' => array(),
 );
 
+/* Роли «сбоку» от лестницы: их полномочия не наследуются. Преподаватель не
+   становится модератором оттого, что стоит выше него по уровню, а руководитель
+   школьной редакции не получает права вести медиашколу. Уровень у такой роли
+   нужен только для вопроса «кто кого может назначить». */
+const ROLE_STANDALONE = array('Преподаватель');
+
 /* Наследование: роль получает полномочия всех ролей ниже по уровню.
    Так «Администратор» автоматически умеет всё, что умеет «Редактор». */
 function role_caps($role) {
     if (!isset(ROLE_LEVELS[$role])) return array();
+    if (in_array($role, ROLE_STANDALONE, true)) return ROLE_CAPS[$role];
     $level = ROLE_LEVELS[$role];
     $caps = array();
     foreach (ROLE_CAPS as $name => $list) {
         if (!isset(ROLE_LEVELS[$name])) continue;
+        if (in_array($name, ROLE_STANDALONE, true)) continue;
         if (ROLE_LEVELS[$name] <= $level) {
             foreach ($list as $cap) $caps[$cap] = true;
         }

@@ -751,7 +751,8 @@ function editorial_escalated($app) {
 }
 
 function public_editorial($e, $apps) {
-    $members = 0;
+    /* в штате — руководитель и все принятые участники */
+    $members = 1;
     foreach ($apps as $a) {
         if ($a['editorialId'] === $e['id'] && $a['status'] === 'approved') $members++;
     }
@@ -783,6 +784,7 @@ function public_editorial_app($a) {
         'note' => isset($a['note']) ? $a['note'] : '',
         'createdAt' => $a['createdAt'],
         'decidedAt' => isset($a['decidedAt']) ? $a['decidedAt'] : '',
+        'leftAt' => isset($a['leftAt']) ? $a['leftAt'] : '',
         'escalated' => editorial_escalated($a),
     );
 }
@@ -1443,23 +1445,159 @@ if ($act === 'editorial-mine') {
     if (!$user) fail('Нужно войти в аккаунт.', 401);
 
     $apps = read_editorial_apps($DATA_DIR);
+    $editorials = read_editorials($DATA_DIR);
+    $names = array();
+    foreach ($editorials as $e) $names[$e['id']] = $e['name'];
+
     $myApps = array();
     foreach ($apps as $a) {
-        if ($a['userId'] === $user['id']) $myApps[] = public_editorial_app($a);
+        if ($a['userId'] !== $user['id']) continue;
+        $row = public_editorial_app($a);
+        $row['editorialName'] = isset($names[$a['editorialId']]) ? $names[$a['editorialId']] : '';
+        $myApps[] = $row;
     }
 
     $owned = null;
+    $member = null;
     $incoming = array();
-    foreach (read_editorials($DATA_DIR) as $e) {
-        if ($e['founderId'] !== $user['id']) continue;
+    $roster = array();
+    $myEditorial = isset($user['editorialId']) ? (string) $user['editorialId'] : '';
+    foreach ($editorials as $e) {
+        if ($e['founderId'] !== $user['id']) {
+            /* редакция, в которой человек состоит, но не руководит ею */
+            if ($myEditorial !== '' && $e['id'] === $myEditorial) $member = public_editorial($e, $apps);
+            continue;
+        }
         $owned = public_editorial($e, $apps);
+        $joined = array();
         foreach ($apps as $a) {
-            if ($a['editorialId'] === $e['id']) $incoming[] = public_editorial_app($a);
+            if ($a['editorialId'] !== $e['id']) continue;
+            /* в очереди руководителя — заявки, которые ждут решения, и отказы;
+               принятые видны в штате, вышедшие и исключённые — в истории */
+            $incoming[] = public_editorial_app($a);
+            if ($a['status'] === 'approved') $joined[$a['userId']] = isset($a['decidedAt']) ? $a['decidedAt'] : '';
+        }
+        /* штат — по аккаунтам: это те, чьи материалы руководитель проверяет */
+        foreach (read_users($DATA_DIR) as $u) {
+            if (!isset($u['editorialId']) || (string) $u['editorialId'] !== (string) $e['id']) continue;
+            if (isset($u['status']) && $u['status'] === 'deleted') continue;
+            $roster[] = array(
+                'id' => $u['id'],
+                'name' => $u['name'],
+                'number' => isset($u['number']) ? (int) $u['number'] : 0,
+                'craft' => isset($u['role']) ? $u['role'] : '',
+                'access' => isset($u['access']) ? $u['access'] : 'Пользователь',
+                'email' => isset($u['email']) ? $u['email'] : '',
+                'head' => $u['id'] === $e['founderId'],
+                'joinedAt' => $u['id'] === $e['founderId'] ? $e['createdAt'] : (isset($joined[$u['id']]) ? $joined[$u['id']] : ''),
+            );
         }
     }
     usort($myApps, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
     usort($incoming, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
-    respond(array('ok' => true, 'applications' => $myApps, 'editorial' => $owned, 'incoming' => $incoming));
+    usort($roster, function ($a, $b) {
+        if ($a['head'] !== $b['head']) return $a['head'] ? -1 : 1;
+        return strcmp((string) $a['name'], (string) $b['name']);
+    });
+    respond(array('ok' => true, 'applications' => $myApps, 'editorial' => $owned, 'member' => $member,
+        'incoming' => $incoming, 'roster' => $roster));
+}
+
+/* Человек перестаёт быть участником редакции: сам вышел или исключён.
+   Роль, выданная для работы в редакции, снимается вместе с участием: иначе
+   модератор редакции после выхода стал бы модератором всей платформы. */
+function editorial_member_out($dir, $userId, $editorialId, $status, $note, $by) {
+    $users = read_users($dir);
+    $roleWas = '';
+    $found = false;
+    foreach ($users as $i => $u) {
+        if ((string) $u['id'] !== (string) $userId) continue;
+        if (!isset($u['editorialId']) || (string) $u['editorialId'] !== (string) $editorialId) return null;
+        $found = true;
+        $role = isset($u['access']) ? (string) $u['access'] : 'Пользователь';
+        $scopedStaff = count(user_caps($u)) > 0 && staff_scope($u) !== null;
+        $users[$i]['editorialId'] = '';
+        if ($scopedStaff) {
+            $roleWas = $role;
+            $users[$i]['access'] = 'Пользователь';
+        }
+        break;
+    }
+    if (!$found) return null;
+    if (!write_json(users_file($dir), $users)) return null;
+
+    $apps = read_editorial_apps($dir);
+    foreach ($apps as $i => $a) {
+        if ((string) $a['userId'] !== (string) $userId || (string) $a['editorialId'] !== (string) $editorialId) continue;
+        if ($a['status'] !== 'approved') continue;
+        $apps[$i]['status'] = $status;
+        $apps[$i]['note'] = $note;
+        $apps[$i]['leftAt'] = date('c');
+        $apps[$i]['leftBy'] = $by;
+    }
+    write_json(editorial_apps_file($dir), $apps);
+    return array('roleWas' => $roleWas);
+}
+
+if ($act === 'editorial-leave') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    $editorialId = isset($user['editorialId']) ? (string) $user['editorialId'] : '';
+    if ($editorialId === '') fail('Вы не состоите в редакции.', 409);
+    $ed = null;
+    foreach (read_editorials($DATA_DIR) as $e) {
+        if ($e['id'] === $editorialId) $ed = $e;
+    }
+    if ($ed && $ed['founderId'] === $user['id']) {
+        fail('Руководитель не может выйти из своей редакции. Чтобы передать или закрыть редакцию, напишите в поддержку проекта.', 409);
+    }
+    $res = editorial_member_out($DATA_DIR, $user['id'], $editorialId, 'left', '', $user['name']);
+    if ($res === null) fail('Не удалось выйти из редакции.', 500);
+    $edName = $ed ? $ed['name'] : 'редакция';
+    audit_log($DATA_DIR, (string) $user['email'], 'editorial-leave', 'вышел из редакции «' . $edName . '»');
+    if ($ed) {
+        notify_user($DATA_DIR, $ed['founderId'], $user['name'] . ' вышел из редакции «' . $edName . '».',
+            array('kind' => 'editorial', 'ref' => 'edleft:' . $user['id'] . ':' . time()));
+    }
+    respond(array('ok' => true, 'roleReset' => $res['roleWas'] !== '', 'roleWas' => $res['roleWas']));
+}
+
+if ($act === 'editorial-exclude') {
+    $in = body();
+    $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$user) fail('Нужно войти в аккаунт.', 401);
+    $targetId = text(isset($in['userId']) ? $in['userId'] : '', 60);
+    $note = text(isset($in['note']) ? $in['note'] : '', 400);
+    if (slen($note) < 5) fail('Напишите причину: человек получит её в уведомлении.');
+    if ((string) $targetId === (string) $user['id']) fail('Себя исключить нельзя.', 403);
+
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ((string) $u['id'] === (string) $targetId) $target = $u;
+    }
+    $editorialId = $target && isset($target['editorialId']) ? (string) $target['editorialId'] : '';
+    if (!$target || $editorialId === '') fail('Этот человек не состоит в редакции.', 404);
+    $ed = null;
+    foreach (read_editorials($DATA_DIR) as $e) {
+        if ($e['id'] === $editorialId) $ed = $e;
+    }
+    if (!$ed) fail('Редакция не найдена.', 404);
+    $isFounder = $ed['founderId'] === $user['id'];
+    $isCentral = can($user, 'editorials.appoint') && staff_scope($user) === null;
+    if (!$isFounder && !$isCentral) fail('Исключить участника может руководитель редакции или центральная редакция.', 403);
+    if ($ed['founderId'] === $target['id']) fail('Руководителя редакции исключить нельзя: редакцию закрывает директор проекта.', 403);
+
+    $res = editorial_member_out($DATA_DIR, $target['id'], $editorialId, 'excluded', $note, $user['name']);
+    if ($res === null) fail('Не удалось исключить участника.', 500);
+    audit_log($DATA_DIR, (string) $user['email'], 'editorial-exclude',
+        'исключён из редакции «' . $ed['name'] . '»: ' . $target['name'] . ' — ' . $note);
+    notify_user($DATA_DIR, $target['id'],
+        'Вы исключены из редакции «' . $ed['name'] . '». Причина: ' . $note
+        . ($res['roleWas'] !== '' ? ' Роль «' . $res['roleWas'] . '», выданная для работы в редакции, снята.' : '')
+        . ' Писать материалы можно и вне редакции.',
+        array('kind' => 'editorial', 'ref' => 'edout:' . $target['id'] . ':' . time()));
+    respond(array('ok' => true));
 }
 
 if ($act === 'editorial-queue') {
@@ -2110,8 +2248,13 @@ function authors_show_file($dir) { return $dir . '/authors-show.json'; }
 function initials_of($name) {
     $parts = preg_split('/\s+/u', trim((string) $name), -1, PREG_SPLIT_NO_EMPTY);
     if (!is_array($parts) || !$parts) return 'А';
-    if (count($parts) === 1) return mb_strtoupper(mb_substr($parts[0], 0, 2, 'UTF-8'), 'UTF-8');
-    return mb_strtoupper(mb_substr($parts[0], 0, 1, 'UTF-8') . mb_substr($parts[1], 0, 1, 'UTF-8'), 'UTF-8');
+    /* без mbstring блок авторов на главной не должен падать: буквы берём
+       регулярным выражением, а к заглавным приводим, только если есть чем */
+    $first = function ($s, $n) {
+        return preg_match('/^.{1,' . (int) $n . '}/us', (string) $s, $m) ? $m[0] : '';
+    };
+    $raw = count($parts) === 1 ? $first($parts[0], 2) : $first($parts[0], 1) . $first($parts[1], 1);
+    return function_exists('mb_strtoupper') ? mb_strtoupper($raw, 'UTF-8') : $raw;
 }
 
 function read_authors_show($dir) {
@@ -3843,7 +3986,17 @@ if ($act === 'profile-save') {
         if ($u['id'] !== $user['id']) continue;
 
         $name = text(isset($in['name']) ? $in['name'] : $u['name'], 80);
-        if (slen($name) >= 2) $users[$i]['name'] = $name;
+        if (slen($name) >= 2 && $name !== (string) $u['name']) {
+            /* Согласие проверено на конкретное имя, им же подписаны материалы и
+               пресс-карта. После проверки имя меняет редакция — по обращению. */
+            $consent = consent_of_user($DATA_DIR, $u['id']);
+            $status = $consent && isset($consent['status']) ? (string) $consent['status'] : 'none';
+            if ($status === 'approved') {
+                fail('Имя закреплено документами: согласие на обработку данных принято на имя «' . $u['name']
+                    . '». Чтобы изменить имя, напишите в поддержку.', 409);
+            }
+            $users[$i]['name'] = $name;
+        }
         if (isset($in['bio'])) $users[$i]['bio'] = text($in['bio'], 600);
         if (isset($in['region'])) $users[$i]['region'] = text($in['region'], 60);
         if (isset($in['role'])) {
