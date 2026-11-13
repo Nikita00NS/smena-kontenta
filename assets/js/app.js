@@ -816,6 +816,8 @@
       '<div class="footer-bottom">' +
       '<span>© ' + (SC.brand.year || new Date().getFullYear()) + " «Смена контента»</span>" +
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
+      '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
+      esc((SC && SC.build) || "?") + "</span>" +
       '<span><a href="/assets/docs/politika-konfidencialnosti.pdf" target="_blank" rel="noopener">Конфиденциальность</a>' +
       ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
