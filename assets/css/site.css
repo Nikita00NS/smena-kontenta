@@ -8997,3 +8997,70 @@ body.is-maint { overflow: hidden; }
   background: rgba(88, 180, 116, 0.1);
 }
 .fill-note--ok b { color: rgb(126, 205, 152); }
+
+/* Пресс-карта: данные карты, уточнения, гейт редактора, чистка настроек ----- */
+.pcard-data {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 22px;
+  margin: 0 0 18px;
+  border-top: 1px solid var(--line);
+}
+.pcard-data > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.pcard-data dt { color: var(--muted); font-size: 0.8rem; }
+.pcard-data dd { margin: 0; font-weight: 600; font-size: 0.88rem; text-align: right; overflow-wrap: anywhere; }
+.pcard-faq {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.pcard-faq h3 { font-size: 1.05rem; margin: 0 0 10px; }
+.pcard-faq details {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  background: var(--paper-2);
+}
+.pcard-faq summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.pcard-faq details p { margin: 8px 0 2px; color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+.write-gate {
+  max-width: 640px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper-2);
+}
+.write-gate b { font-size: 1.1rem; }
+.write-gate p { margin: 8px 0 12px; color: var(--muted); line-height: 1.55; }
+.cab-sub {
+  margin: 4px 0 10px;
+  font-size: 1rem;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.cab-extra {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 16px;
+  background: var(--paper-2);
+}
+.cab-extra summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+
+/* Админка: фильтр журнала на «Пульте» */
+.audit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}

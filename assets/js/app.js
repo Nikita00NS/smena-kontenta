@@ -2231,7 +2231,7 @@
             queuesEl.innerHTML = "";
             return;
           }
-          Store.usersList().then(function (res) {
+          (Store.usersList ? Store.usersList() : Promise.resolve({ users: [] })).then(function (res) {
             var people = res.users || [];
             var staff = people.filter(function (u) {
               return u.access && u.access !== "Пользователь";
@@ -2324,14 +2324,45 @@
         });
 
         if (Store.adminLog) {
+          var auditAll = [];
+          var auditFilter = "all";
+          var AUDIT_CHIPS = [
+            ["all", "Все"], ["posts", "Материалы"], ["cards", "Карты"], ["consents", "Согласия"],
+            ["people", "Команда и школа"], ["site", "Почта и сайт"],
+          ];
+          function auditKind(action) {
+            action = String(action || "").toLowerCase();
+            if (/card|карт/.test(action)) return "cards";
+            if (/consent|соглас/.test(action)) return "consents";
+            if (/hiring|school|медиашкол|приём|команд|сотрудник|редакц/.test(action)) return "people";
+            if (/mail|почт|site|сайт|support|поддержк|status|вход/.test(action)) return "site";
+            return "posts";
+          }
+          function drawAudit() {
+            var rows = auditAll.filter(function (e) {
+              return auditFilter === "all" || auditKind(e.action) === auditFilter;
+            }).slice(0, 8);
+            auditEl.innerHTML =
+              '<div class="audit-chips">' + AUDIT_CHIPS.map(function (c) {
+                return '<button class="chip-sm' + (auditFilter === c[0] ? " is-on" : "") +
+                  '" type="button" data-audit-chip="' + c[0] + '">' + c[1] + "</button>";
+              }).join("") + "</div>" +
+              (rows.length
+                ? rows.map(function (e) {
+                    return '<div class="pulse-audit__row"><span>' + esc(fmtWhen(e.at)) + " · " + esc(e.who) +
+                      "</span><b>" + esc(e.action) + (e.details ? " — " + esc(e.details) : "") + "</b></div>";
+                  }).join("")
+                : '<p class="form__note">В этой категории действий пока нет.</p>');
+            $$("[data-audit-chip]", auditEl).forEach(function (b) {
+              b.addEventListener("click", function () {
+                auditFilter = b.getAttribute("data-audit-chip");
+                drawAudit();
+              });
+            });
+          }
           Store.adminLog().then(function (res) {
-            var entries = ((res && res.entries) || []).slice(0, 8);
-            auditEl.innerHTML = entries.length
-              ? entries.map(function (e) {
-                  return '<div class="pulse-audit__row"><span>' + esc(fmtWhen(e.at)) + " · " + esc(e.who) +
-                    "</span><b>" + esc(e.action) + (e.details ? " — " + esc(e.details) : "") + "</b></div>";
-                }).join("")
-              : '<p class="form__note">Пока пусто: действий ещё не было.</p>';
+            auditAll = ((res && res.entries) || []).slice(0, 60);
+            drawAudit();
           }, function () {
             auditEl.innerHTML = '<p class="form__note">Журнал недоступен.</p>';
           });
@@ -2756,7 +2787,8 @@
         '<p class="sec-head__text">Нажмите на человека — откроется карточка: профиль, материалы, ' +
         "заявления, пресс-карта и переписка. Всё решается на одном экране.</p></div>" +
         '<div class="people-search"><input type="search" placeholder="Поиск: имя или почта" ' +
-        'data-people-search aria-label="Поиск участника"></div></div>' +
+        'data-people-search aria-label="Поиск участника">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-people-csv>Скачать CSV</button></div></div>' +
         '<div class="people-cats" data-people-cats>' +
         '<button class="people-cat is-on" type="button" data-cat="all">Все</button>' +
         '<button class="people-cat" type="button" data-cat="team">Команда</button>' +
@@ -2770,6 +2802,24 @@
       var cardEl = $("[data-person-card]", host);
       var searchEl = $("[data-people-search]", host);
       var all = [];
+      var csvBtn = $("[data-people-csv]", host);
+      if (csvBtn) csvBtn.addEventListener("click", function () {
+        if (!all.length) return;
+        var head = "Имя;Почта;Роль;Доступ;Регион;Регистрация";
+        var lines = all.map(function (u) {
+          return [u.name, u.email, u.role || "", u.access || "Пользователь", u.region || "", u.createdAt || ""]
+            .map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(";");
+        });
+        var blob = new Blob(["\uFEFF" + head + "\n" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "smena-lyudi.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      });
       var roles = Store.ACCESS || [];
       var openedId = "";
       var needScroll = false;
@@ -6917,10 +6967,6 @@
         "</div>" +
         '<div data-school-host style="margin-top:18px"></div>' +
         '<div class="cab-cols">' + teamBlock +
-        '<div class="panel"><h3>Как это работает</h3>' +
-        '<p>Материал проходит проверку редакции: сначала статус «на проверке», потом ' +
-        "«опубликовано» или «нужны правки» с замечанием. Черновики видите только вы.</p>" +
-        '<p class="form__note">Баллы, согласия и пресс-карта хранятся на сервере.</p></div>' +
         "</div></section>" +
 
         /* ---- Материалы -------------------------------------------------- */
@@ -6993,16 +7039,14 @@
         '<input id="p-name" name="name" type="text" value="' + esc(user.name) + '"></div>' +
         '<div class="field"><label>Почта</label><input type="text" value="' +
         esc(user.email) + '" disabled></div>' +
-        '<div class="field"><label for="p-role">Роль</label><select id="p-role" name="role">' +
-        Store.ROLES.map(function (r) {
-          return "<option" + (r === user.role ? " selected" : "") + ">" + esc(r) + "</option>";
-        }).join("") + "</select></div>" +
+        '<div class="field"><label>Роль</label><input type="text" value="' +
+        esc(user.role || "") + '" disabled></div>' +
         '<div class="field"><label for="p-region">Регион</label><select id="p-region" name="region">' +
         '<option value="">Не выбран</option>' + regionOptions(user.region) + "</select></div>" +
         '<div class="field form__full"><label for="p-bio">О себе</label>' +
         '<textarea id="p-bio" name="bio" placeholder="Пара предложений: о чём хотите рассказывать">' +
         esc(user.bio || "") + "</textarea></div>" +
-        '<div class="form__full"><label for="p-old">Смена пароля</label>' +
+        '<div class="form__full"><h3 class="cab-sub">Смена пароля</h3>' +
         '<div class="pass-change">' +
         '<div class="field"><label for="p-old">Текущий пароль</label>' +
         '<input id="p-old" name="oldPass" type="password" autocomplete="current-password"></div>' +
@@ -7013,18 +7057,15 @@
         '<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">' +
         '<button class="btn btn--sm btn--ghost" type="button" data-pass-change>Сменить пароль</button>' +
         '<span class="form__note" data-pass-note></span></div></div>' +
-        '<div class="form__full"><label>Акцентный цвет</label>' + swatchesHtml() +
-        '<p class="form__note" style="margin:8px 0 0">Цвет интерфейса. ' +
-        "По умолчанию оранжевый, выбор запоминается в этом браузере.</p></div>" +
+        '<div class="form__full"><h3 class="cab-sub">Оформление</h3>' +
+        '<p class="form__note" style="margin:0">Цвет и тему меняйте кнопкой палитры в шапке — выбор запоминается.</p></div>' +
         '<div class="form__full row"><button class="btn" type="submit">Сохранить</button>' +
         '<span class="form__note" data-profile-status>' + esc(savedNote) + "</span></div>" +
         "</form></div>" +
-        '<div data-twofa-card style="margin-top:18px"></div>' +
-        '<div data-recovery-card style="margin-top:18px"></div>' +
+        '<details class="cab-extra"><summary>Двухфакторный вход и коды восстановления</summary>' +
+        '<div data-twofa-card style="margin-top:12px"></div>' +
+        '<div data-recovery-card style="margin-top:12px"></div></details>' +
         '<div data-danger-zone style="margin-top:18px"></div>' +
-        '<div class="storage-note">Аккаунт, баллы, согласия и пресс-карта хранятся на сервере. ' +
-        "Черновики остаются в этом браузере, пока вы не отправите их на проверку. Отправленный материал " +
-        "уходит в общую приёмную редакции и после одобрения виден всем посетителям сайта.</div>" +
         "</section>" +
 
         "</div></div></section>";
@@ -7350,25 +7391,68 @@
         var printLink = canPrint
           ? '<a class="btn btn--ghost btn--sm" href="' + esc(cardPrintUrl(current)) +
             '" target="_blank" rel="noopener">Печать карты</a>' +
-            '<button class="btn btn--accent btn--sm" type="button" data-card-pdf>Скачать PDF</button>' +
+            '<button class="btn btn--accent btn--sm" type="button" data-card-pdf>Карта (PDF)</button>' +
+            '<button class="btn btn--sm" type="button" data-card-act>Акт выдачи (PDF)</button>' +
             '<span class="form__note" data-card-pdf-note role="status" aria-live="polite"></span>'
           : "";
         var verifyLink = canPrint
           ? '<a class="btn btn--ghost btn--sm" href="/verify#n=' + encodeURIComponent(current.number) +
             "&c=" + encodeURIComponent(current.verifyCode) + '" target="_blank" rel="noopener">Проверить карту</a>'
           : '<a class="btn btn--ghost btn--sm" href="/verify">Как проверяют карту</a>';
+        /* Данные карты одним списком: всё, что известно редакции. */
+        var delivery = current && current.dispatch && (current.dispatch.tracking || current.dispatch.sentAt)
+          ? "Почтой России" + (current.dispatch.tracking ? " · трек " + esc(current.dispatch.tracking) : "")
+          : (current && current.issuePlace ? "Лично: " + esc(current.issuePlace) : "уточняется");
+        var dataRows = canPrint
+          ? '<dl class="pcard-data">' +
+            "<div><dt>Статус</dt><dd>" + esc(cardStatusText(st)) + "</dd></div>" +
+            "<div><dt>Номер карты</dt><dd>" + esc(current.number) + "</dd></div>" +
+            "<div><dt>Владелец</dt><dd>" + esc(current.authorName || "") + "</dd></div>" +
+            "<div><dt>Регион</dt><dd>" + esc(regionName(current.authorRegion) || current.authorRegion || "не указан") + "</dd></div>" +
+            "<div><dt>Выдана</dt><dd>" + esc(fmtDate(current.issuedAt)) + "</dd></div>" +
+            "<div><dt>Действует до</dt><dd>" + esc(fmtDate(current.validUntil)) + "</dd></div>" +
+            "<div><dt>Основание</dt><dd>" + (status.byRole ? "должность в редакции" : "заявка автора") + "</dd></div>" +
+            "<div><dt>Получение</dt><dd>" + delivery + "</dd></div>" +
+            "</dl>"
+          : "";
+        var actNote = canPrint
+          ? '<p class="form__note" style="margin-top:10px">Акт выдачи — документ с подписями основателей ' +
+            "Сирика Н. С. и Ильина Б. П.: в нём указано, кто и какую карту получил. Он создаётся для каждой " +
+            "выданной карты и хранится в редакции.</p>"
+          : "";
         box.innerHTML =
           '<div class="pcard pcard--' + esc(st) + '" data-reveal>' + head +
           '<div class="pcard-layout">' +
           '<div class="pcard-layout__visual">' + visual + stepsHtml + "</div>" +
-          '<div class="pcard-layout__info">' + body +
+          '<div class="pcard-layout__info">' + dataRows + body +
           '<div class="pcard__actions">' + printLink + verifyLink +
           '<a class="btn btn--ghost btn--sm" href="#card-application">Заявка и статус</a>' +
           '<a class="btn btn--ghost btn--sm" href="/support">Спросить о карте</a></div>' +
-          "</div></div></div>";
+          actNote +
+          "</div></div>" +
+          '<div class="pcard-faq">' +
+          "<h3>Что можно уточнить о пресс-карте</h3>" +
+          "<details><summary>Что даёт карта и что она не даёт</summary>" +
+          "<p>Карта подтверждает, что вы публикуетесь в проекте «Смена контента», и по договорённости " +
+          "с организаторами помогает посещать открытые мероприятия. Она не заменяет удостоверение " +
+          "зарегистрированного СМИ и не даёт права требовать доступ на закрытые события.</p></details>" +
+          "<details><summary>Как проверяют карту</summary>" +
+          "<p>На странице /verify по номеру и коду с оборота: любой человек видит статус карты — " +
+          "действует, просрочена или отозвана. Данные владельца при проверке не показываются.</p></details>" +
+          "<details><summary>Сколько действует и как продлить</summary>" +
+          "<p>Карта действует двенадцать месяцев. Продление решает редакция: напишите в поддержку " +
+          "за пару недель до конца срока.</p></details>" +
+          "<details><summary>Если карту отозвали или вы её потеряли</summary>" +
+          "<p>Отзыв происходит только с основанием, которое видно в этом разделе. Потерянную карту " +
+          "перевыпускают через поддержку: старая гасится, номер меняется.</p></details>" +
+          "</div></div>";
         var pdfBtn = $("[data-card-pdf]", box);
         if (pdfBtn) pdfBtn.addEventListener("click", function () {
           downloadCardPdf(current.id, pdfBtn, $('[data-card-pdf-note]', box));
+        });
+        var actBtn = $("[data-card-act]", box);
+        if (actBtn) actBtn.addEventListener("click", function () {
+          downloadCardAct(current.id, actBtn, $('[data-card-pdf-note]', box));
         });
       }
       function load() {
@@ -7641,6 +7725,38 @@
       "&c=" + encodeURIComponent(card.verifyCode || "");
   }
 
+  function cardStatusText(st) {
+    return {
+      issued: "действует", pending: "заявка на проверке", expired: "срок истёк",
+      revoked: "отозвана", rejected: "заявка отклонена", none: "не выдана",
+    }[st] || st;
+  }
+
+  function downloadCardAct(cardId, btn, noteEl) {
+    if (!Store.cardActPdf) return;
+    var label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Готовим PDF…";
+    if (noteEl) noteEl.textContent = "";
+    Store.cardActPdf(cardId).then(function (file) {
+      var url = URL.createObjectURL(file.blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = file.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      btn.disabled = false;
+      btn.textContent = label;
+      if (noteEl) noteEl.textContent = "Акт сохранён.";
+    }, function (err) {
+      btn.disabled = false;
+      btn.textContent = label;
+      if (noteEl) noteEl.textContent = (err && err.message) || "Не удалось скачать акт.";
+    });
+  }
+
   function downloadCardPdf(cardId, btn, noteEl) {
     if (!Store.cardPdf) return;
     var label = btn.textContent;
@@ -7792,6 +7908,15 @@
       return;
     }
 
+    /* Писать можно только с двумя принятыми согласиями: иначе редактор
+       открывается, а отправка ломается на сервере. Честнее не открывать. */
+    function consentsOk() {
+      var p = (Store.consent && (Store.consent() || {}).status) || "none";
+      var d = (Store.consent && (Store.consent("distribution") || {}).status) || "none";
+      return p === "approved" && d === "approved";
+    }
+
+    function buildEditor() {
     if (Store.refreshConsent) Store.refreshConsent().catch(function () {});
 
     var editId = param("id");
@@ -8180,6 +8305,34 @@
         }
       }
     });
+    }
+
+    if (consentsOk()) {
+      buildEditor();
+      return;
+    }
+    host.innerHTML =
+      '<section class="section wrap"><div class="write-gate fill-note">' +
+      "<b>Сначала — два подписанных согласия</b>" +
+      "<p>Редактор откроется после принятого согласия на обработку персональных данных " +
+      "и согласия на распространение. Без этих документов редакция не может публиковать " +
+      "материалы с именем автора: так требует закон о персональных данных.</p>" +
+      '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+      '<a class="btn btn--accent" href="/profile">Подписать в кабинете</a>' +
+      '<a class="btn btn--ghost" href="/docs">Как это работает</a></div>' +
+      '<p class="form__note" data-write-gate-note>Проверяем статус согласий…</p></div></section>';
+    if (Store.refreshConsent) {
+      Store.refreshConsent().then(function () {
+        if (consentsOk()) { buildEditor(); return; }
+        var note = $("[data-write-gate-note]", host);
+        if (note) note.textContent =
+          "Согласия пока не приняты: редакция проверяет сканы. Как только оба будут приняты, откройте эту страницу снова.";
+      }, function () {
+        var note = $("[data-write-gate-note]", host);
+        if (note) note.textContent =
+          "Не удалось спросить сервер о согласиях. Откройте кабинет — там виден статус документов.";
+      });
+    }
   }
 
   function resizeImage(file, cb) {

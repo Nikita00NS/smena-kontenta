@@ -1221,6 +1221,19 @@ window.Store = (function () {
     });
   }
 
+  function cardActPdf(id) {
+    return withToken("card-act-pdf", { id: id || "" }).then(function (res) {
+      if (!res.data) throw new Error("Сервер не вернул акт.");
+      var bin = window.atob(res.data);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return {
+        blob: new Blob([bytes], { type: res.mime || "application/pdf" }),
+        filename: res.filename || "akt-vidachi.pdf",
+      };
+    });
+  }
+
   function cardPdf(id) {
     return withToken("card-pdf", { id: id || "" }).then(function (res) {
       if (!res.data) throw new Error("Сервер не вернул PDF карты.");
@@ -2108,6 +2121,7 @@ window.Store = (function () {
     apiCardReview: apiCardReview,
     cardVerify: cardVerify,
     cardPdf: cardPdf,
+    cardActPdf: cardActPdf,
     cardDispatch: cardDispatch,
     cardRevoke: cardRevoke,
     cardExtend: cardExtend,
