@@ -10,22 +10,28 @@ import sys
 
 BUILD = sys.argv[1] if len(sys.argv) > 1 else "dev"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PATTERN = re.compile(r'(/assets/(?:css|js)/[\w.\-]+\.(?:css|js))(\?v=[^"\']*)?')
+PATTERN = re.compile(r'(/assets/(?:css|js|docs)/[\w.\-]+\.(?:css|js|pdf))(\?v=[^"\']*)?')
 
 changed = 0
+targets = []
 for base, dirs, files in os.walk(ROOT):
     dirs[:] = [d for d in dirs if d not in {".git", "node_modules", "assets"}]
     for name in files:
-        if not name.endswith(".html"):
-            continue
-        path = os.path.join(base, name)
-        with open(path, encoding="utf-8") as fh:
-            html = fh.read()
-        new = PATTERN.sub(lambda m: m.group(1) + "?v=" + BUILD, html)
-        if new != html:
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(new)
-            changed += 1
+        if name.endswith(".html"):
+            targets.append(os.path.join(base, name))
+js_dir = os.path.join(ROOT, "assets", "js")
+if os.path.isdir(js_dir):
+    for name in os.listdir(js_dir):
+        if name.endswith(".js"):
+            targets.append(os.path.join(js_dir, name))
+for path in targets:
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    new = PATTERN.sub(lambda m: m.group(1) + "?v=" + BUILD, html)
+    if new != html:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(new)
+        changed += 1
 
 # Версия сборки также живёт в data.js: её видит админка и подвал — так сразу
 # понятно, какой интерфейс перед глазами, без догадок про кэш браузера.
