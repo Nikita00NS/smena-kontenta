@@ -34,6 +34,7 @@ function inline(html) {
     pretendToBeVisual: true,
     virtualConsole: vc,
     beforeParse(w) {
+      w.localStorage.setItem("smena_lang", "ru"); /* проверки текста — на русском */
       w.fetch = () => Promise.reject(new Error("сети нет"));
       w.scrollTo = () => {};
       w.matchMedia = () => ({

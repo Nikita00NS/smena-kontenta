@@ -1,90 +1,126 @@
-/* Проверка словаря интерфейса: все языки на месте, ни одного пустого значения,
-   направления письма верные, у каждой строки есть перевод во всех слоях.
+/* Проверка языков интерфейса: десять языков, полный словарь, работа в DOM.
    Запуск: node tools/tests/i18n-check.js */
 const fs = require("node:fs");
 const path = require("node:path");
+const { JSDOM, VirtualConsole } = require("jsdom");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const src = fs.readFileSync(path.join(ROOT, "assets/js/i18n.js"), "utf8");
+const SRC = path.join(ROOT, "assets", "js", "i18n.js");
 
-const results = [];
+let bad = 0;
 function check(name, cond, extra) {
-  results.push({ name, ok: !!cond });
-  console.log((cond ? "  ok   " : "  FAIL ") + name + (cond || extra === undefined ? "" : " → " + String(extra).slice(0, 200)));
+  if (cond) console.log("  ok   " + name);
+  else { bad++; console.log("  FAIL " + name + (extra === undefined ? "" : " → " + extra)); }
 }
 
-function arrayOf(name) {
-  const start = src.indexOf("var " + name + " = [");
-  if (start === -1) return [];
-  const block = src.slice(start, src.indexOf("];", start));
-  return [...block.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+const EXPECTED = ["ru", "en", "uk", "kk", "be", "de", "fr", "es", "tr", "zh"];
+
+const SAMPLES = [
+  "Материалы", "Медиашкола", "Личный кабинет", "Все материалы", "Светлая тема",
+  "Проверить карту", "Подать заявку", "Пульт редакции", "Заявки в медиашколу",
+  "Согласие на обработку персональных данных", "Приблизить", "января",
+];
+
+function makeDom(lang) {
+  const vc = new VirtualConsole();
+  const errors = [];
+  vc.on("jsdomError", (e) => errors.push(String(e.detail || e.message)));
+  const dom = new JSDOM(
+    `<!DOCTYPE html><html lang="ru"><body>
+       <nav><a href="/news">Материалы</a><a href="/media-school">Медиашкола</a></nav>
+       <h1>Регионы</h1><button aria-label="Поиск по сайту">Поиск</button>
+       <div data-no-i18n>Материалы</div>
+     </body></html>`,
+    { url: "https://smenakontenta.ru/", runScripts: "outside-only", virtualConsole: vc,
+      beforeParse(w) {
+        if (lang) w.localStorage.setItem("smena_lang", lang);
+      } });
+  dom.window.eval(fs.readFileSync(SRC, "utf8"));
+  return { dom, errors };
 }
 
-function objectOf(name, arity) {
-  const start = src.indexOf("var " + name + " = {");
-  if (start === -1) return {};
-  const block = src.slice(start, src.indexOf("\n  };", start));
-  const out = {};
-  for (const row of block.matchAll(/^\s{4}([a-z]{2}): \[(.*?)\],$/gm)) {
-    out[row[1]] = [...row[2].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+(async () => {
+  /* 1. Список языков */
+  {
+    const { dom } = makeDom(null);
+    const I = dom.window.SmenaI18n;
+    check("десять языков", I.langs.length === 10, I.langs.length);
+    check("коды совпадают: " + EXPECTED.join(","),
+      I.langs.map((l) => l.code).join(",") === EXPECTED.join(","),
+      I.langs.map((l) => l.code).join(","));
+    check("у каждого языка есть название", I.langs.every((l) => l.name && l.dir === "ltr"));
+    check("без сохранения берётся язык браузера (jsdom → en)", I.lang === "en", I.lang);
+    dom.window.close();
   }
-  return out;
-}
 
-// языки: [код, название, направление, 24 перевода]
-const localesBlock = src.slice(src.indexOf("var LOCALES = ["), src.indexOf("\n  ];", src.indexOf("var LOCALES = [")));
-const locales = [...localesBlock.matchAll(/^ {4}\["([a-z]{2})", "([^"]+)", "(ltr|rtl)"/gm)].map((m) => ({
-  code: m[1], name: m[2], dir: m[3],
-}));
+  /* 2. Полный словарь у всех девяти не-русских языков */
+  {
+    const { dom } = makeDom(null);
+    const I = dom.window.SmenaI18n;
+    const total = I.keys.length;
+    check("словарь не пуст: " + total + " строк", total >= 250, total);
+    for (const l of I.langs) {
+      if (l.code === "ru") continue;
+      const n = I.coverage(l.code);
+      check("«" + l.name + "» переведён полностью", n === total, n + " из " + total);
+    }
+    /* переводы не совпадают с ключами-пустышками и не коллапсировали */
+    dom.window.eval("SmenaI18n.setLang('en')");
+    check("перевод en: Материалы → Stories", I.t("Материалы") === "Stories", I.t("Материалы"));
+    check("перевод en: Пульт редакции → Newsroom console", I.t("Пульт редакции") === "Newsroom console", I.t("Пульт редакции"));
+    dom.window.close();
+  }
 
-const KEYS = arrayOf("KEYS");
-const EXTRA_KEYS = arrayOf("EXTRA_KEYS");
-const EXTRA2_KEYS = arrayOf("EXTRA2_KEYS");
-const EXTRA = objectOf("EXTRA");
-const EXTRA2 = objectOf("EXTRA2");
+  /* 3. DOM: перевод шапки по сохранённому языку */
+  {
+    const { dom } = makeDom("en");
+    const doc = dom.window.document;
+    check("html lang = en", doc.documentElement.getAttribute("lang") === "en");
+    check("меню переведено", doc.querySelector("nav").textContent.includes("Stories")
+      && doc.querySelector("nav").textContent.includes("Media school"));
+    check("h1 переведён", doc.querySelector("h1").textContent === "Regions",
+      doc.querySelector("h1").textContent);
+    check("aria-label переведён", doc.querySelector("button").getAttribute("aria-label") === "Search the site");
+    check("data-no-i18n не тронут", doc.querySelector("[data-no-i18n]").textContent === "Материалы");
+    dom.window.close();
+  }
 
-check("языков в списке не меньше 50", locales.length >= 50, locales.length);
-check("в базовом слое 24 подписи", KEYS.length === 24, KEYS.length);
-check("во втором слое есть меню и цвета", EXTRA_KEYS.length >= 18, EXTRA_KEYS.length);
-check("в третьем слое есть кнопки знакомства", EXTRA2_KEYS.length >= 10, EXTRA2_KEYS.length);
+  /* 4. Наблюдатель динамики (свежая загрузка с немецким) */
+  {
+    const { dom } = makeDom("de");
+    const doc = dom.window.document;
+    check("html lang = de", doc.documentElement.getAttribute("lang") === "de");
+    check("меню по-немецки", doc.querySelector("nav").textContent.includes("Beiträge"));
+    check("h1 по-немецки", doc.querySelector("h1").textContent === "Regionen",
+      doc.querySelector("h1").textContent);
+    /* новый узел от скрипта подхватывается наблюдателем */
+    const fresh = doc.createElement("a");
+    fresh.textContent = "Проверить карту";
+    doc.body.appendChild(fresh);
+    await new Promise((r) => setTimeout(r, 400));
+    check("динамический узел переведён (наблюдатель)", fresh.textContent === "Karte prüfen", fresh.textContent);
+    dom.window.close();
+  }
 
-const codes = locales.map((l) => l.code);
-const uniq = new Set(codes);
-check("коды языков не повторяются", uniq.size === codes.length, codes.length - uniq.size);
+  /* 5. ?lang= сильнее localStorage */
+  {
+    const { dom } = makeDom("de");
+    dom.window.location.search = "?lang=tr";
+    dom.window.eval("window.SmenaI18n2 = window.SmenaI18n;");
+    // перечитываем: i18n читает location при загрузке — проверяем через новый дом
+    const vc = new VirtualConsole();
+    const dom2 = new JSDOM("<!DOCTYPE html><html lang=\"ru\"><body>Материалы</body></html>", {
+      url: "https://smenakontenta.ru/news?lang=tr", runScripts: "outside-only", virtualConsole: vc });
+    dom2.window.eval(fs.readFileSync(SRC, "utf8"));
+    check("?lang=tr открывает турецкий", dom2.window.SmenaI18n.lang === "tr", dom2.window.SmenaI18n.lang);
+    check("текст переведён на турецкий", dom2.window.document.body.textContent.includes("Yazılar"));
+    dom.window.close();
+    dom2.window.close();
+  }
 
-// RTL: арабский, иврит, фарси, урду
-const rtl = locales.filter((l) => l.dir === "rtl").map((l) => l.code).sort();
-check("направление rtl у ar, he, fa, ur",
-  ["ar", "fa", "he", "ur"].every((c) => rtl.includes(c)) && rtl.length === 4, rtl.join(","));
-
-// у каждого языка, кроме русского, все значения на месте
-const badExtra = [];
-const badExtra2 = [];
-const badBase = [];
-for (const l of locales) {
-  if (l.code === "ru") continue;
-  const e = EXTRA[l.code] || [];
-  const e2 = EXTRA2[l.code] || [];
-  if (e.length !== EXTRA_KEYS.length || e.some((v) => !v)) badExtra.push(l.code);
-  if (e2.length !== EXTRA2_KEYS.length || e2.some((v) => !v)) badExtra2.push(l.code);
-  const row = localesBlock.match(new RegExp('\\["' + l.code + '", "[^"]+", "(?:ltr|rtl)", \\[([\\s\\S]*?)\\]\\]'));
-  const values = row ? [...row[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]) : [];
-  if (values.length !== KEYS.length || values.some((v) => !v)) badBase.push(l.code);
-}
-check("второй слой заполнен на всех языках", badExtra.length === 0, badExtra.join(","));
-check("третий слой заполнен на всех языках", badExtra2.length === 0, badExtra2.join(","));
-check("базовый слой заполнен на всех языках", badBase.length === 0, badBase.join(","));
-
-// переводы не должны остаться русскими
-const cyrillic = /[А-Яа-яЁё]/;
-const stillRussian = [];
-for (const l of locales) {
-  if (["ru", "uk", "kk", "ky", "tg", "mk", "bg", "sr", "mn", "be"].includes(l.code)) continue;
-  const all = (EXTRA[l.code] || []).concat(EXTRA2[l.code] || []);
-  if (all.some((v) => cyrillic.test(v))) stillRussian.push(l.code);
-}
-check("в нерусских языках нет русских подписей", stillRussian.length === 0, stillRussian.join(","));
-
-const bad = results.filter((r) => !r.ok);
-console.log(bad.length ? "провалено: " + bad.length : "все проверки пройдены");
-process.exit(bad.length ? 1 : 0);
+  if (bad) {
+    console.log("языки: проверка не пройдена");
+    process.exit(1);
+  }
+  console.log("все проверки пройдены");
+})();

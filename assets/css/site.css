@@ -1000,7 +1000,7 @@ p:last-child {
 /* 08. Карта регионов ======================================================== */
 .map-section {
   background: var(--dark);
-  color: var(--paper);
+  color: var(--on-dark);
   padding-block: clamp(28px, 4vw, 58px);
   position: relative;
   overflow: hidden;
@@ -1086,11 +1086,11 @@ p:last-child {
 
 .map-layout {
   display: grid;
-  /* карта живёт в своём квадрате и больше не растягивается на всю ширину:
-     слева рамка карты (до 560 px), справа панель поиска и выбора региона */
-  grid-template-columns: minmax(0, 560px) minmax(280px, 340px);
-  justify-content: center;
-  gap: clamp(18px, 2.4vw, 38px);
+  /* карта России вытянута по горизонтали (viewBox 1000 × 538.4), поэтому
+     рамка прямоугольная и занимает всю свободную ширину, панель — справа */
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 320px);
+  justify-content: stretch;
+  gap: clamp(18px, 2.4vw, 34px);
   align-items: start;
 }
 
@@ -1098,11 +1098,9 @@ p:last-child {
   position: relative;
   min-width: 0;
   width: 100%;
-  max-width: 560px;
-  /* квадрат: карта России вписывается в него целиком и стоит по центру,
-     а не растягивается полосой на всю ширину сайта */
-  aspect-ratio: 1 / 1;
-  margin-inline: auto;
+  /* пропорции контуров: 1000 / 538.4 ≈ 1.86 — широкая карта без пустых полей */
+  aspect-ratio: 1000 / 538;
+  margin-inline: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid rgba(247, 245, 239, 0.14);
@@ -1247,7 +1245,7 @@ p:last-child {
   width: 100%;
   background: rgba(247, 245, 239, 0.06);
   border: 1px solid rgba(247, 245, 239, 0.22);
-  color: var(--paper);
+  color: var(--on-dark);
   padding: 11px 13px 11px 36px;
   font-size: 0.9rem;
   outline: none;
@@ -1340,8 +1338,8 @@ p:last-child {
 }
 
 .chip-sm:hover {
-  border-color: var(--paper);
-  color: var(--paper);
+  border-color: var(--on-dark);
+  color: var(--on-dark);
 }
 
 .chip-sm.is-on {
@@ -2757,7 +2755,7 @@ p:last-child {
 
 .footer-brand .logo__name {
   font-size: clamp(1.5rem, 3.4vw, 2.4rem);
-  color: var(--paper);
+  color: var(--on-dark);
 }
 
 .footer-brand p {
@@ -2810,7 +2808,7 @@ p:last-child {
 }
 
 .footer-bottom a:hover {
-  color: var(--paper);
+  color: var(--on-dark);
 }
 
 .footer-note {
@@ -2860,10 +2858,11 @@ p:last-child {
   align-items: center;
   gap: 10px;
   padding: 8px 16px 8px 12px;
-  border: 1px solid rgba(247, 245, 239, 0.18);
+  border: 1px solid rgba(247, 245, 239, 0.24);
   border-radius: 999px;
-  background: rgba(247, 245, 239, 0.04);
-  color: var(--paper);
+  background: rgba(247, 245, 239, 0.06);
+  /* подвал тёмный в обеих темах: текст берём из --on-dark, а не из --paper */
+  color: var(--on-dark);
   font-size: 14px;
   line-height: 1;
   transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
@@ -2980,7 +2979,7 @@ p:last-child {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .map-layout {
-    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-columns: minmax(0, 1fr) 260px;
   }
 }
 
@@ -3024,7 +3023,8 @@ p:last-child {
     order: 2;
     max-width: 100%;
     margin-inline: 0;
-    aspect-ratio: 16 / 11;
+    /* на телефоне те же пропорции, что и на десктопе: карта не сплющивается */
+    aspect-ratio: 1000 / 620;
     padding: 6px;
   }
   .district-chips {
@@ -5463,7 +5463,7 @@ select option {
   font-family: var(--font-display);
   font-size: clamp(2.4rem, 6vw, 4rem);
   letter-spacing: 0.04em;
-  color: var(--paper);
+  color: var(--on-dark);
   background: linear-gradient(150deg, #1a1917 0%, #2a2722 55%, var(--accent-dark) 140%);
 }
 
@@ -8290,3 +8290,710 @@ body.is-maint { overflow: hidden; }
   .pcard-print__foot { font-size: 7.5pt; opacity: 1; }
   .pcard-print__back { font-size: 6.5pt; line-height: 1.35; }
 }
+/* ==========================================================================
+   19. КАБИНЕТ АВТОРА
+   Разделы вместо длинной страницы: слева навигация, справа один раздел.
+   На телефоне навигация превращается в горизонтальную ленту вкладок.
+   ========================================================================== */
+
+.cabinet {
+  padding-block: clamp(22px, 3.4vw, 44px);
+}
+
+.cabinet__in {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: clamp(18px, 2.6vw, 36px);
+  align-items: start;
+}
+
+.cabinet__nav {
+  position: sticky;
+  top: calc(var(--header-h) + 18px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper-2);
+}
+
+.cabinet__tab {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-text);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s var(--ease), color 0.18s var(--ease);
+}
+
+.cabinet__tab svg {
+  flex: none;
+  opacity: 0.85;
+}
+
+.cabinet__tab:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
+.cabinet__tab.is-on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.cabinet__tab.is-on svg {
+  opacity: 1;
+}
+
+.cabinet__main {
+  min-width: 0;
+}
+
+.cab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.2vw, 26px);
+  animation: cab-in 0.26s var(--ease) both;
+}
+
+.cab-panel[hidden] {
+  display: none;
+}
+
+@keyframes cab-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.cab-head h2 {
+  margin: 6px 0 6px;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+  letter-spacing: -0.015em;
+}
+
+.cab-head p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+.cab-head--row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* следующий шаг ----------------------------------------------------------- */
+.next-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: clamp(18px, 2.4vw, 26px);
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--accent);
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(255, 74, 23, 0.14) 0%, transparent 60%),
+    var(--paper-2);
+}
+
+.next-step--ready {
+  border-left-color: #2fae62;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(47, 174, 98, 0.16) 0%, transparent 60%),
+    var(--paper-2);
+}
+
+.next-step__text {
+  min-width: min(100%, 320px);
+  flex: 1 1 320px;
+}
+
+.next-step__text h2 {
+  margin: 6px 0 6px;
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+}
+
+.next-step__text p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.next-step__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* плитки показателей ------------------------------------------------------ */
+.cab-kpi {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cab-kpi__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper-2);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-text);
+  transition: border-color 0.18s var(--ease), transform 0.18s var(--ease);
+}
+
+.cab-kpi__item:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.cab-kpi__item b {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1;
+}
+
+.cab-kpi__item span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.cab-consents,
+.cab-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.cab-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cab-filters .chip-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-color: var(--line-strong);
+  color: var(--ink-soft);
+}
+
+.cab-filters .chip-sm span {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.cab-filters .chip-sm.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.cab-filters .chip-sm:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.cabinet .profile-settings {
+  max-width: 760px;
+}
+
+.cabinet .portfolio,
+.cabinet .points {
+  margin-top: 0 !important;
+}
+
+/* ==========================================================================
+   20. ПРЕСС-КАРТА В КАБИНЕТЕ
+   Макет в пропорциях настоящей карты и понятная лестница шагов.
+   ========================================================================== */
+
+.pcard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  gap: clamp(18px, 2.4vw, 30px);
+  align-items: start;
+}
+
+.pcard-layout__visual {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pcard-layout__info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pcard-visual {
+  position: relative;
+  aspect-ratio: 85.6 / 54;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: clamp(14px, 1.6vw, 18px);
+  border-radius: 14px;
+  border: 1px solid rgba(244, 242, 237, 0.18);
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 23, 0.35) 0%, transparent 55%),
+    linear-gradient(150deg, #1b1a18 0%, #0c0c0c 60%, #17150f 100%);
+  color: #f4f2ed;
+  overflow: hidden;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.pcard-visual::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    115deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 9px);
+  pointer-events: none;
+}
+
+.pcard-visual--none,
+.pcard-visual--rejected,
+.pcard-visual--expired,
+.pcard-visual--revoked {
+  filter: grayscale(0.55);
+  opacity: 0.85;
+}
+
+.pcard-visual__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pcard-visual__logo {
+  height: 20px;
+  width: auto;
+}
+
+.pcard-visual__kind {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: rgba(244, 242, 237, 0.72);
+}
+
+.pcard-visual__num {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+  letter-spacing: 0.08em;
+}
+
+.pcard-visual__name {
+  font-family: var(--font-display);
+  font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+  line-height: 1.2;
+}
+
+.pcard-visual__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.72rem;
+  color: rgba(244, 242, 237, 0.7);
+}
+
+.pcard-visual__stamp {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-14deg);
+  padding: 5px 14px;
+  border: 2px solid rgba(255, 74, 23, 0.75);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 120, 80, 0.9);
+}
+
+.pcard-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pcard-steps__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.pcard-steps__mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.pcard-steps__item.is-done {
+  color: var(--ink);
+}
+
+.pcard-steps__item.is-done .pcard-steps__mark {
+  background: #2fae62;
+  border-color: #2fae62;
+  color: #fff;
+}
+
+.pcard-steps__mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.card-app {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.card-app .sec-head {
+  margin-bottom: 0;
+}
+
+@media (max-width: 1100px) {
+  .cabinet__in {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cabinet__nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: 14px;
+    padding: 8px;
+  }
+  .cabinet__nav::-webkit-scrollbar {
+    display: none;
+  }
+  .cabinet__tab {
+    flex: none;
+    padding: 9px 13px;
+    font-size: 0.86rem;
+  }
+  .pcard-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pcard-layout__visual {
+    max-width: 380px;
+  }
+}
+
+@media (max-width: 720px) {
+  .cab-kpi {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cab-consents,
+  .cab-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cabinet__tab span {
+    white-space: nowrap;
+  }
+  .next-step__actions {
+    width: 100%;
+  }
+}
+/* ==========================================================================
+   21. ПАНЕЛЬ ПРОЕКТА: БОКОВАЯ НАВИГАЦИЯ И «ПУЛЬТ РЕДАКЦИИ»
+   Разделы — слева, как в кабинете автора. На телефоне — лента сверху.
+   ========================================================================== */
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: clamp(18px, 2.6vw, 36px);
+  align-items: start;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: max(16px, calc((100vw - 1200px) / 2));
+  padding-bottom: clamp(28px, 4vw, 56px);
+}
+
+.admin-layout .admin-tabs {
+  position: sticky;
+  top: calc(var(--header-h) + 18px);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper-2);
+  backdrop-filter: none;
+  overflow: visible;
+}
+
+.admin-layout .admin-tabs__btn {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.admin-layout .admin-tabs__btn svg {
+  flex: none;
+  opacity: 0.85;
+}
+
+.admin-layout .admin-tabs__btn.is-on svg {
+  opacity: 1;
+}
+
+.admin-tabs__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.admin-tabs__badge {
+  flex: none;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.admin-tabs__btn.is-on .admin-tabs__badge {
+  background: #fff;
+  color: var(--accent);
+}
+
+.admin-layout .admin-panels {
+  min-width: 0;
+}
+
+/* «Пульт редакции» -------------------------------------------------------- */
+.pulse-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.pulse-head h2 {
+  margin: 6px 0 4px;
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+  letter-spacing: -0.015em;
+}
+
+.pulse-head__date {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-transform: capitalize;
+}
+
+.pulse-head__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pulse-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+.pulse-card {
+  padding: clamp(16px, 2vw, 22px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper-2);
+}
+
+.pulse-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pulse-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.pulse-row:last-child {
+  border-bottom: 0;
+}
+
+.pulse-row.is-empty {
+  opacity: 0.62;
+}
+
+.pulse-row__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  color: var(--ink-soft);
+}
+
+.pulse-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pulse-row__text b {
+  font-size: 0.93rem;
+}
+
+.pulse-row__text small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.pulse-row__count {
+  flex: none;
+  min-width: 30px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pulse-row:not(.is-empty) .pulse-row__count {
+  background: var(--accent);
+  color: #fff;
+}
+
+.pulse-audit__row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.86rem;
+}
+
+.pulse-audit__row:last-child {
+  border-bottom: 0;
+}
+
+.pulse-audit__row span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.pulse-audit__row b {
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .admin-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-layout .admin-tabs {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: 14px;
+    padding: 8px;
+  }
+  .admin-layout .admin-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .admin-layout .admin-tabs__btn {
+    flex: none;
+    padding: 9px 13px;
+    font-size: 0.86rem;
+  }
+  .admin-tabs__label {
+    white-space: nowrap;
+  }
+  .pulse-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Медиашкола: принято — зелёная плашка рядом с обычными нотами. */
+.fill-note--ok {
+  border-color: rgba(88, 180, 116, 0.55);
+  background: rgba(88, 180, 116, 0.1);
+}
+.fill-note--ok b { color: rgb(126, 205, 152); }
