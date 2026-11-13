@@ -49,6 +49,7 @@ async function open(query, reply) {
     url: "https://smenakontenta.ru/verify" + (query || ""),
     runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(w) {
+      w.localStorage.setItem("smena_lang", "ru"); /* проверки текста — на русском */
       w.scrollTo = () => {};
       w.print = () => { w.__printed = (w.__printed || 0) + 1; };
       w.matchMedia = () => ({

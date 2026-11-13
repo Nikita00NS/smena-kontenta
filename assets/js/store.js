@@ -1837,6 +1837,13 @@ window.Store = (function () {
   function hiringDecide(id, decision, note) {
     return withToken("hiring-decide", { id: id, decision: decision, note: note || "" });
   }
+  /* медиашкола: заявка → решение редакции */
+  function schoolMine() { return withToken("school-mine"); }
+  function schoolApply(payload) { return withToken("school-apply", payload); }
+  function schoolList() { return withToken("school-list"); }
+  function schoolDecide(id, decision, note) {
+    return withToken("school-decide", { id: id, decision: decision, note: note || "" });
+  }
   /* доступ администратора по паролю редакции: владелец выдаёт роль по почте */
   function grantAdmin(email, access, password) {
     return api("grant-admin", { email: email, access: access, password: password });
@@ -2164,6 +2171,10 @@ window.Store = (function () {
     hiringList: hiringList,
     hiringCheck: hiringCheck,
     hiringDecide: hiringDecide,
+    schoolMine: schoolMine,
+    schoolApply: schoolApply,
+    schoolList: schoolList,
+    schoolDecide: schoolDecide,
     grantAdmin: grantAdmin,
     loginTwoFactor: loginTwoFactor,
     twofaEnable: twofaEnable,

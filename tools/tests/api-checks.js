@@ -476,6 +476,37 @@ const results = [];
   check("в журнале есть приём в команду",
     r.ok === true && r.entries.some((e) => /приём в команду/.test(e.action || "")), r && r.entries && r.entries[0]);
 
+  // 18б. МЕДИАШКОЛА: заявка → решение редакции
+  r = await call("school-apply", { token: token2b, direction: "Непонятно что", motivation: "Снимаю город и людей: серии о районах и людях рядом." });
+  check("направление только из списка", r.ok === false && r.code === 400, r);
+  r = await call("school-apply", { token: token2b, direction: "Интервью", motivation: "Коротко" });
+  check("короткая мотивация не проходит", r.ok === false && r.code === 400, r);
+  r = await call("school-apply", { token: token2b, direction: "Фотография", motivation: "Снимаю город и людей: серии о районах и людях рядом." });
+  check("заявка в медиашколу подаётся", r.ok === true && r.application.status === "pending", r);
+  r = await call("school-apply", { token: token2b, direction: "Фотография", motivation: "Снимаю город и людей: серии о районах и людях рядом." });
+  check("вторая заявка в школу не создаётся", r.ok === false && r.code === 409, r);
+  r = await call("school-mine", { token: token2b });
+  check("свой статус заявки виден", r.ok === true && r.application.status === "pending", r);
+  r = await call("school-list", { token: token2b });
+  check("список школы видит только редакция", r.ok === false && r.code === 403, r);
+  r = await call("school-list", { token: token3 });
+  const schoolApp = r.ok ? r.applications.find((a) => a.userId === second.id) : null;
+  check("редакция видит заявку в школу", !!schoolApp, r);
+  r = await call("school-decide", { token: token2b, id: (schoolApp || {}).id, decision: "approve" });
+  check("решение принимает редакция, не автор", r.ok === false && r.code === 403, r);
+  r = await call("school-decide", { token: token3, id: (schoolApp || {}).id, decision: "reject", note: "" });
+  check("отказ без причины не принимается", r.ok === false, r);
+  r = await call("school-decide", { token: token3, id: (schoolApp || {}).id, decision: "reject", note: "Пока не хватает деталей — пришлите серию ещё раз" });
+  check("отказ с причиной сохраняется", r.ok === true && r.application.status === "rejected", r);
+  r = await call("school-apply", { token: token2b, direction: "Интервью", motivation: "После отказа пробую снова: готовлю вопросы для разговоров с героями района." });
+  check("после отказа можно подать снова", r.ok === true && r.application.status === "pending", r);
+  r = await call("school-decide", { token: token3, id: r.ok ? r.application.id : "", decision: "approve" });
+  check("редакция принимает в школу", r.ok === true && r.application.status === "accepted", r);
+  r = await call("school-mine", { token: token2b });
+  check("принятый видит статус «accepted»", r.ok === true && r.application.status === "accepted", r);
+  r = await call("admin-log", { token: token3 });
+  check("в журнале есть медиашкола", r.ok === true && r.entries.some((e) => /медиашкол/.test(e.action || "")), r);
+
   // 19. ЗАДАЧИ: сотрудник видит свои, ставит только руководство
   r = await call("tasks-mine", { token: token2b });
   check("свои задачи открываются", r.ok === true && Array.isArray(r.tasks) && r.tasks.length === 0, r);
@@ -588,6 +619,8 @@ const results = [];
   check("этап 1: без согласия портфолио закрыто", r.ok === false && r.needConsent === true, r);
   r = await call("hiring-apply", { token: tokenA, position: "Автор текстов", motivation: "Хочу писать про городские события." });
   check("этап 1: без согласия приём в команду закрыт", r.ok === false && r.needConsent === true, r);
+  r = await call("school-apply", { token: tokenA, direction: "Фотография", motivation: "Снимаю город и людей: серии о районах и людях рядом." });
+  check("этап 1: без согласия заявка в школу закрыта", r.ok === false && r.needConsent === true, r);
 
   r = await call("consent-send", { token: tokenA, scan: fakePng });
   check("этап 1: поддельный скан согласия отклонён", r.ok === false, r);

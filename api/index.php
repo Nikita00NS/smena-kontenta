@@ -206,6 +206,7 @@ require __DIR__ . '/lib/mailbox.php';  /* ящики домена: чтение,
 require __DIR__ . '/lib/tasks.php';    /* задачи команды: сотрудники, редакция, основатели */
 require __DIR__ . '/lib/ai.php';       /* ИИ-помощник писем: только бесплатные тарифы */    /* задачи команды: сотрудники, редакция, основатели */
 require __DIR__ . '/lib/hiring.php';   /* приём в команду: тест, чек-лист, согласование */
+require __DIR__ . '/lib/school.php';   /* медиашкола: заявка → решение редакции */
 require __DIR__ . '/lib/pdf.php';      /* PDF пресс-карты: встроенный шрифт, без Composer */
 
 function action() {
@@ -1194,6 +1195,9 @@ if ($act === 'diag') {
         'mail_log' => count(mail_log_list($DATA_DIR, 500)),
         'hiring_open' => count(array_filter(read_hiring($DATA_DIR), function ($a) {
             return isset($a['stage']) && in_array($a['stage'], array('test', 'checklist', 'review'), true);
+        })),
+        'school_open' => count(array_filter(read_school($DATA_DIR), function ($a) {
+            return isset($a['status']) && $a['status'] === 'pending';
         })),
         'pending_email' => count(array_filter($users, function ($u) {
             return empty($u['emailVerified']);
@@ -4860,5 +4864,6 @@ if ($act === 'action-confirm') {
 if (tasks_routes($act, $DATA_DIR)) exit;
 if (ai_routes($act, $DATA_DIR)) exit;
 if (hiring_routes($act, $DATA_DIR)) exit;
+if (school_routes($act, $DATA_DIR)) exit;
 
-fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, mailboxes, mail-list, mail-send, hiring-apply, selftest.', 404);
+fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, mailboxes, mail-list, mail-send, hiring-apply, school-apply, selftest.', 404);
