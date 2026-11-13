@@ -9064,3 +9064,122 @@ body.is-maint { overflow: hidden; }
   gap: 6px;
   margin-bottom: 12px;
 }
+
+/* Админка: изоляция сбоев и поведение на телефоне -------------------------- */
+.admin-broken {
+  border: 1px solid rgba(214, 78, 58, 0.45);
+  background: rgba(214, 78, 58, 0.08);
+  border-radius: 14px;
+  padding: 16px 18px;
+  max-width: 620px;
+}
+.admin-broken b { display: block; margin-bottom: 6px; }
+.admin-broken p { color: var(--muted); font-size: 0.9rem; line-height: 1.5; margin: 0 0 10px; }
+.admin-panels { min-width: 0; }
+.admin-panel { overflow-x: auto; }
+.admin-panel .section.wrap { padding-inline: clamp(14px, 4vw, 24px); }
+
+/* Кабинет: единый современный вид полей и кнопок вместо «полосочек» -------- */
+.cab-panel .field input,
+.cab-panel .field select,
+.cab-panel .field textarea,
+.cab-panel .field input[type="text"],
+.cab-panel .field input[type="password"] {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-2);
+  padding: 12px 14px;
+  font-size: 0.95rem;
+  box-shadow: none;
+}
+.cab-panel .field input:focus,
+.cab-panel .field select:focus,
+.cab-panel .field textarea:focus {
+  border-color: var(--ink);
+  background: var(--paper);
+}
+.cab-panel .field input[disabled] {
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+}
+.cab-panel .field > label,
+.cab-panel .form__full > label {
+  display: inline-block;
+  margin-bottom: 6px;
+}
+.cab-panel .panel {
+  border-radius: 16px;
+  box-shadow: 0 1px 0 var(--line);
+}
+.cab-panel .btn { border-radius: 999px; }
+.cab-panel .btn--ghost { border-radius: 999px; }
+.cab-panel .admin-review__note,
+.cab-panel .admin-review__points,
+.cab-panel input[type="text"].admin-review__note {
+  border-radius: 10px;
+}
+.cab-panel .pass-change { display: grid; gap: 10px; }
+.cab-panel .consent-card,
+.cab-panel .fill-note { border-radius: 14px; }
+.cab-panel .chip-sm { border-radius: 999px; }
+
+/* Пресс-карта: шаги и паспорт в одну колонку на телефоне */
+@media (max-width: 720px) {
+  .pcard-data { grid-template-columns: minmax(0, 1fr); }
+  .pcard-layout { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/* Страница медиашколы /school: дорожная карта и задания -------------------- */
+.school-road {
+  list-style: none;
+  counter-reset: road;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+.school-road li {
+  counter-increment: road;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--paper-2);
+  position: relative;
+}
+.school-road li::before {
+  content: counter(road, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 8px;
+}
+.school-road li b { display: block; margin-bottom: 6px; font-size: 0.98rem; }
+.school-road li span { color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
+.school-tasks details {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  background: var(--paper-2);
+}
+.school-tasks summary { cursor: pointer; font-weight: 600; }
+.school-tasks details p { margin: 8px 0 2px; color: var(--muted); line-height: 1.55; font-size: 0.92rem; }
+.school-dir-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.school-dir-chips label {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  background: var(--paper);
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.school-dir-chips input { position: absolute; opacity: 0; pointer-events: none; }
+.school-dir-chips label.is-on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}

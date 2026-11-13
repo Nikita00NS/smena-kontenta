@@ -146,6 +146,12 @@ const results = [];
     await php.writeFile("/site/api/lib/fonts/" + font, fs.readFileSync(SRC + "/lib/fonts/" + font));
   }
   await php.writeFile("/site/assets/js/map-data.js", fs.readFileSync(SRC + "/../assets/js/map-data.js"));
+  /* сканы подписей, если они лежат в репозитории, попадают в виртуальную ФС */
+  try { await php.mkdir("/site/assets/img"); } catch (e) {}
+  for (const sign of ["sign-sirik.jpg", "sign-ilin.jpg"]) {
+    const p = SRC + "/../assets/img/" + sign;
+    if (fs.existsSync(p)) await php.writeFile("/site/assets/img/" + sign, fs.readFileSync(p));
+  }
   const srcIndex = fs.readFileSync(SRC + "/index.php", "utf8")
     .replace("$raw = file_get_contents('php://input');",
       "$raw = file_exists(__DIR__ . '/body.json') ? (string) file_get_contents(__DIR__ . '/body.json') : '';")
@@ -1007,6 +1013,18 @@ const results = [];
   check("этап 4: владелец скачивает акт выдачи с подписями основателей",
     r.ok === true && actBytes.slice(0, 5).toString("ascii") === "%PDF-" && actBytes.length > 8000,
     { ok: r.ok, filename: r.filename, size: actBytes.length });
+  {
+    const fs2 = require("node:fs");
+    const signExists = fs2.existsSync(path.resolve(__dirname, "..", "..", "assets/img/sign-sirik.jpg"));
+    const raw = actBytes.toString("binary");
+    if (signExists) {
+      check("этап 4: акт вставляет скан подписи (JPEG/DCTDecode)",
+        raw.includes("/Subtype /Image") && raw.includes("/DCTDecode"), { signExists });
+    } else {
+      check("этап 4: без скана подписи акт остаётся с линиями для руки",
+        !raw.includes("/Subtype /Image"), { signExists });
+    }
+  }
 
   /* Лимит проверки отдельный и действительно останавливает перебор. */
   const verifyIp = "203.0.113.9";

@@ -1884,7 +1884,9 @@
         '<span class="kicker">Служебное</span><h1>Нужны права<br>директора</h1></div>' +
         '<div class="page-hero__aside"><p class="lead">Вы вошли как «' + esc(user.name) +
         "», роль: <b>" + esc(user.access || "Пользователь") + "</b>. Панель открывается роли " +
-        "«Директор» — её выдаёт владелец проекта паролем редакции.</p></div></div></section>" +
+        "«Директор» — её выдаёт владелец проекта паролем редакции.</p>" +
+        '<p class="form__note">Если вы владелец и права раньше были, нажмите «Обновить права» — ' +
+        "панель сверится с сервером. Первый директор проекта получает права кнопкой ниже.</p></div></div></section>" +
         '<section class="section wrap"><div class="panel" style="padding:24px">' +
         '<div class="diag" data-gate-list><p class="form__note">Проверяем сервер…</p></div>' +
         '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:16px">' +
@@ -2014,25 +2016,39 @@
       }
 
       warnLocalOnly();
-      if (hasCap("server.diag")) mountOverview(panel("overview"));
-      if (hasCap("people.view")) mountPeople(panel("people"));
-      if (hasCap("people.edit")) mountTeamChat(panel("people"));
-      if (hasCap("consents.review")) mountConsentQueue(panel("people"));
-      if (hasCap("people.edit")) mountTasksAdmin(panel("people"));
-      if (hasCap("posts.review")) mountContent(panel("content"));
-      if (hasCap("portfolio.review")) mountPortfolioQueue(panel("content"));
-      if (hasCap("editorials.appoint")) mountEditorialQueue(panel("editorials"));
-      if (hasCap("cards.view") || hasCap("cards.issue")) mountCardQueue(panel("cards"));
-      if (hasCap("support.answer")) mountSupportQueue(panel("support"));
-      if (hasCap("mail.use")) mountMailClient(panel("support"));
-      if (hasCap("mail.manage")) mountMailSettings(panel("support"));
-      if (hasCap("hiring.view")) mountHiringAdmin(panel("hiring"));
-      if (hasCap("hiring.view")) mountSchoolAdmin(panel("school"));
-      if (hasCap("site.manage")) mountSite(panel("site"));
-      if (hasCap("site.manage")) mountAuthorsShow(panel("site"));
-      if (hasCap("server.diag")) mountDiag(panel("server"));
+      /* Каждый раздел изолирован: падение одного не должно ломать остальные. */
+      function safeMount(name, el, fn) {
+        try {
+          fn();
+        } catch (e) {
+          if (el) el.innerHTML = '<div class="admin-broken"><b>Раздел «' + esc(name) + "» не открылся</b>" +
+            "<p>Это сбой интерфейса, а не ваших данных. Обновите страницу — обычно помогает. " +
+            "Если повторится, напишите в поддержку и назовите раздел: «" + esc(name) + "».</p>" +
+            '<button class="btn btn--sm" type="button" onclick="window.location.reload()">Обновить панель</button></div>';
+          if (window.console && console.error) console.error("Раздел панели не открылся:", name, e);
+        }
+      }
+      if (hasCap("server.diag")) safeMount("Обзор", panel("overview"), function () { mountOverview(panel("overview")); });
+      if (hasCap("people.view")) safeMount("Люди", panel("people"), function () { mountPeople(panel("people")); });
+      if (hasCap("people.edit")) safeMount("Чат команды", panel("people"), function () { mountTeamChat(panel("people")); });
+      if (hasCap("consents.review")) safeMount("Согласия", panel("people"), function () { mountConsentQueue(panel("people")); });
+      if (hasCap("people.edit")) safeMount("Задачи", panel("people"), function () { mountTasksAdmin(panel("people")); });
+      if (hasCap("posts.review")) safeMount("Материалы", panel("content"), function () { mountContent(panel("content")); });
+      if (hasCap("portfolio.review")) safeMount("Портфолио", panel("content"), function () { mountPortfolioQueue(panel("content")); });
+      if (hasCap("editorials.appoint")) safeMount("Редакции", panel("editorials"), function () { mountEditorialQueue(panel("editorials")); });
+      if (hasCap("cards.view") || hasCap("cards.issue")) safeMount("Карты", panel("cards"), function () { mountCardQueue(panel("cards")); });
+      if (hasCap("support.answer")) safeMount("Поддержка", panel("support"), function () { mountSupportQueue(panel("support")); });
+      if (hasCap("mail.use")) safeMount("Почта", panel("support"), function () { mountMailClient(panel("support")); });
+      if (hasCap("mail.manage")) safeMount("Настройки почты", panel("support"), function () { mountMailSettings(panel("support")); });
+      if (hasCap("hiring.view")) safeMount("Приём на работу", panel("hiring"), function () { mountHiringAdmin(panel("hiring")); });
+      if (hasCap("hiring.view")) safeMount("Медиашкола", panel("school"), function () { mountSchoolAdmin(panel("school")); });
+      if (hasCap("site.manage")) safeMount("Сайт", panel("site"), function () { mountSite(panel("site")); });
+      if (hasCap("site.manage")) safeMount("Показ авторов", panel("site"), function () { mountAuthorsShow(panel("site")); });
+      if (hasCap("server.diag")) safeMount("Сервер", panel("server"), function () { mountDiag(panel("server")); });
 
-      buildAdminTabs(host, TABS);
+      try { buildAdminTabs(host, TABS); } catch (e) {
+        if (window.console && console.error) console.error("Вкладки панели не собрались:", e);
+      }
     }
 
     /* --- заявки на пресс-карту ---------------------------------------------- */
@@ -6608,11 +6624,11 @@
         "<p>" + dir + "Следующий шаг — первое задание: напишите материал, редактор разберёт его до публикации.</p>" +
         '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
         '<a class="btn btn--accent btn--sm" href="/write">Написать материал</a>' +
-        '<a class="btn btn--ghost btn--sm" href="/media-school">Программа школы</a></div></div>';
+        '<a class="btn btn--ghost btn--sm" href="/school">Страница школы: статус и задания</a></div></div>';
     }
     return '<div class="fill-note fill-note--flat" data-school-state><b>Заявка на рассмотрении</b>' +
       "<p>" + dir + "Подана " + schDate(app.createdAt) +
-      ". Редакция ответит на почту — обычно это занимает несколько дней.</p></div>";
+      ". Статус виден на <a href=\"/school\">странице медиашколы</a>, письмо придёт на почту.</p></div>";
   }
 
   function schoolFormHtml(app) {
@@ -6674,6 +6690,155 @@
     if (host) mountSchoolBlock(host);
   }
 
+  /* Стартовое задание по направлению — для страницы /school и для принятых. */
+  function schoolTask(dir) {
+    var tasks = {
+      "Текст и работа с фактурой": "напишите 3–5 абзацев об одном человеке из вашего двора, школы или района — так, чтобы дочитал незнакомый человек",
+      "Интервью": "задайте пять вопросов герою, запишите ответы дословно и отберите три лучшие цитаты",
+      "Фотография": "снимите серию из 10 кадров об одном месте и выберите три, которые расскажут историю без подписи",
+      "Видео и монтаж": "снимите на телефон минутный сюжет: одна мысль, один герой, чистый звук",
+      "Соцсети и дизайн": "сделайте обложку и подпись из двух строк для материала, уже вышедшего на сайте",
+      "Проверка информации": "возьмите новость дня, найдите первоисточник и напишите справку: что подтвердилось, а что нет",
+    };
+    return tasks[dir] || "выберите тему рядом с собой и сделайте первый материал — редактор подскажет, как его усилить";
+  }
+
+  /* Отдельная страница медиашколы /school: статус, заявка, учёба. */
+  function initSchoolHub() {
+    var statusHost = $("[data-school-status]");
+    var applyHost = $("[data-school-apply]");
+    if (!statusHost && !applyHost) return;
+
+    function chips(dir) {
+      return '<div class="school-dir-chips">' + SCHOOL_DIRS.map(function (d) {
+        return '<label class="' + (d === dir ? "is-on" : "") + '"><input type="radio" name="direction" value="' +
+          esc(d) + '"' + (d === dir ? " checked" : "") + ">" + esc(d) + "</label>";
+      }).join("") + "</div>";
+    }
+    function bindChips(host) {
+      $$("[data-school-form] .school-dir-chips input", host).forEach(function (input) {
+        input.addEventListener("change", function () {
+          $$(".school-dir-chips label", host).forEach(function (l) { l.classList.remove("is-on"); });
+          input.closest("label").classList.add("is-on");
+        });
+      });
+    }
+    function bindForm(host, noteEl, done) {
+      var form = $("[data-school-form]", host);
+      if (!form) return;
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var checked = form.querySelector('[name="direction"]:checked');
+        var dir = checked ? checked.value : "";
+        var mot = ($('[name="motivation"]', form) || {}).value || "";
+        if (noteEl) noteEl.textContent = "Отправляем…";
+        Store.schoolApply({ direction: dir, motivation: mot }).then(function () {
+          done();
+        }, function (err) {
+          if (noteEl) noteEl.textContent = err && err.needConsent
+            ? "Сначала подпишите оба согласия — это можно сделать прямо здесь, раздел «Документы» в кабинете."
+            : (err.message || "Не удалось отправить заявку. Попробуйте ещё раз.");
+        });
+      });
+    }
+
+    function drawPending(app, kind) {
+      var dir = app.direction ? "Направление: <b>" + esc(app.direction) + "</b>. " : "";
+      return '<div class="fill-note fill-note--flat" data-school-state><b>' + kind + "</b>" +
+        "<p>" + dir + "Подана " + schDate(app.createdAt) + ". Редакция читает заявки по мере поступления: " +
+        "статус сменится здесь же, письмо придёт на почту аккаунта.</p>" +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
+        '<a class="btn btn--ghost btn--sm" href="/media-school">Программа школы</a>' +
+        '<a class="btn btn--ghost btn--sm" href="#ucheba">Посмотреть первые задания</a></div></div>';
+    }
+
+    function drawAccepted(app) {
+      return '<div class="fill-note fill-note--ok" data-school-state><b>Вы приняты в медиашколу</b>' +
+        "<p>" + (app.direction ? "Направление: <b>" + esc(app.direction) + "</b>. " : "") +
+        "Первое задание: " + schoolTask(app.direction) + ". Сделайте материал — редактор разберёт его до публикации.</p>" +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
+        '<a class="btn btn--accent btn--sm" href="/write">Сделать первый материал</a>' +
+        '<a class="btn btn--ghost btn--sm" href="#ucheba">Дорожная карта ученика</a></div></div>';
+    }
+
+    function drawRejected(app) {
+      return '<div class="fill-note" data-school-state style="border-color:rgba(214,78,58,.4);background:rgba(214,78,58,.06)">' +
+        "<b>Заявку вернули</b><p>Основание: " + esc(app.note || "не указано") +
+        ". Это не запрет: можно подать заявку снова и рассказать о себе подробнее.</p></div>";
+    }
+
+    var user = Store.currentUser();
+    if (!user) {
+      if (statusHost) statusHost.innerHTML =
+        '<div class="fill-note fill-note--flat"><b>Заявка — после регистрации</b>' +
+        "<p>Создайте аккаунт: почта, код из письма, пароль — минута. После входа на этой странице " +
+        "появятся статус заявки и форма.</p>" +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
+        '<a class="btn btn--accent btn--sm" href="/join?next=/school">Создать аккаунт</a>' +
+        '<a class="btn btn--ghost btn--sm" href="/join#login">У меня есть аккаунт</a></div></div>';
+      if (applyHost) applyHost.innerHTML = "";
+      return;
+    }
+
+    function load() {
+      Store.schoolMine().then(function (res) {
+        var app = res.application || null;
+        var processing = (Store.consent() || {}).status === "approved";
+        var distributionOk = (Store.consent("distribution") || {}).status === "approved";
+        var consentsOk = processing && distributionOk;
+        var steps = [
+          ["Аккаунт создан", true],
+          ["Оба согласия подписаны", consentsOk],
+          ["Заявка подана", !!(app && app.status !== "rejected")],
+          ["Решение редакции", !!(app && app.status === "accepted")],
+        ];
+        var stepsHtml = '<ol class="pcard-steps">' + steps.map(function (s, i) {
+          return '<li class="pcard-steps__item' + (s[1] ? " is-done" : "") + '"><span class="pcard-steps__mark">' +
+            (s[1] ? ICONS.check : i + 1) + "</span><span>" + esc(s[0]) + "</span></li>";
+        }).join("") + "</ol>";
+        if (statusHost) {
+          statusHost.innerHTML = '<div class="panel" style="padding:20px">' +
+            '<div class="panel__head"><h3>Статус заявки</h3>' +
+            (app ? '<span class="panel__tag">' + esc(app.status === "accepted" ? "приняты" : app.status === "pending" ? "на проверке" : "требует внимания") + "</span>"
+              : '<span class="panel__tag">заявки ещё нет</span>') + "</div>" +
+            stepsHtml +
+            (!consentsOk ? '<p class="form__note">Для заявки нужны два подписанных согласия — ' +
+              '<a href="/profile">подписать в кабинете</a>.</p>' : "") +
+            "</div>";
+        }
+        if (applyHost) {
+          if (app && app.status === "accepted") applyHost.innerHTML = drawAccepted(app);
+          else if (app && app.status === "pending") applyHost.innerHTML = drawPending(app, "Заявка на рассмотрении");
+          else {
+            applyHost.innerHTML =
+              '<div class="panel" style="padding:20px">' +
+              (app && app.status === "rejected" ? drawRejected(app) : "") +
+              "<h3>" + (app && app.status === "rejected" ? "Подать заявку снова" : "Заявка в медиашколу") + "</h3>" +
+              '<form data-school-form>' +
+              '<label style="display:block;margin-bottom:6px">Направление</label>' + chips(app && app.direction) +
+              '<div class="field"><label for="sh-mot">Почему именно вы</label>' +
+              '<textarea id="sh-mot" name="motivation" rows="4" maxlength="1500" required ' +
+              'placeholder="Один материал — свой, школьный или просто для себя. О чём хотите рассказывать и сколько времени готовы уделять"></textarea>' +
+              '<p class="field__hint">От 40 символов. Каждую заявку читает редактор.</p></div>' +
+              '<div class="row"><button class="btn btn--accent" type="submit">Отправить заявку</button>' +
+              '<span class="form__note" data-school-note></span></div></form></div>';
+            bindChips(applyHost);
+            bindForm(applyHost, $("[data-school-note]", applyHost), function () {
+              applyHost.innerHTML = '<div class="fill-note fill-note--ok"><b>Заявка отправлена</b>' +
+                "<p>Статус появится в разделе «Мой статус» на этой странице — обновите её через пару секунд.</p></div>";
+              setTimeout(load, 1200);
+            });
+          }
+        }
+      }, function () {
+        if (statusHost) statusHost.innerHTML = '<p class="form__note">Сервер не отвечает — обновите страницу позже.</p>';
+        if (applyHost) applyHost.innerHTML = "";
+      });
+    }
+    if (Store.refreshConsent) Store.refreshConsent().catch(function () {});
+    load();
+  }
+
   /* Страница /media-school: заявка для вошедших, приглашение для остальных. */
   function initSchool() {
     var cta = document.querySelector(".cta");
@@ -6686,7 +6851,7 @@
       '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Первый набор</span>' +
       "<h2>Подать заявку</h2>" +
       '<p class="sec-head__text">Нужен аккаунт и два подписанных согласия — остальное решает ваша мотивация. ' +
-      "Заявку рассматривает редакция, ответ придёт на почту.</p></div></div>" +
+      'Заявка, её статус и учёба живут на <a href="/school">отдельной странице медиашколы</a>.</p></div></div>' +
       '<div data-school-host><p class="form__note">Проверяем аккаунт…</p></div>';
     cta.parentNode.insertBefore(section, cta);
     var host = $("[data-school-host]", section);
@@ -7399,22 +7564,27 @@
           ? '<a class="btn btn--ghost btn--sm" href="/verify#n=' + encodeURIComponent(current.number) +
             "&c=" + encodeURIComponent(current.verifyCode) + '" target="_blank" rel="noopener">Проверить карту</a>'
           : '<a class="btn btn--ghost btn--sm" href="/verify">Как проверяют карту</a>';
-        /* Данные карты одним списком: всё, что известно редакции. */
+        /* Паспорт карты: показываем всегда — и до выдачи тоже, чтобы было
+           видно, что известно редакции, а что появится после решения. */
         var delivery = current && current.dispatch && (current.dispatch.tracking || current.dispatch.sentAt)
           ? "Почтой России" + (current.dispatch.tracking ? " · трек " + esc(current.dispatch.tracking) : "")
           : (current && current.issuePlace ? "Лично: " + esc(current.issuePlace) : "уточняется");
-        var dataRows = canPrint
-          ? '<dl class="pcard-data">' +
-            "<div><dt>Статус</dt><dd>" + esc(cardStatusText(st)) + "</dd></div>" +
-            "<div><dt>Номер карты</dt><dd>" + esc(current.number) + "</dd></div>" +
-            "<div><dt>Владелец</dt><dd>" + esc(current.authorName || "") + "</dd></div>" +
-            "<div><dt>Регион</dt><dd>" + esc(regionName(current.authorRegion) || current.authorRegion || "не указан") + "</dd></div>" +
-            "<div><dt>Выдана</dt><dd>" + esc(fmtDate(current.issuedAt)) + "</dd></div>" +
-            "<div><dt>Действует до</dt><dd>" + esc(fmtDate(current.validUntil)) + "</dd></div>" +
-            "<div><dt>Основание</dt><dd>" + (status.byRole ? "должность в редакции" : "заявка автора") + "</dd></div>" +
-            "<div><dt>Получение</dt><dd>" + delivery + "</dd></div>" +
-            "</dl>"
-          : "";
+        var basis = status.byRole ? "должность в редакции"
+          : st === "issued" ? "заявка автора"
+          : st === "pending" ? "заявка на проверке"
+          : st === "expired" || st === "revoked" ? "карта была выдана"
+          : "заявка ещё не подана";
+        var dataRows =
+          '<dl class="pcard-data">' +
+          "<div><dt>Статус</dt><dd>" + esc(cardStatusText(st)) + "</dd></div>" +
+          "<div><dt>Номер карты</dt><dd>" + (current && current.number ? esc(current.number) : "— после выдачи") + "</dd></div>" +
+          "<div><dt>Владелец</dt><dd>" + esc((current && current.authorName) || (Store.currentUser() || {}).name || "") + "</dd></div>" +
+          "<div><dt>Регион</dt><dd>" + esc(regionName((current && current.authorRegion) || (Store.currentUser() || {}).region) || "не указан") + "</dd></div>" +
+          "<div><dt>Выдана</dt><dd>" + (st === "issued" && current ? esc(fmtDate(current.issuedAt)) : "—") + "</dd></div>" +
+          "<div><dt>Действует до</dt><dd>" + (st === "issued" && current ? esc(fmtDate(current.validUntil)) : "—") + "</dd></div>" +
+          "<div><dt>Основание</dt><dd>" + esc(basis) + "</dd></div>" +
+          "<div><dt>Получение</dt><dd>" + delivery + "</dd></div>" +
+          "</dl>";
         var actNote = canPrint
           ? '<p class="form__note" style="margin-top:10px">Акт выдачи — документ с подписями основателей ' +
             "Сирика Н. С. и Ильина Б. П.: в нём указано, кто и какую карту получил. Он создаётся для каждой " +
@@ -8563,6 +8733,7 @@
     if (page === "write") initWrite();
     if (page === "docs") initDocs();
     if (page === "school") initSchool();
+    if (page === "school-hub") initSchoolHub();
     if (page === "admin") initAdmin();
     if (page === "founders") {
       /* карточки показываем сразу из данных проекта, а после ответа сервера

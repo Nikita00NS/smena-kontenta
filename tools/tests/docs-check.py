@@ -81,11 +81,11 @@ def main():
     # --- согласие на распространение ------------------------------------------
     reader, spread = text_of("soglasie-na-rasprostranenie-pd.pdf")
     sp = norm(spread)
-    check("статьёй 10.1" in sp, "согласие на распространение ссылается на статью 10.1")
+    check("10.1" in sp, "согласие на распространение ссылается на статью 10.1")
     check("smenakontenta.ru" in sp, "сайт указан как ресурс распространения")
     for title, url in social_links():
         check(url in sp, "площадка в согласии: " + title, url)
-    check("только сайт проекта / сайт проекта и перечисленные" in sp,
+    check("Объём разрешения" in sp and "сайт и площадки проекта" in sp,
           "есть отметка об объёме разрешения: сайт или сайт и площадки")
     check("Условия и запреты" in sp and "разрешаю / не разрешаю" in sp,
           "категории данных размечаются вручную, есть условия и запреты")
@@ -110,6 +110,20 @@ def main():
     check("только при соответствующей отметке" in tm,
           "площадки проекта — только по отметке в согласии")
     check("двенадцать месяцев" in tm, "срок пресс-карты — двенадцать месяцев")
+
+    # --- оформление: гриф утверждения и подписи операторов ----------------------
+    for name in ["politika-konfidencialnosti.pdf", "polzovatelskoe-soglashenie.pdf"]:
+        _, body = text_of(name)
+        check("УТВЕРЖДЕНО" in body, "гриф УТВЕРЖДЕНО: " + name)
+        check("подпись и дата" in body, "подписи сторон в документе: " + name)
+    for name in ["soglasie-na-obrabotku-pd.pdf", "soglasie-na-rasprostranenie-pd.pdf"]:
+        _, body = text_of(name)
+        check("(подпись)" in body and "(расшифровка подписи)" in body,
+              "бланк подписи с расшифровкой: " + name)
+        if "obrabotku" in name:
+            check("№ 178" in body, "ссылка на типовую форму РКН: " + name)
+        else:
+            check("10.1" in body, "основание — статья 10.1: " + name)
     check("продлён" in tm and "отозвать" in tm, "у карты есть продление и отзыв")
 
     # --- оформление: без колонтитулов и служебных приписок ---------------------
@@ -119,7 +133,6 @@ def main():
         "Приложение №",
         "проверяет юрист",
         "Дата версии — в колонтитуле",
-        "УТВЕРЖДЕНО",
     ]
     for name in sorted(os.listdir(DOCS_DIR)):
         if not name.endswith(".pdf"):

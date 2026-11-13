@@ -239,6 +239,52 @@ const ISSUED_CARD = {
     dom.window.close();
   }
 
+  /* 6. Страница медиашколы /school: статус, заявка, задания */
+  {
+    const { dom } = makeDom("/school/index.html", `
+      Store.schoolMine = function () { return Promise.resolve({ ok: true, application: null }); };
+      Store.consent = function () { return { status: "approved" }; };
+    `, (w) => {
+      w.localStorage.setItem("smena_token_v1", "fix-token");
+      w.localStorage.setItem("smena_user_v1", JSON.stringify({
+        id: "u_fix", name: "Ученик Школы", email: "school@example.ru", region: "moskva",
+        createdAt: "2026-11-01T00:00:00Z",
+      }));
+      w.localStorage.setItem("smena_consent_v1", JSON.stringify({ status: "approved", kind: "processing" }));
+      w.localStorage.setItem("smena_consent_distribution_v1", JSON.stringify({ status: "approved", kind: "distribution" }));
+      w.__lastApply = null;
+      w.fetch = (url, opts) => {
+        let b = {};
+        try { b = JSON.parse((opts && opts.body) || "{}"); } catch (e) {}
+        let data = { ok: false };
+        if (b.action === "school-mine") data = { ok: true, application: null };
+        if (b.action === "school-apply") { w.__lastApply = JSON.parse(JSON.stringify(b)); data = { ok: true }; }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
+      };
+    });
+    await new Promise((r) => setTimeout(r, 2000));
+    const doc = dom.window.document;
+    check("у страницы школы есть статус-блок", !!doc.querySelector("[data-school-status] .pcard-steps"));
+    check("форма заявки на странице школы", !!doc.querySelector('[data-school-apply] [data-school-form]'));
+    check("направления — чипами, не селектом",
+      doc.querySelectorAll(".school-dir-chips label").length === 6);
+    const chip = doc.querySelector(".school-dir-chips label:nth-child(2) input");
+    chip.checked = true;
+    chip.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    check("чип подсвечивается при выборе", chip.closest("label").classList.contains("is-on"));
+    const mot = doc.querySelector("#sh-mot");
+    mot.value = "Пишу про школьный театр, готова показывать материалы и учиться каждые выходные.";
+    doc.querySelector('[data-school-apply] form[data-school-form]')
+      .dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((r) => setTimeout(r, 300));
+    check("заявка уходит на сервер с выбранным направлением",
+      dom.window.__lastApply && dom.window.__lastApply.direction === "Интервью",
+      JSON.stringify(dom.window.__lastApply));
+    check("дорожная карта из пяти шагов", doc.querySelectorAll(".school-road li").length === 5);
+    check("первые задания по направлениям раскрыты", doc.querySelectorAll(".school-tasks details").length === 6);
+    dom.window.close();
+  }
+
   if (bad) {
     console.log("правки: проверка не пройдена");
     process.exit(1);
