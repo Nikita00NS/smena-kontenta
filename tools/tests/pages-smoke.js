@@ -31,13 +31,17 @@ function inline(html) {
 
 (async () => {
   let bad = 0;
-  /* короткий адрес обязателен для каждой страницы в папке: без него хостинг отдаёт 403 */
+  /* короткий адрес обязателен для каждой страницы в папке, и вести он должен
+     в router.php: статические файлы кэш хостинга держит старыми, PHP — нет */
+  if (!/RewriteRule \^\$ \/router\.php\?p=home/.test(htaccess)) {
+    bad++; console.log("  FAIL htaccess: главная не идёт через router.php");
+  } else console.log("  ok   htaccess: главная через router.php");
   for (const rel of pages) {
     if (!rel.includes("/")) continue;
     const slug = rel.replace("/index.html", "");
-    const ok = htaccess.includes("RewriteRule ^" + slug + "/?$");
-    if (ok) console.log("  ok   htaccess: /" + slug);
-    else { bad++; console.log("  FAIL htaccess: /" + slug); }
+    const ok = htaccess.includes("RewriteRule ^" + slug + "/?$ /router.php?p=" + slug + " [L]");
+    if (ok) console.log("  ok   htaccess: /" + slug + " → router.php");
+    else { bad++; console.log("  FAIL htaccess: /" + slug + " не через router.php"); }
   }
   for (const rel of pages) {
     const file = path.join(ROOT, rel);

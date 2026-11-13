@@ -26,23 +26,26 @@ AddDefaultCharset UTF-8
   # /index.html → главная
   RewriteRule ^index\.html$ / [R=301,L]
 
+  # главная — через роутер, мимо кэша
+  RewriteRule ^$ /router.php?p=home [L]
+
   # короткие адреса разделов
-  RewriteRule ^news/?$ /news/index.html [L]
-  RewriteRule ^about/?$ /about/index.html [L]
-  RewriteRule ^partners/?$ /partners/index.html [L]
-  RewriteRule ^region/?$ /region/index.html [L]
-  RewriteRule ^media-school/?$ /media-school/index.html [L]
-  RewriteRule ^school/?$ /school/index.html [L]
-  RewriteRule ^docs/?$ /docs/index.html [L]
-  RewriteRule ^poisk/?$ /poisk/index.html [L]
-  RewriteRule ^join/?$ /join/index.html [L]
-  RewriteRule ^profile/?$ /profile/index.html [L]
-  RewriteRule ^write/?$ /write/index.html [L]
-  RewriteRule ^admin/?$ /admin/index.html [L]
-  RewriteRule ^article/?$ /article/index.html [L]
-  RewriteRule ^support/?$ /support/index.html [L]
-  RewriteRule ^founders/?$ /founders/index.html [L]
-  RewriteRule ^verify/?$ /verify/index.html [L]
+  RewriteRule ^news/?$ /router.php?p=news [L]
+  RewriteRule ^about/?$ /router.php?p=about [L]
+  RewriteRule ^partners/?$ /router.php?p=partners [L]
+  RewriteRule ^region/?$ /router.php?p=region [L]
+  RewriteRule ^media-school/?$ /router.php?p=media-school [L]
+  RewriteRule ^school/?$ /router.php?p=school [L]
+  RewriteRule ^docs/?$ /router.php?p=docs [L]
+  RewriteRule ^poisk/?$ /router.php?p=poisk [L]
+  RewriteRule ^join/?$ /router.php?p=join [L]
+  RewriteRule ^profile/?$ /router.php?p=profile [L]
+  RewriteRule ^write/?$ /router.php?p=write [L]
+  RewriteRule ^admin/?$ /router.php?p=admin [L]
+  RewriteRule ^article/?$ /router.php?p=article [L]
+  RewriteRule ^support/?$ /router.php?p=support [L]
+  RewriteRule ^founders/?$ /router.php?p=founders [L]
+  RewriteRule ^verify/?$ /router.php?p=verify [L]
 
 </IfModule>
 
