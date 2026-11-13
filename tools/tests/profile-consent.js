@@ -78,7 +78,8 @@ function inline(html) {
     if (!state || state.textContent !== want.state) bad.push("состояние не то: " + want.kind);
     const link = card.querySelector(".consent-card__actions a");
     if (!link || link.getAttribute("href").indexOf(want.pdf) === -1) bad.push("ссылка на форму не та: " + want.kind);
-    else if (!fs.existsSync(path.join(ROOT, link.getAttribute("href")))) bad.push("файла формы нет: " + want.pdf);
+    else if (!fs.existsSync(path.join(ROOT, link.getAttribute("href").split("?v=")[0])))
+      bad.push("файла формы нет: " + want.pdf);
     const upload = card.querySelector("[data-consent-file]");
     if (!!upload !== want.upload) bad.push("кнопка загрузки не там: " + want.kind);
     if (upload && upload.getAttribute("data-consent-file") !== want.kind) bad.push("загрузка не привязана к документу: " + want.kind);
