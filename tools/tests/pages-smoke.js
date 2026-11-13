@@ -15,6 +15,9 @@ const standalone = ["poisk/index.html"];
 
 const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html", "poisk/index.html", "docs/index.html", "media-school/index.html", "school/index.html", "about/index.html", "partners/index.html", "founders/index.html", "verify/index.html"];
 
+/* каждая страница с папкой обязана иметь короткий адрес в .htaccess — иначе 403 */
+const htaccess = fs.readFileSync(path.join(ROOT, ".htaccess"), "utf8");
+
 function inline(html) {
   return html
     .replace(/<link[^>]+rel="stylesheet"[^>]*>/g, "")
@@ -28,6 +31,14 @@ function inline(html) {
 
 (async () => {
   let bad = 0;
+  /* короткий адрес обязателен для каждой страницы в папке: без него хостинг отдаёт 403 */
+  for (const rel of pages) {
+    if (!rel.includes("/")) continue;
+    const slug = rel.replace("/index.html", "");
+    const ok = htaccess.includes("RewriteRule ^" + slug + "/?$");
+    if (ok) console.log("  ok   htaccess: /" + slug);
+    else { bad++; console.log("  FAIL htaccess: /" + slug); }
+  }
   for (const rel of pages) {
     const file = path.join(ROOT, rel);
     if (!fs.existsSync(file)) { console.log("НЕТ ФАЙЛА", rel); continue; }
