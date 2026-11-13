@@ -113,7 +113,8 @@ const CARD = {
     "ссылка печати ведёт на /verify с номером и кодом во фрагменте");
   check(!!print && print.getAttribute("href").indexOf("?") === -1, "код проверки не попадает в query URL");
   const pdfBtn = box && box.querySelector("[data-card-pdf]");
-  check(!!pdfBtn && /Скачать PDF/.test(pdfBtn.textContent), "кнопка скачивания PDF есть");
+  check(!!pdfBtn && /Карта \(PDF\)/.test(pdfBtn.textContent), "кнопка скачивания PDF есть");
+  check(!!box.querySelector("[data-card-act]"), "рядом кнопка акта выдачи");
   check(/Отправлена:/.test(box.textContent) && /12345678901234/.test(box.textContent),
     "дата отправки и трек-номер видны владельцу");
   if (pdfBtn) {

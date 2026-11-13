@@ -998,6 +998,15 @@ const results = [];
     { ok: r.ok, filename: r.filename, size: pdfBytes.length });
   r = await call("card-pdf", { token: token3, id: printed ? printed.id : "" });
   check("этап 4: ответственная редакция тоже может скачать PDF", r.ok === true && !!r.data, r.ok ? undefined : r);
+  r = await call("card-act-pdf", {});
+  check("этап 4: акт требует входа", r.ok === false && r.code === 401, r);
+  r = await call("card-act-pdf", { token: tokenP, id: printed ? printed.id : "" });
+  check("этап 4: чужой акт закрыт от посторонних", r.ok === false && r.code === 403, r);
+  r = await call("card-act-pdf", { token: tokenA, id: printed ? printed.id : "" });
+  const actBytes = r.ok && r.data ? Buffer.from(r.data, "base64") : Buffer.alloc(0);
+  check("этап 4: владелец скачивает акт выдачи с подписями основателей",
+    r.ok === true && actBytes.slice(0, 5).toString("ascii") === "%PDF-" && actBytes.length > 8000,
+    { ok: r.ok, filename: r.filename, size: actBytes.length });
 
   /* Лимит проверки отдельный и действительно останавливает перебор. */
   const verifyIp = "203.0.113.9";

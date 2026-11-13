@@ -1765,6 +1765,31 @@ if ($act === 'card-pdf') {
         'mime' => 'application/pdf', 'data' => base64_encode($bytes)));
 }
 
+/* Акт выдачи пресс-карты: документ с подписями основателей. Владелец карты
+   или ответственная редакция; только для действующей карты. */
+if ($act === 'card-act-pdf') {
+    $in = body();
+    $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
+    if (!$me) fail('Войдите в аккаунт, чтобы скачать акт.', 401);
+    $id = text(isset($in['id']) ? $in['id'] : '', 60);
+    $cards = card_ensure_verify_codes($DATA_DIR);
+    if (!isset($cards[$id])) fail('Карта не найдена.', 404);
+    $card = $cards[$id];
+    $isOwner = isset($card['userId']) && (string) $card['userId'] === (string) $me['id'];
+    if (!$isOwner && !can($me, 'cards.view')) fail('Акт может скачать владелец карты или ответственная редакция.', 403);
+    if (card_effective_status($card) !== 'issued') fail('Акт создаётся только для выданной карты.', 409);
+    try {
+        $bytes = card_act_pdf_bytes($card);
+    } catch (Exception $e) {
+        fail('Не удалось собрать акт выдачи. Обратитесь в поддержку.', 500);
+    }
+    $safe = preg_replace('/[^A-Za-z0-9_-]/', '', (string) $card['number']);
+    $safe = trim($safe, '-');
+    if ($safe === '') $safe = 'card';
+    respond(array('ok' => true, 'filename' => 'akt-vidachi-' . $safe . '.pdf',
+        'mime' => 'application/pdf', 'data' => base64_encode($bytes)));
+}
+
 /* Отметка редакции: карта отправлена почтой. Трек-номер видит владелец. */
 if ($act === 'card-dispatch') {
     $in = body();

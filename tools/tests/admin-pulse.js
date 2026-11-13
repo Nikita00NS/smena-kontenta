@@ -110,6 +110,9 @@ function check(name, cond, extra) {
   check("бейдж на «Поддержке» равен 5",
     (doc.querySelector('[data-admin-badge="support"]') || {}).textContent === "5");
   check("последние действия из журнала", /cards.issue/.test((doc.querySelector("[data-pulse-audit]") || {}).textContent || ""));
+  check("у журнала есть фильтры", doc.querySelectorAll("[data-audit-chip]").length === 6,
+    doc.querySelectorAll("[data-audit-chip]").length);
+  check("участников можно выгрузить в CSV", !!doc.querySelector("[data-panel=\"people\"] [data-people-csv]"));
 
   const cardsTab = doc.querySelector('[data-admin-tab="cards"]');
   cardsTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
