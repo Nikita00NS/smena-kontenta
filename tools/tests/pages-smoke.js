@@ -13,7 +13,7 @@ const ARTIFACT = /Not implemented/i;
 /* Страницы со своим каркасом: у них нет шапки и подвала сайта — это норма. */
 const standalone = ["poisk/index.html"];
 
-const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html", "poisk/index.html", "docs/index.html", "media-school/index.html", "about/index.html", "partners/index.html", "founders/index.html", "verify/index.html"];
+const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html", "poisk/index.html", "docs/index.html", "media-school/index.html", "school/index.html", "about/index.html", "partners/index.html", "founders/index.html", "verify/index.html"];
 
 function inline(html) {
   return html

@@ -177,7 +177,7 @@ class LegalDoc:
             ]))
             self.add(row)
 
-    def build(self):
+    def build(self, approved_by=None):
         doc = BaseDocTemplate(
             self.path, pagesize=A4,
             leftMargin=20 * mm, rightMargin=20 * mm,
@@ -187,7 +187,21 @@ class LegalDoc:
         frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="main")
         doc.addPageTemplates([PageTemplate(id="all", frames=[frame])])
 
-        head = [
+        head = []
+        if approved_by:
+            """Гриф утверждения — правый верхний угол, как на официальном документе."""
+            t = Table([[Paragraph(
+                "УТВЕРЖДЕНО<br/>%s<br/>_____________ /%s/<br/>«____» ____________ 2026 г."
+                % (approved_by[0], approved_by[1]), S["cell"])]],
+                colWidths=[70 * mm], hAlign="RIGHT")
+            t.setStyle(TableStyle([
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]))
+            head.append(t)
+        head += [
             Paragraph(self.title, S["title"]),
             Paragraph("Действует с %s" % DATE, S["sub"]),
         ]
@@ -401,7 +415,9 @@ def privacy():
         "Оператор: Сирик Никита Сергеевич — подпись и дата",
         "Оператор: Ильин Борис Павлович — подпись и дата",
     ])
-    d.build()
+    d.build(approved_by=(
+        "основателем проекта «Смена контента» Сириком Никитой Сергеевичем",
+        "Сирик Н.С."))
 
 
 # ------------------------------------------------------------------- термины ---
@@ -557,7 +573,9 @@ def terms():
         "Администрация: Сирик Никита Сергеевич — подпись и дата",
         "Администрация: Ильин Борис Павлович — подпись и дата",
     ])
-    d.build()
+    d.build(approved_by=(
+        "администрацией проекта «Смена контента»",
+        "Сирик Н.С."))
 
 
 # ------------------------------------------------------------------ согласие ---

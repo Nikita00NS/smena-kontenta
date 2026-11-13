@@ -92,6 +92,7 @@ class SmenaPdf {
     private $fonts = array('regular' => 'F1', 'bold' => 'F2');
     private $loaded = array();
     private $used = array('regular' => array(), 'bold' => array());
+    private $images = array();
 
     private function font($name) {
         if (!isset($this->fonts[$name])) throw new RuntimeException('Неизвестный шрифт PDF: ' . $name);
@@ -108,6 +109,19 @@ class SmenaPdf {
     private function op($s) {
         if ($this->current < 0) throw new RuntimeException('Страница PDF не создана.');
         $this->pages[$this->current]['ops'] .= $s . "\n";
+    }
+
+    /* JPEG-сканы (подписи, печати). Данные вставляются как есть, DCTDecode. */
+    public function image($xMm, $yMm, $wMm, $jpegBytes) {
+        $size = pdf_jpeg_size($jpegBytes);
+        if (!$size) throw new RuntimeException('Не удалось прочитать JPEG.');
+        $tag = 'Im' . (count($this->images) + 1);
+        $this->images[] = array('tag' => $tag, 'data' => $jpegBytes,
+            'w' => $size[0], 'h' => $size[1]);
+        $hMm = $wMm * $size[1] / max(1, $size[0]);
+        $this->op(sprintf("q\n%.3F 0 0 %.3F %.3F %.3F cm\n/%s Do\nQ",
+            pdf_mm($wMm), pdf_mm($hMm), pdf_mm($xMm), pdf_mm($yMm), $tag));
+        return $hMm;
     }
 
     public function rect($xMm, $yMm, $wMm, $hMm, $fillHex = null, $strokeHex = null, $lineWidthMm = 0.25) {
@@ -277,7 +291,24 @@ class SmenaPdf {
         foreach ($this->fonts as $name => $tag) {
             $fontResources[] = '/' . $tag . ' ' . $fontIds[$name]['type0'] . ' 0 R';
         }
-        $resources = '<< /Font << ' . implode(' ', $fontResources) . ' >> >>';
+        $xobjects = '';
+        if ($this->images) {
+            /* слоты под картинки резервируются до страниц, чтобы id были известны */
+            $imageIds = array();
+            foreach ($this->images as $img) {
+                $imageIds[$img['tag']] = $next++;
+            }
+            $parts = array();
+            foreach ($imageIds as $tag => $id) $parts[] = '/' . $tag . ' ' . $id . ' 0 R';
+            $xobjects = ' /XObject << ' . implode(' ', $parts) . ' >>';
+            foreach ($this->images as $img) {
+                $objects[$imageIds[$img['tag']]] = '<< /Type /XObject /Subtype /Image /Width ' .
+                    $img['w'] . ' /Height ' . $img['h'] . ' /ColorSpace /DeviceRGB ' .
+                    "/BitsPerComponent 8 /Filter /DCTDecode /Length " . strlen($img['data']) .
+                    " >>\nstream\n" . $img['data'] . "\nendstream";
+            }
+        }
+        $resources = '<< /Font << ' . implode(' ', $fontResources) . ' >>' . $xobjects . ' >>';
         foreach ($this->pages as $page) {
             $contentId = $next++;
             $pageId = $next++;
@@ -338,6 +369,29 @@ class SmenaPdf {
 }
 
 /* Название региона берём из той же карты, что и сайт: assets/js/map-data.js. */
+/* Размеры JPEG из маркера SOF0/SOF1/SOF2 — без внешних библиотек. */
+function pdf_jpeg_size($data) {
+    if (substr((string) $data, 0, 2) !== "\xFF\xD8") return null;
+    $len = strlen($data);
+    $i = 2;
+    while ($i + 9 < $len) {
+        if ($data[$i] !== "\xFF") { $i++; continue; }
+        $marker = ord($data[$i + 1]);
+        if ($marker === 0xD8 || ($marker >= 0xD0 && $marker <= 0xD9)) { $i += 2; continue; }
+        if ($i + 4 > $len) break;
+        $seg = (ord($data[$i + 2]) << 8) | ord($data[$i + 3]);
+        if ($seg < 2) break;
+        $isSof = ($marker >= 0xC0 && $marker <= 0xCF && $marker !== 0xC4 && $marker !== 0xC8 && $marker !== 0xCC);
+        if ($isSof && $i + 9 <= $len) {
+            $h = (ord($data[$i + 5]) << 8) | ord($data[$i + 6]);
+            $w = (ord($data[$i + 7]) << 8) | ord($data[$i + 8]);
+            if ($w > 0 && $h > 0) return array($w, $h);
+        }
+        $i += 2 + $seg;
+    }
+    return null;
+}
+
 function card_region_name($slug) {
     static $names = null;
     if ($names === null) {
@@ -475,13 +529,27 @@ function card_act_pdf_bytes($card) {
         'зарегистрированного средства массовой информации и подлежит возврату при отзыве.',
         $width, 4.0, 'regular', '333333', 3) - 12.0;
 
-    /* Подписи: расшифровка печатается, подпись ставится от руки. */
+    /* Подписи: расшифровка печатается, подпись ставится от руки. Если в
+       assets/img лежат сканы подписей основателей (sign-sirik.jpg и
+       sign-ilin.jpg), они вставляются над линиями автоматически. */
+    $signDir = __DIR__ . '/../../assets/img/';
+    $scan = array();
+    foreach (array('sirik' => 'sign-sirik.jpg', 'ilin' => 'sign-ilin.jpg') as $key => $file) {
+        if (is_readable($signDir . $file)) {
+            $bytes = file_get_contents($signDir . $file);
+            if ($bytes !== false && pdf_jpeg_size($bytes)) $scan[$key] = $bytes;
+        }
+    }
     $signs = array(
-        array('От проекта — основатель', 'Сирик Никита Сергеевич'),
-        array('От проекта — сооснователь', 'Ильин Борис Павлович'),
-        array('Карту получил', $name !== '' ? $name : '____________________'),
+        array('От проекта — основатель', 'Сирик Никита Сергеевич', isset($scan['sirik']) ? $scan['sirik'] : null),
+        array('От проекта — сооснователь', 'Ильин Борис Павлович', isset($scan['ilin']) ? $scan['ilin'] : null),
+        array('Карту получил', $name !== '' ? $name : '____________________', null),
     );
     foreach ($signs as $sign) {
+        if ($sign[2]) {
+            /* скан подписи над линией: слева от расшифровки */
+            $pdf->image($left + 16.0, $y - 7.0, 30.0, $sign[2]);
+        }
         $pdf->text($left, $y, 8.5, $sign[0], 'regular', '555555');
         $y -= 3.6;
         $pdf->text($left, $y, 9.0, 'подпись', 'regular', '999999');
