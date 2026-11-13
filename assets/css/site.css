@@ -9234,3 +9234,27 @@ body.is-maint { overflow: hidden; }
   line-height: 1.6;
 }
 #smena-debug b { display: block; margin-bottom: 6px; }
+
+/* Диагностика сервера и журнал: базовые стили (раньше были только в почте,
+   из-за чего вкладка «Сервер» рассыпалась в столбик по одному слову) ------- */
+.diag {
+  display: grid;
+  gap: 0;
+}
+.diag__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.diag__row span { color: var(--muted); font-size: 0.88rem; }
+.diag__row b { font-weight: 600; font-size: 0.9rem; text-align: right; }
+.diag__row b.is-good { color: rgb(126, 205, 152); }
+.diag__row b.is-bad { color: #ff8d7a; }
+.audit {
+  display: block;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
