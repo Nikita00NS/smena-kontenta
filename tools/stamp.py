@@ -26,4 +26,16 @@ for base, dirs, files in os.walk(ROOT):
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(new)
             changed += 1
+
+# Версия сборки также живёт в data.js: её видит админка и подвал — так сразу
+# понятно, какой интерфейс перед глазами, без догадок про кэш браузера.
+data_path = os.path.join(ROOT, "assets", "js", "data.js")
+with open(data_path, encoding="utf-8") as fh:
+    data = fh.read()
+new = re.sub(r'(build:\s*")[^"]*(")', r"\g<1>" + BUILD + r"\g<2>", data, count=1)
+if new != data:
+    with open(data_path, "w", encoding="utf-8") as fh:
+        fh.write(new)
+    print("версия в data.js обновлена")
+
 print("версия", BUILD, "— обновлено страниц:", changed)

@@ -65,7 +65,9 @@ ErrorDocument 404 /404.html
   AddOutputFilterByType DEFLATE image/svg+xml application/geo+json
 </IfModule>
 
-# Кэш: картинки и шрифты надолго, стили и скрипты — на час, чтобы правки появлялись быстро
+# Кэш: картинки и шрифты надолго, стили и скрипты — без кэша, чтобы правки
+# появлялись быстро. Документы и страницы — никогда не хранить: иначе браузер
+# показывает старые PDF и старый интерфейс даже после выкладки.
 <IfModule mod_expires.c>
   ExpiresActive On
   ExpiresByType image/jpeg "access plus 30 days"
@@ -76,7 +78,7 @@ ErrorDocument 404 /404.html
   ExpiresByType text/css "access plus 0 seconds"
   ExpiresByType application/javascript "access plus 0 seconds"
   ExpiresByType text/html "access plus 0 seconds"
-  ExpiresByType application/pdf "access plus 7 days"
+  ExpiresByType application/pdf "access plus 0 seconds"
 </IfModule>
 
 # Безопасность
@@ -84,6 +86,10 @@ ErrorDocument 404 /404.html
   # код сайта не кэшируем: после обновления браузер сразу видит новую версию
   <FilesMatch "\.(js|css)$">
     Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  # страницы и PDF — тем более: старый бланк в кэше хуже, чем лишний запрос
+  <FilesMatch "\.(html|pdf)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate"
   </FilesMatch>
   Header set X-Content-Type-Options "nosniff"
   Header set Referrer-Policy "strict-origin-when-cross-origin"

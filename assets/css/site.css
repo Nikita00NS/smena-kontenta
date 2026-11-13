@@ -9183,3 +9183,10 @@ body.is-maint { overflow: hidden; }
   background: var(--ink);
   color: var(--paper);
 }
+
+/* Версия сборки в подвале: видно глазами, какая сборка перед вами ---------- */
+.footer-build {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: rgba(247, 245, 239, 0.45);
+}
