@@ -9190,3 +9190,47 @@ body.is-maint { overflow: hidden; }
   font-size: 0.72rem;
   color: rgba(247, 245, 239, 0.45);
 }
+
+/* Экранная диагностика: красная плашка при сбое и панель ?debug=1 ---------- */
+#smena-error-banner {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(214, 78, 58, 0.6);
+  background: #2a1210;
+  color: #f4f2ed;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+#smena-error-banner .errbar__text { display: grid; gap: 2px; min-width: 0; }
+#smena-error-banner .errbar__text b { font-size: 0.95rem; }
+#smena-error-banner .errbar__detail {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: rgba(244, 242, 237, 0.75);
+  overflow-wrap: anywhere;
+}
+#smena-error-banner .errbar__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#smena-debug {
+  position: fixed;
+  right: 12px;
+  top: 70px;
+  z-index: 9998;
+  max-width: 320px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+#smena-debug b { display: block; margin-bottom: 6px; }

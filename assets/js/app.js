@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -4778,7 +4778,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -5119,7 +5119,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -5473,8 +5473,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -6274,7 +6274,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-13-5",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-13-6",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -6285,7 +6285,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-13-5",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-13-6",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -7164,7 +7164,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -8200,7 +8200,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-5" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-6" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 
@@ -8712,6 +8712,98 @@
     }, function () {});
   }
 
+  /* Экранная диагностика: если интерфейс упал, человек видит причину и может
+     одним нажатием сбросить сохранённые данные сайта — вместо немого «сломано».
+     Панель ?debug=1 показывает сборку, наличие входа и ответ сервера. */
+  function showErrorBanner(title, detail, opts) {
+    opts = opts || {};
+    if (document.getElementById("smena-error-banner")) return;
+    var bar = document.createElement("div");
+    bar.id = "smena-error-banner";
+    bar.setAttribute("data-no-i18n", "");
+    bar.innerHTML =
+      '<div class="errbar__text"><b>' + esc(title) + "</b>" +
+      (detail ? '<span class="errbar__detail">' + esc(String(detail).slice(0, 300)) + "</span>" : "") +
+      "</div>" +
+      '<div class="errbar__actions"></div>';
+    var actions = bar.querySelector(".errbar__actions");
+    function addButton(label, fn, accent) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn btn--sm" + (accent ? " btn--accent" : " btn--ghost");
+      b.textContent = label;
+      b.addEventListener("click", fn);
+      actions.appendChild(b);
+    }
+    if (opts.href) {
+      var link = document.createElement("a");
+      link.className = "btn btn--sm btn--accent";
+      link.href = opts.href;
+      link.textContent = opts.hrefLabel || "Продолжить";
+      actions.appendChild(link);
+    }
+    addButton("Сбросить сохранённые данные сайта", function () {
+      try {
+        var stale = [];
+        for (var i = 0; i < window.localStorage.length; i++) {
+          var k = window.localStorage.key(i);
+          if (k && k.indexOf("smena_") === 0) stale.push(k);
+        }
+        stale.forEach(function (k) { window.localStorage.removeItem(k); });
+      } catch (e) {}
+      window.location.reload();
+    });
+    addButton("Перезагрузить", function () { window.location.reload(); });
+    addButton("Скрыть", function () { bar.remove(); });
+    document.body.appendChild(bar);
+  }
+
+  function showSessionBanner() {
+    if (document.getElementById("smena-error-banner")) return;
+    showErrorBanner(
+      "Ваш вход устарел — нужен повторный вход",
+      "Аккаунт цел, но сервер просит войти заново: так устроена защита. " +
+        "Нажмите «Войти заново» и введите почту с паролем — данные на месте.",
+      { href: "/join#login", hrefLabel: "Войти заново" }
+    );
+  }
+
+  function initDebugPanel() {
+    if (!/[?&]debug=1/.test(window.location.search)) return;
+    var panel = document.createElement("div");
+    panel.id = "smena-debug";
+    panel.setAttribute("data-no-i18n", "");
+    panel.innerHTML = '<b>Диагностика · сборка ' + esc((SC && SC.build) || "?") + "</b>" +
+      '<div data-debug-lines>собираем…</div>';
+    document.body.appendChild(panel);
+    var lines = panel.querySelector("[data-debug-lines]");
+    var token = Store && Store.hasToken && Store.hasToken() ? "есть" : "нет";
+    var cached = Store && Store.currentUser ? Store.currentUser() : null;
+    var html = "<div>токен: " + esc(token) + "</div>" +
+      "<div>кэш пользователя: " +
+      (cached ? esc(cached.name || "?") + " · " + esc(cached.access || "Пользователь") : "нет") + "</div>";
+    lines.innerHTML = html;
+    if (token === "есть") {
+      var t = "";
+      try { t = window.localStorage.getItem("smena_token_v1") || ""; } catch (e) {}
+      window.fetch("/api/index.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "me", token: t }),
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        var div = document.createElement("div");
+        div.textContent = "сервер (me): " + (res && res.ok
+          ? "ok, " + ((res.user && res.user.access) || "")
+          : "код " + ((res && res.code) || "?") + " · " + ((res && res.error) || ""));
+        lines.appendChild(div);
+      }, function () {
+        var div = document.createElement("div");
+        div.textContent = "сервер (me): нет связи";
+        lines.appendChild(div);
+      });
+    }
+  }
+
   function boot() {
     initTheme();
     initAccent();
@@ -8725,27 +8817,40 @@
     initPageBits();
     applySiteState();
 
+    /* Каждая страница изолирована: сбой одной не глушит остальные,
+       а причина остаётся на экране — её можно прислать в поддержку. */
+    function safePage(name, fn) {
+      try {
+        fn();
+      } catch (e) {
+        showErrorBanner("Страница «" + name + "» не открылась: сбой интерфейса",
+          (e && e.message) || String(e));
+        if (window.console && console.error) console.error(e);
+      }
+    }
+
     var page = document.body.getAttribute("data-page");
-    if (page === "home") initHome();
-    if (page === "news") initNews();
-    if (page === "article") initArticle();
-    if (page === "region") initRegion();
-    if (page === "auth") initAuth();
-    if (page === "profile") initProfile();
-    if (page === "write") initWrite();
-    if (page === "docs") initDocs();
-    if (page === "school") initSchool();
-    if (page === "school-hub") initSchoolHub();
-    if (page === "admin") initAdmin();
+    if (page === "home") safePage("Главная", initHome);
+    if (page === "news") safePage("Лента", initNews);
+    if (page === "article") safePage("Материал", initArticle);
+    if (page === "region") safePage("Регион", initRegion);
+    if (page === "auth") safePage("Регистрация", initAuth);
+    if (page === "profile") safePage("Кабинет", initProfile);
+    if (page === "write") safePage("Редактор", initWrite);
+    if (page === "docs") safePage("Документы", initDocs);
+    if (page === "school") safePage("Медиашкола", initSchool);
+    if (page === "school-hub") safePage("Медиашкола: кабинет", initSchoolHub);
+    if (page === "admin") safePage("Панель", initAdmin);
     if (page === "founders") {
       /* карточки показываем сразу из данных проекта, а после ответа сервера
          дополняем их фотографиями и городом: иначе при медленном сервере
          блок пустой, пока не придёт ответ */
-      initFoundersPage();
+      safePage("Основатели", initFoundersPage);
     }
-    if (page === "support") initSupport();
-    if (page === "verify") initVerify();
+    if (page === "support") safePage("Поддержка", initSupport);
+    if (page === "verify") safePage("Проверка карты", initVerify);
 
+    initDebugPanel();
     refreshFounders();
     initAnimations();
     initHeroParallax();
@@ -8753,6 +8858,22 @@
 
   /* страницы ждут короткой проверки сервера: так материалы, одобренные
      редакцией, появляются в ленте сразу при загрузке страницы */
+  window.addEventListener("smena:unauthorized", function () {
+    showSessionBanner();
+  });
+  window.addEventListener("error", function (e) {
+    if (e && e.message && !/Script error/i.test(e.message)) {
+      showErrorBanner("Сбой интерфейса", e.message);
+    }
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e && e.reason;
+    var msg = r && (r.message || r.error) ? String(r.message || r.error) : "";
+    if (msg && !/Сервер недоступен|Нет связи/.test(msg)) {
+      showErrorBanner("Сбой интерфейса", msg);
+    }
+  });
+
   var started = false;
   function start() {
     if (started) return;

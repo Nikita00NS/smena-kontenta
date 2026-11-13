@@ -1772,6 +1772,11 @@ window.Store = (function () {
     var body = Object.assign({}, payload || {}, { token: token });
     return api(action, body).then(function (res) {
       if (res && res.ok) return res;
+      if (res && res.code === 401) {
+        /* сервер прямо сказал, что сессии нет — сообщаем интерфейсу,
+           чтобы он предложил повторный вход, а не сыпал ошибками по разделам */
+        try { window.dispatchEvent(new CustomEvent("smena:unauthorized")); } catch (e) {}
+      }
       throw apiError(res);
     }, function () {
       throw new Error("Сервер недоступен. Проверьте связь и попробуйте ещё раз.");
