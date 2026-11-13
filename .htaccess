@@ -32,6 +32,7 @@ AddDefaultCharset UTF-8
   RewriteRule ^partners/?$ /partners/index.html [L]
   RewriteRule ^region/?$ /region/index.html [L]
   RewriteRule ^media-school/?$ /media-school/index.html [L]
+  RewriteRule ^school/?$ /school/index.html [L]
   RewriteRule ^docs/?$ /docs/index.html [L]
   RewriteRule ^poisk/?$ /poisk/index.html [L]
   RewriteRule ^join/?$ /join/index.html [L]
