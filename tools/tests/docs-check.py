@@ -57,7 +57,7 @@ def main():
 
     for path, pages in cards:
         name = os.path.basename(path)
-        full = os.path.join(ROOT, path.lstrip("/"))
+        full = os.path.join(ROOT, path.lstrip("/").split("?v=")[0])
         if not os.path.exists(full):
             check(False, "файл есть: " + name)
             continue
