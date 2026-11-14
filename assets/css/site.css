@@ -6881,7 +6881,7 @@ html[data-theme="light"] .founder__photo--mono {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 10px max(16px, calc((100vw - 1200px) / 2));
+  padding: 10px 16px;
   background: color-mix(in srgb, var(--paper) 92%, transparent);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
@@ -8757,13 +8757,20 @@ body.is-maint { overflow: hidden; }
    ========================================================================== */
 
 .admin-layout {
+  /* Классический паттерн сайта — как у .wrap и кабинета: ширина + авто-поля
+     + паддинг ПОВЕРХ ширины. Прежний вариант (max-width:1200 + паддинг
+     (100vw-1200)/2 при border-box) съедал сам себя: контентная область была
+     равна 2400 - 100vw, то есть чем ШИРЕ окно, тем УЖЕ колонка контента
+     (на ~1730px оставалось ~340px — плитки в столбец, «Сервер» в столбик,
+     на 2400px контент исчезал вовсе). */
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(360px, 1fr);
   gap: clamp(18px, 2.6vw, 36px);
   align-items: start;
-  max-width: 1200px;
+  width: 100%;
+  max-width: var(--wrap);
   margin-inline: auto;
-  padding-inline: max(16px, calc((100vw - 1200px) / 2));
+  padding-inline: var(--pad);
   padding-bottom: clamp(28px, 4vw, 56px);
 }
 

@@ -119,13 +119,20 @@ function check(name, cond, extra) {
   check("переход по вкладке работает", !doc.querySelector('[data-panel="cards"]').hidden);
   check("выбор запоминается", dom.window.localStorage.getItem("smena_admin_tab") === "cards");
 
-  /* Регротест «узкой колонки»: центрирующий отступ (100vw-1200px)/2 должен быть
-     только на .admin-layout. Если он попадает и в .admin-panel — отступы
-     складываются, контенту вкладок остаётся ~200px и текст режется посреди слова. */
+  /* Регротест «узкой колонки»: при box-sizing:border-box связка
+     max-width + паддинг (100vw-1200)/2 схлопывает контентную область до
+     2400-100vw (чем шире окно, тем уже колонка). Панель должна строиться
+     на стандартном паттерне сайта var(--wrap)/var(--pad), как кабинет. */
   const css = fs.readFileSync(path.join(ROOT, "assets/css/site.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  check("в CSS нет схлопывающего паттерна (100vw - 1200px)", css.indexOf("100vw - 1200px") === -1);
+  const layoutRule = css.match(/\.admin-layout\s*\{[^}]*\}/);
+  check(".admin-layout построен на var(--wrap)/var(--pad)",
+    !!layoutRule && layoutRule[0].indexOf("var(--wrap)") !== -1 && layoutRule[0].indexOf("var(--pad)") !== -1);
+  check("у колонки контента панели есть нижний предел 360px",
+    !!layoutRule && layoutRule[0].indexOf("minmax(360px, 1fr)") !== -1);
   const panelRule = css.match(/\.admin-panel\s*\{[^}]*\}/);
   check("в .admin-panel нет второго центрирующего отступа 100vw",
-    !!panelRule && panelRule[0].indexOf("100vw") === -1);
+    !panelRule || panelRule[0].indexOf("100vw") === -1);
 
   dom.window.close();
   errors.slice(0, 5).forEach((e) => console.log("ОШИБКА", e.slice(0, 300)));
