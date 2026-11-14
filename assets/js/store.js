@@ -1318,6 +1318,9 @@ window.Store = (function () {
   function schoolCohortStudents(cohortId) { return withToken("school-cohort-students", { cohortId: cohortId || "" }); }
   function schoolGraduationPdf(userId) { return withToken("school-graduation-pdf", { userId: userId || "" }).then(fileResponse); }
   function schoolInvite(cohortId) { return withToken("school-invite", { cohortId: cohortId || "" }); }
+  function schoolPostDraft(cohortId, tone, seed) {
+    return withToken("school-post-draft", { cohortId: cohortId || "", tone: tone || "warm", seed: seed || 1 });
+  }
   function schoolEnroll(appId, cohortId) { return withToken("school-enroll", { appId: appId, cohortId: cohortId }); }
   function schoolSubSend(assignmentId, text, aiNote) {
     return withToken("school-sub-send", { assignmentId: assignmentId, text: text || "", aiNote: aiNote || "" });
@@ -2247,6 +2250,7 @@ window.Store = (function () {
     schoolCohortStudents: schoolCohortStudents,
     schoolGraduationPdf: schoolGraduationPdf,
     schoolInvite: schoolInvite,
+    schoolPostDraft: schoolPostDraft,
     schoolEnroll: schoolEnroll,
     schoolSubSend: schoolSubSend,
     cardActPdf: cardActPdf,

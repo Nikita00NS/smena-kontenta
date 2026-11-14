@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -4601,7 +4601,9 @@
           (c.open ? "Закрыть приём" : "Открыть приём") + "</button>" +
           '<button class="btn btn--ghost btn--sm" type="button" data-sch-csv>Успеваемость (CSV)</button>' +
           '<button class="btn btn--ghost btn--sm" type="button" data-sch-invite>Пригласить участников</button>' +
-          '<span class="form__note" data-sch-csv-note></span></div>';
+          '<button class="btn btn--ghost btn--sm" type="button" data-sch-post>Пост-анонс (ИИ-помощник)</button>' +
+          '<span class="form__note" data-sch-csv-note></span></div>' +
+          '<div data-sch-post-panel></div>';
         $$( "[data-sch-cohort]", cohortPanel).forEach(function (b) {
           b.addEventListener("click", function () {
             currentId = b.getAttribute("data-sch-cohort");
@@ -4654,6 +4656,10 @@
             if (note) note.textContent = (err && err.message) || "Не разослалось.";
           });
         });
+        var postBtn = $("[data-sch-post]", cohortPanel);
+        if (postBtn) postBtn.addEventListener("click", function () {
+          mountPostDraft(c);
+        });
         var csvBtn = $("[data-sch-csv]", cohortPanel);
         if (csvBtn) csvBtn.addEventListener("click", function () {
           var note = $("[data-sch-csv-note]", cohortPanel);
@@ -4675,6 +4681,87 @@
             if (note) note.textContent = (err && err.message) || "Не собралось.";
           });
         });
+      }
+
+      /* Пост-анонс набора: черновики для соцсетей собирает сервер из данных набора.
+         Ничего не публикуется само — редакция копирует текст и несёт в соцсеть сама. */
+      function mountPostDraft(cohort) {
+        var panelEl = $("[data-sch-post-panel]", cohortPanel);
+        if (!panelEl) return;
+        var state = { tone: "warm", seed: 1 };
+        function esc2(v) {
+          return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+        function draw() {
+          panelEl.innerHTML =
+            '<div class="panel" style="padding:20px;margin-top:14px"><span class="kicker">Пост-анонс в соцсеть · набор «' +
+            esc2(cohort.name) + '»</span>' +
+            '<p class="form__note">Черновики собирает ИИ-помощник из данных набора: цифры настоящие, формулировки ' +
+            "разные — выберите тон, обновите варианты, поправьте под себя. Ничего не публикуется само: " +
+            "вы копируете текст и несёте в соцсеть сами.</p>" +
+            '<div class="row" style="gap:8px;flex-wrap:wrap;margin:10px 0">' +
+            [["warm", "Тёплый"], ["official", "Официальный"], ["short", "Короткий"]].map(function (t) {
+              return '<button class="chip-sm' + (state.tone === t[0] ? " is-on" : "") +
+                '" type="button" data-sch-post-tone="' + t[0] + '">' + t[1] + "</button>";
+            }).join("") +
+            '<button class="btn btn--ghost btn--sm" type="button" data-sch-post-more>Другие варианты</button>' +
+            '<span class="form__note" data-sch-post-note></span></div>' +
+            '<div data-sch-post-list><p class="form__note">Собираем черновики…</p></div></div>';
+          $$("[data-sch-post-tone]", panelEl).forEach(function (b) {
+            b.addEventListener("click", function () {
+              state.tone = b.getAttribute("data-sch-post-tone") || "warm";
+              draw();
+              load();
+            });
+          });
+          var moreBtn = $("[data-sch-post-more]", panelEl);
+          if (moreBtn) moreBtn.addEventListener("click", function () {
+            state.seed += 1;
+            draw();
+            load();
+          });
+          load();
+        }
+        function load() {
+          var list = $("[data-sch-post-list]", panelEl);
+          var note = $("[data-sch-post-note]", panelEl);
+          Store.schoolPostDraft(cohort.id, state.tone, state.seed).then(function (res) {
+            if (!list) return;
+            var posts = res && res.posts ? res.posts : [];
+            if (!posts.length) { list.innerHTML = '<p class="form__note">Черновики не собрались — попробуйте ещё раз.</p>'; return; }
+            list.innerHTML = posts.map(function (t, i) {
+              return '<div class="pcard__section" style="margin:0 0 12px"><textarea readonly data-sch-post-text style="width:100%;min-height:96px" rows="5">' +
+                esc2(t) + "</textarea>" +
+                '<div class="row" style="gap:10px;margin-top:6px;align-items:center">' +
+                "<span>" + t.length + " зн.</span>" +
+                '<button class="btn btn--ghost btn--sm" type="button" data-sch-post-copy="' + i + '">Скопировать</button>' +
+                '<span class="form__note" data-sch-post-copied="' + i + '"></span></div></div>';
+            }).join("");
+            $$("[data-sch-post-copy]", list).forEach(function (btn) {
+              btn.addEventListener("click", function () {
+                var i = btn.getAttribute("data-sch-post-copy");
+                var box = $$("[data-sch-post-text]", list)[Number(i)];
+                var done = $("[data-sch-post-copied='" + i + "']", list);
+                var text = box ? box.value : "";
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(text).then(function () {
+                    if (done) done.textContent = "Скопировано: вставьте в пост соцсети.";
+                  }, function () { fallback(); });
+                } else fallback();
+                function fallback() {
+                  if (box) { box.removeAttribute("readonly"); box.select(); try { box.setSelectionRange(0, text.length); } catch (e) {} box.setAttribute("readonly", "readonly"); }
+                  var okCmd = false;
+                  try { okCmd = document.execCommand && document.execCommand("copy"); } catch (e) {}
+                  if (done) done.textContent = okCmd ? "Скопировано: вставьте в пост соцсети." : "Текст выделен — скопируйте Ctrl+C.";
+                }
+              });
+            });
+          }, function (err) {
+            if (note) note.textContent = (err && err.message) || "Черновики не собрались.";
+            if (list) list.innerHTML = "";
+          });
+        }
+        draw();
       }
 
       /* Редактор модулей: форма добавления/правки появляется по кнопке. */
@@ -5818,7 +5905,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -6103,7 +6190,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6457,8 +6544,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -7258,7 +7345,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-8",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-9",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -7269,7 +7356,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-8",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-9",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -8426,7 +8513,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -9474,7 +9561,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 
