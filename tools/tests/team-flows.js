@@ -37,6 +37,7 @@ function withOverride(html, code) {
 }
 
 function baseParse(w) {
+  w.localStorage.setItem("smena_lang", "ru"); /* проверки текста — на русском */
   w.scrollTo = () => {};
   w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
   w.fetch = () => Promise.resolve({ json: () => Promise.resolve({ ok: false, offline: true, error: "Нет связи с сервером." }) });
@@ -147,6 +148,86 @@ async function adminDom() {
   return { dom, errors };
 }
 
+async function personDom() {
+  const { errors, vc } = collectErrors();
+  const admin = Object.assign({}, USER, { access: "Директор" });
+  const override = `
+    localStorage.setItem("smena_token_v1", "probe-token");
+    localStorage.setItem("smena_user_v1", ${JSON.stringify(JSON.stringify(admin))});
+    window.__calls = {};
+    window.__notes = [{ by: "Редактор", text: "позвонить о карте", createdAt: "2026-11-11T10:00:00Z" }];
+    URL.createObjectURL = function () { return "blob:probe"; };
+    URL.revokeObjectURL = function () {};
+    window.prompt = function () { return "За серию фотографий двора на Лесной: пять кадров, подпись и история героя."; };
+    window.confirm = function () { return true; };
+    Store.can = function (user, cap) {
+      return cap === "manage" || cap === "people.view" || cap === "people.edit" ||
+        cap === "people.note" || cap === "people.block" || cap === "cards.view" || cap === "cards.issue" ||
+        cap === "mail.use" || cap === "mail.manage";
+    };
+    Store.siteStatus = function () { return Promise.resolve(null); };
+    Store.mailBoxes = function () {
+      return Promise.resolve({ ok: true, mailboxes: [{ key: "editorial", label: "Редакция", address: "support@smenakontenta.ru", ready: true }] });
+    };
+    Store.mailFolders = function () { return Promise.resolve({ ok: true, folders: ["INBOX", "Sent", "Drafts", "Trash"] }); };
+    Store.mailList = function () { return Promise.resolve({ ok: true, letters: [] }); };
+    Store.mailTemplates = function () {
+      return Promise.resolve({ ok: true, canManage: true, templates: [
+        { key: "school_new", name: "Заявка в школу", subject: "Заявка принята", title: "Мы получили заявку", body: "Привет, {{name}}!" }] });
+    };
+    Store.mailTemplatePreview = function (key) {
+      window.__calls.tplPreview = key;
+      return Promise.resolve({ ok: true, subject: "Заявка принята", text: "Привет, Юлия! Мы получили вашу заявку." });
+    };
+    Store.mailLog = function () {
+      return Promise.resolve({ ok: true, entries: [
+        { at: "2026-11-12T10:00:00Z", box: "editorial", to: "julia@example.ru", subject: "Заявка принята", ok: true }] });
+    };
+    Store.usersList = function () {
+      return Promise.resolve({ users: [{ id: "u_p", name: "Юлия Автор", email: "julia@example.ru", access: "Автор", region: "moskva", createdAt: "2026-11-01T00:00:00Z" }],
+        roles: ["Пользователь", "Автор", "Редактор", "Директор"] });
+    };
+    Store.userCard = function (id) {
+      window.__calls.card = id;
+      return Promise.resolve({
+        ok: true,
+        user: { id: id, name: "Юлия Автор", email: "julia@example.ru", access: "Автор", region: "moskva",
+          createdAt: "2026-11-01T00:00:00Z", emailVerified: true, status: "active" },
+        cards: [], editorialsFounded: [], editorialApps: [], consents: [], portfolio: [], recovery: [],
+        posts: [{ title: "Двор на Лесной", status: "published" }],
+        messages: [], notes: window.__notes,
+        timeline: [{ at: "2026-11-10T10:00:00Z", label: "Карта", title: "СК-2026-001" }],
+        points: 12, published: 1, cardNumberNext: "СК-2026-012",
+      });
+    };
+    Store.personCertPdf = function (userId) {
+      window.__calls.cert = userId;
+      return Promise.resolve({ blob: new Blob(["pdf"], { type: "application/pdf" }), filename: "spravka-ot-2026-11-12.pdf", mime: "application/pdf" });
+    };
+    Store.personThanksPdf = function (userId, text) {
+      window.__calls.thanks = { userId: userId, text: text };
+      return Promise.resolve({ blob: new Blob(["pdf"], { type: "application/pdf" }), filename: "blagodarnost.pdf", mime: "application/pdf" });
+    };
+    Store.personNote = function (userId, text) {
+      window.__calls.note = { userId: userId, text: text };
+      window.__notes.push({ by: "Проверка Команды", text: text, createdAt: "2026-11-12T10:00:00Z" });
+      return Promise.resolve({ ok: true });
+    };
+    Store.personStatus = function (userId, status, reason) {
+      window.__calls.status = { userId: userId, status: status, reason: reason };
+      return Promise.resolve({ ok: true });
+    };
+    Store.pointsAdd = function () { return Promise.resolve({ ok: true }); };
+  `;
+  const html = inline(withOverride(fs.readFileSync(path.join(ROOT, "admin/index.html"), "utf8"), override));
+  const dom = new JSDOM(html, {
+    url: "https://smenakontenta.ru/admin/", runScripts: "dangerously",
+    pretendToBeVisual: true, virtualConsole: vc, beforeParse: baseParse,
+  });
+  await new Promise((r) => setTimeout(r, 1400));
+  return { dom, errors };
+}
+
 async function storeDom() {
   const { errors, vc } = collectErrors();
   const src = fs.readFileSync(path.join(ROOT, "assets/js/store.js"), "utf8");
@@ -220,6 +301,67 @@ async function storeDom() {
     check(field.value === "" && a.dom.window.__chatLoads >= 2, "после отправки поле очищено и лента перечитана");
   }
   a.dom.window.close();
+
+  /* --- страница участника: открывается как ЛК, документы, заметки, статус --- */
+  const pn = await personDom();
+  const pdoc = pn.dom.window.document;
+  const pw = pn.dom.window;
+  check(!pn.errors.length, "админка (страница участника) без ошибок скрипта", pn.errors.slice(0, 3));
+  const openBtn = pdoc.querySelector('[data-panel="people"] [data-open="u_p"]');
+  check(!!openBtn, "участник в списке")
+  openBtn.dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+  const card = pdoc.querySelector('[data-panel="people"] .pcard');
+  check(!!card && /Юлия Автор/.test(card.textContent), "карточка открылась отдельной страницей")
+  check(!!card.querySelector("[data-person-cert]") && !!card.querySelector("[data-person-thanks]"), "секция «Документы из сайта» на месте")
+  card.querySelector("[data-person-cert]").dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+  check(pw.__calls.cert === "u_p", "справка собрана по этому участнику", pw.__calls)
+  check(/PDF готов/.test(card.querySelector("[data-person-doc-note]").textContent), "файл скачан с примечанием")
+  card.querySelector("[data-person-thanks]").dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+  check(pw.__calls.thanks && pw.__calls.thanks.userId === "u_p" && /двора на Лесной/.test(pw.__calls.thanks.text || ""),
+    "благодарность ушла с текстом от окна", pw.__calls.thanks)
+  const pnote = card.querySelector("[data-pnote-text]");
+  pnote.value = "созвон в четверг, подтвердить адрес доставки карты";
+  card.querySelector("[data-pnote-add]").dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+  check(pw.__calls.note && /созвон в четверг/.test(pw.__calls.note.text || ""), "заметка команды сохранена", pw.__calls.note)
+  const card2 = pdoc.querySelector('[data-panel="people"] .pcard');
+  console.log("DBG", JSON.stringify(pw.__notes)); console.log("DBG2", (card2 && card2.textContent || "").replace(/\s+/g, " ").slice(0, 500)); check(!!card2 && /созвон в четверг/.test(card2.textContent), "заметка видна в карточке после перерисовки");
+  const statusInput = card2.querySelector("[data-person-block-reason]");
+  statusInput.value = "нарушение правил публикации";
+  card2.querySelector("[data-person-block]").dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+  check(pw.__calls.status && pw.__calls.status.status === "suspended" &&
+    /нарушение правил/.test(pw.__calls.status.reason || ""), "приостановка ушла с причиной", pw.__calls.status)
+  /* --- почта: папки, журнал отправок, шаблон в письме --- */
+  const mailTabBtn = pdoc.querySelector('[data-admin-tab="mail"]');
+  check(!!mailTabBtn, "вкладка «Почта» у директора есть");
+  mailTabBtn.dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 400));
+  const mailPanel = pdoc.querySelector('[data-panel="mail"]');
+  check(!!mailPanel && !!mailPanel.querySelector("[data-mailboxes]"), "клиент почты открылся с ящиками");
+  check(/Редакция/.test(mailPanel.querySelector("[data-mailboxes]").textContent) &&
+    /Входящие/.test(mailPanel.querySelector("[data-mail-folders]").textContent),
+    "папки Входящие/Отправленные/Черновики видны");
+  mailPanel.querySelector("[data-mail-write]").dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 400));
+  const tplSel = pdoc.querySelector("[data-compose-tpl]");
+  check(!!tplSel && tplSel.options.length >= 2, "в письме выпадает список шаблонов");
+  tplSel.value = "school_new";
+  tplSel.dispatchEvent(new pw.Event("change", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+  const subjEl = pdoc.querySelector("[data-c-subject]");
+  const textEl = pdoc.querySelector("[data-c-text]");
+  check(/Заявка принята/.test(subjEl.value || "") && /Привет/.test(textEl.value || "") &&
+    /шаблон/.test(textEl.value || ""), "шаблон подставил тему и текст");
+  mailPanel.querySelector("[data-mail-log]").dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 400));
+  check(/Журнал отправок/.test(pdoc.querySelector('[data-panel="mail"] [data-mail-read]').textContent) &&
+    /julia@example.ru/.test(pdoc.querySelector('[data-panel="mail"] [data-mail-read]').textContent),
+    "журнал отправок показывает письмо участнику");
+  pn.dom.window.close();
 
   /* --- вход: обрыв связи не создаёт локальную сессию; миграция жива --- */
   const s = await storeDom();

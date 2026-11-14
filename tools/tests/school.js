@@ -116,6 +116,56 @@ const BASE = `
     dom.window.close();
   }
 
+  /* 3b. Ученик в наборе: «Мой курс» — задания, сдача работ, групповые разборы */
+  {
+    const { dom } = makeDom("/school/index.html", BASE + `
+      localStorage.setItem("smena_token_v1", "school-token");
+      localStorage.setItem("smena_user_v1", JSON.stringify({ id: "u_sch", name: "Школа Тест", email: "sch@example.ru", createdAt: "2026-11-01T00:00:00Z" }));
+      schApp = { id: "sc_1", status: "accepted", direction: "Фотография", createdAt: "2026-11-10T00:00:00Z" };
+      Store.consent = function () { return { status: "approved" }; };
+      var courseSent = null;
+      Store.schoolMyCourse = function () {
+        return Promise.resolve({
+          ok: true,
+          cohort: { id: "sc_1", name: "Набор 001" },
+          assignments: [{ id: "as_1", title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров об одном дворе и выберите три.", dueAt: "2026-12-01", order: 1 }],
+          subs: [
+            { id: "sb_9", assignmentId: "as_1", userId: "u_other", userName: "Марина", text: "", status: "accepted", groupNote: "Сильная серия: третий кадр — лучший, подпись короткая.", reviewedAt: "2026-11-11T10:00:00Z", group: true, points: 0 },
+            { id: "sb_1", assignmentId: "as_1", userId: "u_sch", userName: "Школа Тест", text: "черновик серии", status: "returned", groupNote: "Мне не хватает героя в кадрах.", personalNote: "Третий кадр переснимите ближе к скамейке.", points: 0, attempt: 1, createdAt: "2026-11-10T10:00:00Z", reviewedAt: "2026-11-11T10:00:00Z" },
+          ],
+          points: 12,
+        });
+      };
+      Store.schoolSubSend = function (id, text, ai) {
+        courseSent = { id: id, text: text, ai: ai };
+        return Promise.resolve({ ok: true });
+      };
+    `);
+    await new Promise((r) => setTimeout(r, 1500));
+    const doc = dom.window.document;
+    const w = dom.window;
+    const sec = doc.getElementById("course");
+    const host = doc.querySelector("[data-school-course]");
+    check("курс принятому ученику открывается", !!sec && !sec.hidden && !!host && /Набор 001/.test(host.textContent));
+    check("баллы ученика видны", /баллы: 12/.test(host.textContent));
+    const cardPanels = Array.from(host.querySelectorAll(".panel")).filter((pn) => /Задание 1/.test(pn.textContent));
+    const tag = cardPanels[0] ? cardPanels[0].querySelector(".panel__tag") : null;
+    check("работа с разбором помечена «есть разбор»", !!tag && /есть разбор/.test(tag.textContent));
+    check("личный разбор показан, текст работы — нет",
+      /переснимите ближе/.test(host.textContent) && !/черновик серии/.test(host.textContent));
+    check("групповой разбор набора виден без текста чужой работы",
+      /Сильная серия: третий кадр/.test(host.textContent) && /Марина/.test(host.textContent));
+    const ta = host.querySelector("[data-course-text]");
+    ta.value = "Переснял третий кадр у скамейки, добавил героя — дедлайна жду до декабря: серия из пяти кадров готова, ещё пять сниму на неделе.";
+    host.querySelector("[data-course-ai]").value = "ИИ помог с планом кадров, снимал и отбирал сам";
+    host.querySelector("[data-course-send]").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    check("сдача работы ушла с полем про ИИ",
+      !!w.courseSent && w.courseSent.id === "as_1" && w.courseSent.text.length > 40 && /ИИ помог с планом/.test(w.courseSent.ai),
+      w.courseSent);
+    dom.window.close();
+  }
+
   /* 4. Кабинет: блок медиашколы в обзоре */
   {
     const { dom } = makeDom("/profile/index.html", BASE + `

@@ -58,6 +58,16 @@ function check(name, cond, extra) {
     Store.supportQueue = function () { return Promise.resolve({ tickets: [] }); };
     Store.hiringList = function () { return Promise.resolve({ items: [] }); };
     Store.schoolList = function () { return Promise.resolve({ ok: true, applications: [], canDecide: true }); };
+    Store.schoolCohorts = function () {
+      return Promise.resolve({
+        cohorts: [{ id: "sc_1", name: "Набор 001", open: false, createdAt: "2026-11-12T10:00:00Z", students: 3, assignments: 2, checked: 5 }],
+        applications: [
+          { id: "sa_1", name: "Юный автор", direction: "Тексты", status: "pending", motivation: "Пишу заметки про школу", createdAt: "2026-11-12T09:00:00Z" },
+          { id: "sa_2", name: "Принятый", direction: "Видео", status: "accepted", createdAt: "2026-11-11T09:00:00Z" },
+        ],
+        directions: [],
+      });
+    };
     Store.apiCardQueue = function () { return Promise.resolve([]); };
     Store.editorialList = function () { return Promise.resolve({ items: [] }); };
     Store.mailStatus = function () { return Promise.resolve({}); };
@@ -89,7 +99,7 @@ function check(name, cond, extra) {
 
   check("боковая навигация с иконками", !!doc.querySelector(".admin-layout .admin-tabs"));
   const tabs = Array.from(doc.querySelectorAll("[data-admin-tab]"));
-  check("девять разделов (Карты ушли в Людей)", tabs.length === 9, tabs.length);
+  check("десять разделов (школа — платформа)", tabs.length === 10, tabs.length);
   check("у разделов есть иконки", tabs.every((t) => t.querySelector("svg")));
   check("у разделов есть бейджи", tabs.every((t) => t.querySelector("[data-admin-badge]")));
 
@@ -120,6 +130,24 @@ function check(name, cond, extra) {
   check("переход во «Сотрудники» работает", !doc.querySelector('[data-panel="team"]').hidden);
   check("выбор запоминается", dom.window.localStorage.getItem("smena_admin_tab") === "team");
   check("приглашения сотрудников в разделе", !!doc.querySelector('[data-panel="team"] [data-invite-send]'));
+
+  const mailTab = doc.querySelector('[data-admin-tab="mail"]');
+  check("вкладка «Почта» отдельным разделом", !!mailTab);
+  mailTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  check("переход в «Почту» работает", !doc.querySelector('[data-panel="mail"]').hidden);
+  check("в «Почте» есть журнал отправок", !!doc.querySelector('[data-panel="mail"] [data-mail-log]'));
+
+  const schoolTab = doc.querySelector('[data-admin-tab="school"]');
+  check("вкладка «Медиашкола» на месте", !!schoolTab);
+  schoolTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  check("переход в «Медиашколу» работает", !doc.querySelector('[data-panel="school"]').hidden);
+  check("платформа: панель наборов на месте", !!doc.querySelector('[data-panel="school"] [data-sch-cohort-panel]'));
+  check("платформа: зона заданий и работ", !!doc.querySelector('[data-panel="school"] [data-sch-zone]'));
+  check("платформа: панель заявок на месте", !!doc.querySelector('[data-panel="school"] [data-sch-apps]'));
+  check("набор 001 отрисован с закрытым приёмом",
+    /Набор 001/.test(doc.querySelector('[data-panel="school"]').textContent) &&
+    /приём закрыт/.test(doc.querySelector('[data-panel="school"]').textContent));
+  check("принятую заявку можно зачислить", !!doc.querySelector('[data-panel="school"] [data-enroll]'));
 
   /* Регротест «узкой колонки»: при box-sizing:border-box связка
      max-width + паддинг (100vw-1200)/2 схлопывает контентную область до

@@ -1234,6 +1234,43 @@ window.Store = (function () {
     });
   }
 
+  function pdfResponse(res) {
+    if (!res.data) throw new Error("Сервер не вернул PDF.");
+    var bin = window.atob(res.data);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return {
+      blob: new Blob([bytes], { type: res.mime || "application/pdf" }),
+      filename: res.filename || "document.pdf",
+    };
+  }
+
+  function personCertPdf(userId) { return withToken("person-cert-pdf", { userId: userId }).then(pdfResponse); }
+  function personThanksPdf(userId, text) { return withToken("person-thanks-pdf", { userId: userId, text: text || "" }).then(pdfResponse); }
+  function personNote(userId, text) { return withToken("person-note", { userId: userId, text: text || "" }); }
+  function personStatus(userId, status, reason) { return withToken("person-status", { userId: userId, status: status, reason: reason || "" }); }
+
+  /* платформа медиашколы */
+  function schoolCohorts() { return withToken("school-cohorts"); }
+  function schoolCohortCreate(name) { return withToken("school-cohort-create", { name: name || "" }); }
+  function schoolCohortSet(id, open) { return withToken("school-cohort-set", { id: id, open: !!open }); }
+  function schoolAssignmentAdd(cohortId, title, brief, dueAt) {
+    return withToken("school-assignment-add", { cohortId: cohortId, title: title || "", brief: brief || "", dueAt: dueAt || "" });
+  }
+  function schoolAssignments(cohortId) { return withToken("school-assignments", { cohortId: cohortId || "" }); }
+  function schoolSubQueue(cohortId) { return withToken("school-sub-queue", { cohortId: cohortId || "" }); }
+  function schoolSubReview(id, decision, points, groupNote, personalNote, aiChecked) {
+    return withToken("school-sub-review", {
+      id: id, decision: decision, points: points || 0,
+      groupNote: groupNote || "", personalNote: personalNote || "", aiChecked: !!aiChecked,
+    });
+  }
+  function schoolMyCourse() { return withToken("school-my-course"); }
+  function schoolEnroll(appId, cohortId) { return withToken("school-enroll", { appId: appId, cohortId: cohortId }); }
+  function schoolSubSend(assignmentId, text, aiNote) {
+    return withToken("school-sub-send", { assignmentId: assignmentId, text: text || "", aiNote: aiNote || "" });
+  }
+
   function cardPdf(id) {
     return withToken("card-pdf", { id: id || "" }).then(function (res) {
       if (!res.data) throw new Error("Сервер не вернул PDF карты.");
@@ -2131,6 +2168,20 @@ window.Store = (function () {
     apiCardReview: apiCardReview,
     cardVerify: cardVerify,
     cardPdf: cardPdf,
+    personCertPdf: personCertPdf,
+    personThanksPdf: personThanksPdf,
+    personNote: personNote,
+    personStatus: personStatus,
+    schoolCohorts: schoolCohorts,
+    schoolCohortCreate: schoolCohortCreate,
+    schoolCohortSet: schoolCohortSet,
+    schoolAssignmentAdd: schoolAssignmentAdd,
+    schoolAssignments: schoolAssignments,
+    schoolSubQueue: schoolSubQueue,
+    schoolSubReview: schoolSubReview,
+    schoolMyCourse: schoolMyCourse,
+    schoolEnroll: schoolEnroll,
+    schoolSubSend: schoolSubSend,
     cardActPdf: cardActPdf,
     cardDispatch: cardDispatch,
     cardRevoke: cardRevoke,
