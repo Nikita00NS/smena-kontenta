@@ -1315,6 +1315,9 @@ window.Store = (function () {
   function schoolQuizResults(cohortId) { return withToken("school-quiz-results", { cohortId: cohortId || "" }); }
   function schoolDiary(cohortId) { return withToken("school-diary", { cohortId: cohortId || "" }); }
   function schoolSubRemind(subId) { return withToken("school-sub-remind", { subId: subId || "" }); }
+  function schoolCohortStudents(cohortId) { return withToken("school-cohort-students", { cohortId: cohortId || "" }); }
+  function schoolGraduationPdf(userId) { return withToken("school-graduation-pdf", { userId: userId || "" }).then(fileResponse); }
+  function schoolInvite(cohortId) { return withToken("school-invite", { cohortId: cohortId || "" }); }
   function schoolEnroll(appId, cohortId) { return withToken("school-enroll", { appId: appId, cohortId: cohortId }); }
   function schoolSubSend(assignmentId, text, aiNote) {
     return withToken("school-sub-send", { assignmentId: assignmentId, text: text || "", aiNote: aiNote || "" });
@@ -2241,6 +2244,9 @@ window.Store = (function () {
     schoolQuizResults: schoolQuizResults,
     schoolDiary: schoolDiary,
     schoolSubRemind: schoolSubRemind,
+    schoolCohortStudents: schoolCohortStudents,
+    schoolGraduationPdf: schoolGraduationPdf,
+    schoolInvite: schoolInvite,
     schoolEnroll: schoolEnroll,
     schoolSubSend: schoolSubSend,
     cardActPdf: cardActPdf,

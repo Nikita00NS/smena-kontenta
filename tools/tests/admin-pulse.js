@@ -63,6 +63,13 @@ function check(name, cond, extra) {
     Store.schoolQuizzes = function () { return Promise.resolve({ ok: true, quizzes: [] }); };
     Store.schoolQuizResults = function () { return Promise.resolve({ ok: true, results: [] }); };
     Store.schoolDiary = function () { return Promise.resolve({ ok: true, events: [] }); };
+    Store.schoolCohortStudents = function () {
+      return Promise.resolve({ ok: true, total: 2, students: [
+        { userId: "u_s1", name: "Марина Съёмкина", email: "marina@example.ru", direction: "Фотография", accepted: 2, total: 2, points: 41 },
+        { userId: "u_s2", name: "Пётр Пишет", email: "petr@example.ru", direction: "Интервью", accepted: 1, total: 2, points: 12 },
+      ] });
+    };
+    Store.schoolInvite = function () { return Promise.resolve({ ok: true, sent: 0, skipped: 0 }); };
     Store.schoolSubQueue = function () { return Promise.resolve({ ok: true, subs: [] }); };
     Store.schoolAssignments = function () { return Promise.resolve({ ok: true, assignments: [] }); };
     Store.schoolCohorts = function () {
@@ -158,6 +165,12 @@ function check(name, cond, extra) {
     /Набор 001/.test(doc.querySelector('[data-panel="school"]').textContent) &&
     /приём закрыт/.test(doc.querySelector('[data-panel="school"]').textContent));
   check("принятую заявку можно зачислить", !!doc.querySelector('[data-panel="school"] [data-enroll]'));
+  const panelText = doc.querySelector('[data-panel="school"]').textContent;
+  check("ученики набора с прогрессом видны", /Ученики набора/.test(panelText) && /Марина Съёмкина/.test(panelText) &&
+    /2\/2/.test(panelText) && /курс пройден/.test(panelText));
+  check("кнопка выпуска у набравшего курс есть",
+    !!doc.querySelector('[data-panel="school"] [data-sch-grad="u_s1"]'));
+  check("кнопка приглашения на набор есть", !!doc.querySelector('[data-panel="school"] [data-sch-invite]'));
 
   /* Регротест «узкой колонки»: при box-sizing:border-box связка
      max-width + паддинг (100vw-1200)/2 схлопывает контентную область до

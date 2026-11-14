@@ -683,3 +683,58 @@ function person_thanks_pdf_bytes($user, $textValue, $by) {
 
     return $pdf->output();
 }
+
+/* Справка об окончании курса медиашколы: ученик, набор, задания, баллы. */
+function school_graduation_pdf_bytes($user, $cohortName, $direction, $passedCount, $totalCount, $points, $by) {
+    $pdf = new SmenaPdf();
+    $pdf->addPage(210, 297);
+
+    $left = 20.0;
+    $width = 170.0;
+    $top = 297.0 - 24.0;
+
+    $name = isset($user['name']) ? (string) $user['name'] : '';
+    $date = card_pdf_date(date('c'));
+    $docNo = 'СК-УО-' . date('y') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+
+    $pdf->text($left + $width / 2 - 46.0, $top, 13.5, 'СПРАВКА', 'bold', '111111');
+    $y = $top - 6.5;
+    $y = $pdf->textBlock($left, $y, 10.0, 'о завершении курса медиашколы проекта «Смена контента»', $width, 5.0, 'regular', '333333', 1) - 7.0;
+
+    $y = $pdf->textBlock($left, $y, 9.5,
+        'Проект «Смена контента» (город Москва, сайт smenakontenta.ru) подтверждает, что человек, ' .
+        'указанный ниже, прошёл курс медиашколы проекта: выполнил учебные задания набора, ' .
+        'получил разборы редакции и принял участие в групповых разборах. Справка — документ ' .
+        'проекта, а не документ об образовании государственного образца.',
+        $width, 4.8, 'regular', '111111', 8) - 5.0;
+
+    $rows = array(
+        array('Ученик', $name !== '' ? $name : '—'),
+        array('Набор', $cohortName !== '' ? $cohortName : '—'),
+        array('Направление', $direction !== '' ? $direction : '—'),
+        array('Учебные задания', $passedCount . ' из ' . $totalCount . ' принято'),
+        array('Баллы проекта', (string) $points),
+        array('Номер справки', $docNo),
+        array('Дата выдачи', $date),
+        array('Проверка проекта', 'smenakontenta.ru'),
+    );
+    foreach ($rows as $row) {
+        $pdf->text($left, $y, 9.0, $row[0], 'regular', '555555');
+        $pdf->text($left + 62.0, $y, 9.0, $row[1], 'bold', '111111');
+        $pdf->line($left, $y - 1.6, $left + $width, $y - 1.6, 'DDDDDD', 0.15);
+        $y -= 7.2;
+    }
+    $y -= 4.0;
+
+    $y = $pdf->textBlock($left, $y, 8.0,
+        'Материалы ученика выходят на сайте с его подписью после редакции. Проверить справку ' .
+        'можно через поддержку проекта на странице smenakontenta.ru/support, назвав номер документа.',
+        $width, 4.0, 'regular', '333333', 3) - 14.0;
+
+    person_pdf_sign_line($pdf, $left, $y, 'От проекта — оператор персональных данных, сооснователь',
+        'Ильин Борис Павлович', 'sign-ilin.jpg', $width);
+    person_pdf_sign_line($pdf, $left, $y, 'Документ подготовил',
+        isset($by['name']) && $by['name'] !== '' ? $by['name'] : 'Редакция', null, $width);
+
+    return $pdf->output();
+}

@@ -214,6 +214,34 @@ const BASE = `
     dom.window.close();
   }
 
+  /* 3c. Все задания приняты: зелёная плашка «Курс набора пройден» */
+  {
+    const { dom } = makeDom("/school/index.html", BASE + `
+      localStorage.setItem("smena_token_v1", "school-token");
+      localStorage.setItem("smena_user_v1", JSON.stringify({ id: "u_sch", name: "Школа Тест", email: "sch@example.ru", createdAt: "2026-11-01T00:00:00Z" }));
+      schApp = { id: "sc_1", status: "accepted", direction: "Фотография", createdAt: "2026-11-10T00:00:00Z" };
+      Store.schoolMyCourse = function () {
+        return Promise.resolve({
+          ok: true,
+          cohort: { id: "sc_1", name: "Набор 001" },
+          assignments: [{ id: "as_1", title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров.", dueAt: "", order: 1 }],
+          subs: [{ id: "sb_1", assignmentId: "as_1", userId: "u_sch", userName: "Школа Тест", text: "серия готова",
+            status: "accepted", groupNote: "сильная серия", personalNote: "", points: 12, attempt: 1,
+            createdAt: "2026-11-10T10:00:00Z", reviewedAt: "2026-11-11T10:00:00Z" }],
+          modules: [], quizzes: [], myQuiz: {},
+          points: 47,
+        });
+      };
+    `);
+    await new Promise((r) => setTimeout(r, 1500));
+    const doc = dom.window.document;
+    const host = doc.querySelector("[data-school-course]");
+    check("после принятия всех заданий видна плашка «Курс набора пройден»",
+      !!host && /Курс набора пройден/.test(host.textContent) && /справку о завершении/.test(host.textContent),
+      host && host.textContent.slice(0, 160));
+    dom.window.close();
+  }
+
   /* 4. Кабинет: блок медиашколы в обзоре */
   {
     const { dom } = makeDom("/profile/index.html", BASE + `
