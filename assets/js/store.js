@@ -1245,6 +1245,18 @@ window.Store = (function () {
     };
   }
 
+  /* То же для не-PDF файлов (CSV успеваемости): сервер отдаёт base64 + mime. */
+  function fileResponse(res) {
+    if (!res.data) throw new Error("Сервер не вернул файл.");
+    var bin = window.atob(res.data);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return {
+      blob: new Blob([bytes], { type: res.mime || "text/plain" }),
+      filename: res.filename || "file.csv",
+    };
+  }
+
   function personCertPdf(userId) { return withToken("person-cert-pdf", { userId: userId }).then(pdfResponse); }
   function personThanksPdf(userId, text) { return withToken("person-thanks-pdf", { userId: userId, text: text || "" }).then(pdfResponse); }
   function personNote(userId, text) { return withToken("person-note", { userId: userId, text: text || "" }); }
@@ -1266,6 +1278,24 @@ window.Store = (function () {
     });
   }
   function schoolMyCourse() { return withToken("school-my-course"); }
+  function schoolModules(cohortId) { return withToken("school-modules", { cohortId: cohortId || "" }); }
+  function schoolModuleAdd(cohortId, title, body, checklist, assignmentId) {
+    return withToken("school-module-add", {
+      cohortId: cohortId || "", title: title || "", body: body || "",
+      checklist: checklist || "", assignmentId: assignmentId || "",
+    });
+  }
+  function schoolModuleSet(id, fields) {
+    var payload = { id: id };
+    fields = fields || {};
+    if ("title" in fields) payload.title = fields.title;
+    if ("checklist" in fields) payload.checklist = fields.checklist;
+    if ("body" in fields) payload.body = fields.body;
+    if ("assignmentId" in fields) payload.assignmentId = fields.assignmentId;
+    return withToken("school-module-set", payload);
+  }
+  function schoolModuleDelete(id) { return withToken("school-module-delete", { id: id }); }
+  function schoolCohortCsv(cohortId) { return withToken("school-cohort-csv", { cohortId: cohortId || "" }).then(fileResponse); }
   function schoolEnroll(appId, cohortId) { return withToken("school-enroll", { appId: appId, cohortId: cohortId }); }
   function schoolSubSend(assignmentId, text, aiNote) {
     return withToken("school-sub-send", { assignmentId: assignmentId, text: text || "", aiNote: aiNote || "" });
@@ -2180,6 +2210,11 @@ window.Store = (function () {
     schoolSubQueue: schoolSubQueue,
     schoolSubReview: schoolSubReview,
     schoolMyCourse: schoolMyCourse,
+    schoolModules: schoolModules,
+    schoolModuleAdd: schoolModuleAdd,
+    schoolModuleSet: schoolModuleSet,
+    schoolModuleDelete: schoolModuleDelete,
+    schoolCohortCsv: schoolCohortCsv,
     schoolEnroll: schoolEnroll,
     schoolSubSend: schoolSubSend,
     cardActPdf: cardActPdf,

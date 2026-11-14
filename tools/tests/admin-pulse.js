@@ -42,6 +42,7 @@ function check(name, cond, extra) {
       return Promise.resolve({
         ok: true, php: "8.2", posts: 42, editorials: 7, cards_pending: 3,
         support_open: 5, hiring_open: 2, school_open: 4, pending_email: 1, maintenance: false,
+        school_subs_pending: 2,
         data_writable: true, uploads_writable: true, mail_configured: true, rate_entries: 0,
       });
     };
@@ -58,6 +59,9 @@ function check(name, cond, extra) {
     Store.supportQueue = function () { return Promise.resolve({ tickets: [] }); };
     Store.hiringList = function () { return Promise.resolve({ items: [] }); };
     Store.schoolList = function () { return Promise.resolve({ ok: true, applications: [], canDecide: true }); };
+    Store.schoolModules = function () { return Promise.resolve({ ok: true, modules: [] }); };
+    Store.schoolSubQueue = function () { return Promise.resolve({ ok: true, subs: [] }); };
+    Store.schoolAssignments = function () { return Promise.resolve({ ok: true, assignments: [] }); };
     Store.schoolCohorts = function () {
       return Promise.resolve({
         cohorts: [{ id: "sc_1", name: "Набор 001", open: false, createdAt: "2026-11-12T10:00:00Z", students: 3, assignments: 2, checked: 5 }],
@@ -105,13 +109,16 @@ function check(name, cond, extra) {
 
   const pulse = doc.querySelector("[data-admin-overview]");
   check("пульт редакции на месте", !!pulse && /Здравствуйте, Проверка Пульта/.test(pulse.textContent));
-  check("семь плиток показателей", doc.querySelectorAll(".overview__tile").length === 7,
+  check("восемь плиток показателей", doc.querySelectorAll(".overview__tile").length === 8,
     doc.querySelectorAll(".overview__tile").length);
+  check("плитка «работ школы» показывает 2", /работ школы/.test(doc.querySelector("[data-admin-overview]").textContent) &&
+    /на проверке/.test(doc.querySelector("[data-admin-overview]").textContent));
   const rows = Array.from(doc.querySelectorAll(".pulse-row"));
   check("очереди собраны в одном месте", rows.length >= 6, rows.length);
   check("очередь материалов показывает 2", rows.some((r) => /Материалы на проверке/.test(r.textContent) && /2/.test(r.querySelector(".pulse-row__count").textContent)));
   check("очередь согласий показывает 1", rows.some((r) => /Согласия на проверку/.test(r.textContent)));
   check("очередь школы показывает 4", rows.some((r) => /Заявки в медиашколу/.test(r.textContent) && /4/.test(r.querySelector(".pulse-row__count").textContent)));
+  check("очередь работ школы показывает 2", rows.some((r) => /Работы медиашколы на проверке/.test(r.textContent) && /2/.test(r.querySelector(".pulse-row__count").textContent)));
   check("бейдж на «Медиашколе» равен 4",
     (doc.querySelector('[data-admin-badge="school"]') || {}).textContent === "4");
   check("вкладки «Карты» больше нет, карты внутри «Людей»",

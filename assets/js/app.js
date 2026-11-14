@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -2318,7 +2318,8 @@
               tile("cards", "заявок на карту", d.cards_pending || 0, "ждут решения") +
               tile("support", "обращений", d.support_open || 0, "открыты") +
               tile("team", "заявок на работу", d.hiring_open || 0, "ждут решения") +
-              tile("school", "заявок в школу", d.school_open || 0, "ждут решения");
+              tile("school", "заявок в школу", d.school_open || 0, "ждут решения") +
+              tile("doc", "работ школы", d.school_subs_pending || 0, "на проверке");
 
             var rows = [];
             var badges = {};
@@ -2354,9 +2355,13 @@
               badges.hiring = d.hiring_open || 0;
               rows.push(queueRow("team", "mail", "Заявки на работу", d.hiring_open || 0, "сотрудники"));
             }
-            if (hasCap("hiring.view")) {
+            if (hasCap("hiring.view") || hasCap("school.manage")) {
               badges.school = d.school_open || 0;
               rows.push(queueRow("school", "school", "Заявки в медиашколу", d.school_open || 0, "обучение авторов"));
+              if (hasCap("school.manage") || hasCap("school.review")) {
+                rows.push(queueRow("school", "doc", "Работы медиашколы на проверке", d.school_subs_pending || 0,
+                  "разбор и баллы — вкладка «Медиашкола»"));
+              }
             }
             if (hasCap("people.view")) {
               rows.push(queueRow("people", "users", "Почты ждут подтверждения", d.pending_email || 0, "аккаунты без верификации"));
@@ -4476,6 +4481,7 @@
       var currentId = "";
       var assignments = [];
       var subs = [];
+      var modules = [];
       var applications = [];
 
       function cohortById(id) {
@@ -4527,7 +4533,8 @@
           "<span>учеников: " + c.students + " · заданий: " + c.assignments + " · проверено работ: " + c.checked + "</span>" +
           '<button class="btn btn--sm ' + (c.open ? "btn--ghost" : "btn--accent") + '" type="button" data-sch-toggle>' +
           (c.open ? "Закрыть приём" : "Открыть приём") + "</button>" +
-          '<span class="form__note" data-sch-toggle-note></span></div>';
+          '<button class="btn btn--ghost btn--sm" type="button" data-sch-csv>Успеваемость (CSV)</button>' +
+          '<span class="form__note" data-sch-csv-note></span></div>';
         $$( "[data-sch-cohort]", cohortPanel).forEach(function (b) {
           b.addEventListener("click", function () {
             currentId = b.getAttribute("data-sch-cohort");
@@ -4561,6 +4568,108 @@
             if (note) note.textContent = (err && err.message) || "Не переключилось.";
           });
         });
+        var csvBtn = $("[data-sch-csv]", cohortPanel);
+        if (csvBtn) csvBtn.addEventListener("click", function () {
+          var note = $("[data-sch-csv-note]", cohortPanel);
+          csvBtn.disabled = true;
+          if (note) note.textContent = "Собираем таблицу…";
+          Store.schoolCohortCsv(c.id).then(function (file) {
+            csvBtn.disabled = false;
+            if (note) note.textContent = "Готово: " + file.filename;
+            var url = URL.createObjectURL(file.blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = file.filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+          }, function (err) {
+            csvBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Не собралось.";
+          });
+        });
+      }
+
+      /* Редактор модулей: форма добавления/правки появляется по кнопке. */
+      function bindModules() {
+        var editorHost = $("[data-sch-m-editor]", zone);
+        if (!editorHost) return;
+        var editorOpen = false;
+        var editingId = "";
+
+        function openEditor(mod) {
+          editorOpen = true;
+          editingId = mod ? mod.id : "";
+          editorHost.innerHTML =
+            '<div class="pcard__section" style="margin-top:12px"><span class="kicker">' +
+            (mod ? "Правка модуля" : "Новый модуль") + "</span>" +
+            '<div class="field" style="margin-top:8px"><label>Название</label>' +
+            '<input type="text" data-sch-m-title maxlength="120" style="max-width:420px" value="' +
+            esc(mod ? mod.title : "") + '" placeholder="Модуль 1: как найти героя истории"></div>' +
+            '<div class="field" style="margin-top:8px"><label>Привязать к заданию</label>' +
+            '<select data-sch-m-assignment style="max-width:420px"><option value="">— общий модуль набора —</option>' +
+            assignments.map(function (a) {
+              return '<option value="' + esc(a.id) + '"' + (mod && mod.assignmentId === a.id ? " selected" : "") + ">" +
+                esc(a.title) + "</option>";
+            }).join("") + "</select></div>" +
+            '<div class="field" style="margin-top:8px"><label>Чек-лист — коротко, виден в задании</label>' +
+            '<textarea data-sch-m-checklist rows="2" maxlength="600" placeholder="Что должно получиться: 3 кадра с героем, подписи с именами, звук чистый">' +
+            esc(mod ? mod.checklist : "") + "</textarea></div>" +
+            '<div class="field" style="margin-top:8px"><label>Материал модуля: теория и пример разбора</label>' +
+            '<textarea data-sch-m-body rows="7" maxlength="8000" placeholder="Коротко и по делу: что делать, как и почему. Можно пример разбора предыдущей работы.">' +
+            esc(mod ? mod.body : "") + "</textarea></div>" +
+            '<div class="row" style="gap:8px;margin-top:8px">' +
+            '<button class="btn btn--accent btn--sm" type="button" data-sch-m-save>' + (mod ? "Сохранить" : "Добавить модуль") + "</button>" +
+            '<button class="btn btn--ghost btn--sm" type="button" data-sch-m-cancel>Отмена</button>' +
+            '<span class="form__note" data-sch-m-note></span></div></div>';
+          $("[data-sch-m-cancel]", editorHost).addEventListener("click", function () {
+            editorOpen = false;
+            editingId = "";
+            editorHost.innerHTML = "";
+          });
+          $("[data-sch-m-save]", editorHost).addEventListener("click", function () {
+            var btn = $("[data-sch-m-save]", editorHost);
+            var note = $("[data-sch-m-note]", editorHost);
+            var title = ($("[data-sch-m-title]", editorHost).value || "").trim();
+            var body = ($("[data-sch-m-body]", editorHost).value || "").trim();
+            var checklist = ($("[data-sch-m-checklist]", editorHost).value || "").trim();
+            var assignmentId = ($("[data-sch-m-assignment]", editorHost).value || "").trim();
+            if (title.length < 4) { if (note) note.textContent = "Название — минимум 4 символа."; return; }
+            if (body.length < 20) { if (note) note.textContent = "Материал модуля — минимум 20 символов."; return; }
+            btn.disabled = true;
+            if (note) note.textContent = "Сохраняем…";
+            var call = editingId
+              ? Store.schoolModuleSet(editingId, { title: title, body: body, checklist: checklist, assignmentId: assignmentId })
+              : Store.schoolModuleAdd(currentId, title, body, checklist, assignmentId);
+            call.then(function () {
+              editorOpen = false;
+              editingId = "";
+              return loadZone();
+            }, function (err) {
+              btn.disabled = false;
+              if (note) note.textContent = (err && err.message) || "Не сохранилось.";
+            });
+          });
+        }
+
+        var addBtn = $("[data-sch-m-add]", zone);
+        if (addBtn) addBtn.addEventListener("click", function () {
+          if (editorOpen) { editorHost.innerHTML = ""; editorOpen = false; editingId = ""; return; }
+          openEditor(null);
+        });
+        $$("[data-sch-m-edit]", zone).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var mod = modules.filter(function (m) { return m.id === b.getAttribute("data-sch-m-edit"); })[0];
+            if (mod) openEditor(mod);
+          });
+        });
+        $$("[data-sch-m-del]", zone).forEach(function (b) {
+          b.addEventListener("click", function () {
+            if (!window.confirm("Удалить модуль? Ученики его больше не увидят.")) return;
+            Store.schoolModuleDelete(b.getAttribute("data-sch-m-del")).then(loadZone, function () {});
+          });
+        });
       }
 
       function loadZone() {
@@ -4568,9 +4677,12 @@
         zone.innerHTML = '<p class="form__note">Загружаем набор…</p>';
         Store.schoolAssignments(currentId).then(function (ares) {
           assignments = ares.assignments || [];
-          return Store.schoolSubQueue(currentId).then(function (sres) {
-            subs = sres.subs || [];
-            drawZone();
+          return Store.schoolModules(currentId).then(function (mres) {
+            modules = (mres && mres.modules) || [];
+            return Store.schoolSubQueue(currentId).then(function (sres) {
+              subs = sres.subs || [];
+              drawZone();
+            });
           });
         }, function (err) {
           zone.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>";
@@ -4601,6 +4713,23 @@
 
         var pending = subs.filter(function (x) { return x.status === "pending"; });
         var done = subs.filter(function (x) { return x.status !== "pending"; });
+        var modulesHtml = '<div class="panel" style="padding:20px;margin-bottom:22px"><div class="row" style="justify-content:space-between">' +
+          '<span class="kicker">Программа набора: модулей ' + modules.length + "</span>" +
+          '<button class="btn btn--ghost btn--sm" type="button" data-sch-m-add>Добавить модуль</button></div>' +
+          '<p class="form__note">Модуль — короткий материал для учеников: теория, пример разбора и чек-лист. ' +
+          "Чек-лист модуля, привязанного к заданию, виден ученику прямо в карточке задания.</p>" +
+          '<div data-sch-m-editor></div>' +
+          (modules.length
+            ? '<div class="audit" style="margin-top:12px">' + modules.map(function (m) {
+              var a = assignments.filter(function (x) { return x.id === m.assignmentId; })[0];
+              return '<div class="diag__row"><span><b>' + esc(m.title) + "</b>" +
+                (a ? " · к заданию: " + esc(a.title) : " · общий") +
+                (m.checklist ? " · есть чек-лист" : "") + "</span><b>" +
+                '<button class="btn btn--ghost btn--sm" type="button" data-sch-m-edit="' + esc(m.id) + '">Править</button>' +
+                '<button class="btn btn--ghost btn--sm" type="button" data-sch-m-del="' + esc(m.id) + '">Удалить</button></b></div>';
+            }).join("") + "</div>"
+            : '<p class="form__note" style="margin-top:8px">Модулей пока нет — добавьте первый перед заданием.</p>') +
+          "</div>";
         var queueHtml = '<div class="panel" style="padding:20px"><div class="row" style="justify-content:space-between">' +
           '<span class="kicker">Работы на проверке: ' + pending.length + "</span>" +
           '<button class="btn btn--ghost btn--sm" type="button" data-sch-refresh>Обновить</button></div>' +
@@ -4632,7 +4761,8 @@
               }).join("") + "</div></div>"
             : "") +
           "</div>";
-        zone.innerHTML = addHtml + listHtml + queueHtml;
+        zone.innerHTML = addHtml + listHtml + modulesHtml + queueHtml;
+        bindModules();
 
         var addBtn = $("[data-sch-a-add]", zone);
         addBtn.addEventListener("click", function () {
@@ -5389,7 +5519,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -5674,7 +5804,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6028,8 +6158,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -6829,7 +6959,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-4",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-5",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -6840,7 +6970,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-4",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-5",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -7330,6 +7460,7 @@
         if (!cohort) { host.innerHTML = ""; return; }
         var assignments = res.assignments || [];
         var subs = res.subs || [];
+        var modules = res.modules || [];
         var mine = {};
         subs.forEach(function (sub) {
           if (sub.group) return;
@@ -7338,6 +7469,26 @@
         });
         var groups = subs.filter(function (sub) { return sub.group; });
         var statusLabel = { pending: "на проверке", accepted: "принято", returned: "есть разбор" };
+        function daysLeft(a) {
+          if (!a.dueAt) return null;
+          var due = new Date(String(a.dueAt).replace(/(\d{4}-\d{2}-\d{2}).*/, "$1T23:59:59"));
+          if (isNaN(due.getTime())) return null;
+          return Math.ceil((due.getTime() - Date.now()) / 86400000);
+        }
+        function deadlineBanner(a) {
+          var left = daysLeft(a);
+          if (left === null || left < 0 || left > 2) return "";
+          var word = left === 0 ? "сегодня — последний день" : left === 1 ? "остался 1 день" : "осталось " + left + " дня";
+          return '<div class="fill-note" style="border-color:rgba(214,78,58,.4);background:rgba(214,78,58,.06);margin-top:10px">' +
+            "<b>Срок близко</b><p>До дедлайна " + word + ". Сдайте работу — разбор редакции увидит весь набор.</p></div>";
+        }
+        function checklistHtml(a) {
+          var mod = modules.filter(function (m) { return m.assignmentId === a.id && m.checklist; })[0];
+          if (!mod) return "";
+          return '<div class="fill-note fill-note--flat" style="margin-top:10px"><b>Чек-лист: что должно получиться</b>' +
+            '<p style="white-space:pre-wrap">' + esc(mod.checklist) + "</p>" +
+            '<p class="form__note">Полный материал — в «Программе набора» ниже.</p></div>';
+        }
         function sendForm(a) {
           return '<div class="field" style="margin-top:10px"><label>Ваша работа</label>' +
             '<textarea data-course-text rows="4" maxlength="4000" placeholder="Текст работы. После разбора её можно сдать снова"></textarea></div>' +
@@ -7363,10 +7514,10 @@
             body = '<p class="form__note">Возвращено с разбором ' + esc(schDate(sub.reviewedAt || sub.createdAt)) + ":</p>" +
               (sub.groupNote ? '<p style="white-space:pre-wrap"><b>Группе:</b> ' + esc(sub.groupNote) + "</p>" : "") +
               (sub.personalNote ? '<p style="white-space:pre-wrap"><b>Лично вам:</b> ' + esc(sub.personalNote) + "</p>" : "") +
-              sendForm(a);
+              checklistHtml(a) + deadlineBanner(a) + sendForm(a);
           } else {
             body = "<p>" + esc(a.brief) + (a.dueAt ? ' <span class="form__note">Срок: ' + esc(a.dueAt) + ".</span>" : "") + "</p>" +
-              sendForm(a);
+              checklistHtml(a) + deadlineBanner(a) + sendForm(a);
           }
           return '<div class="panel" style="padding:20px;margin-bottom:14px"><div class="panel__head"><h3>' + esc(a.title) + "</h3>" +
             '<span class="panel__tag">' + (sub ? esc(statusLabel[sub.status] || sub.status) : "ждёт работы") + "</span></div>" + body + "</div>";
@@ -7380,12 +7531,26 @@
             }).join("") + "</div></div>"
           : '<div class="fill-note fill-note--flat"><b>Групповых разборов пока нет</b>' +
             "<p>Как только редакция разберёт первую работу набора, разбор появится здесь — его увидят все.</p></div>";
+        var programHtml = modules.length
+          ? '<div class="panel" style="padding:20px;margin-bottom:14px"><div class="panel__head"><h3>Программа набора</h3>' +
+            '<span class="panel__tag">материалы редакции</span></div>' +
+            '<p class="form__note">Короткие материалы к заданиям: теория, примеры и чек-листы. Читайте перед работой.</p>' +
+            modules.map(function (m, i) {
+              var a = assignments.filter(function (x) { return x.id === m.assignmentId; })[0];
+              return '<details class="school-tasks-item" style="margin-top:8px"' + (i === 0 ? " open" : "") + ">" +
+                "<summary>" + esc(m.title) + (a ? " · к заданию «" + esc(a.title) + "»" : "") + "</summary>" +
+                '<p style="white-space:pre-wrap">' + esc(m.body) + "</p>" +
+                (m.checklist ? '<p class="form__note"><b>Чек-лист:</b> ' + esc(m.checklist) + "</p>" : "") +
+                "</details>";
+            }).join("") + "</div>"
+          : "";
         host.innerHTML =
           '<div class="panel" style="padding:20px;margin-bottom:14px"><div class="panel__head"><h3>' + esc(cohort.name) + "</h3>" +
           '<span class="panel__tag">баллы: ' + Number(res.points || 0) + "</span></div>" +
           '<p class="form__note">Задания общие для набора, дедлайн один на всех. После разбора работу можно сдать снова.</p></div>' +
           (assignments.length ? cards : '<div class="fill-note fill-note--flat"><b>Заданий пока нет</b>' +
-            "<p>Редакция скоро добавит первое задание набора — оно появится здесь.</p></div>") + groupsHtml;
+            "<p>Редакция скоро добавит первое задание набора — оно появится здесь.</p></div>") +
+          programHtml + groupsHtml;
         $$("[data-course-send]", host).forEach(function (btn) {
           btn.addEventListener("click", function () {
             var id = btn.getAttribute("data-course-send");
@@ -7816,7 +7981,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -8864,7 +9029,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 

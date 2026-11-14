@@ -128,7 +128,11 @@ const BASE = `
         return Promise.resolve({
           ok: true,
           cohort: { id: "sc_1", name: "Набор 001" },
-          assignments: [{ id: "as_1", title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров об одном дворе и выберите три.", dueAt: "2026-12-01", order: 1 }],
+          assignments: [{ id: "as_1", title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров об одном дворе и выберите три.", dueAt: new Date(Date.now() + 86400000).toISOString().slice(0, 10), order: 1 }],
+          modules: [{ id: "scm_1", cohortId: "sc_1", assignmentId: "as_1", title: "Модуль 1: герой в кадре",
+            checklist: "Три кадра с героем, подписи с именами, звук чистый",
+            body: "Смотрите на героя, а не на улицу: один человек, одно действие, один смысл кадра.",
+            order: 1 }],
           subs: [
             { id: "sb_9", assignmentId: "as_1", userId: "u_other", userName: "Марина", text: "", status: "accepted", groupNote: "Сильная серия: третий кадр — лучший, подпись короткая.", reviewedAt: "2026-11-11T10:00:00Z", group: true, points: 0 },
             { id: "sb_1", assignmentId: "as_1", userId: "u_sch", userName: "Школа Тест", text: "черновик серии", status: "returned", groupNote: "Мне не хватает героя в кадрах.", personalNote: "Третий кадр переснимите ближе к скамейке.", points: 0, attempt: 1, createdAt: "2026-11-10T10:00:00Z", reviewedAt: "2026-11-11T10:00:00Z" },
@@ -147,6 +151,13 @@ const BASE = `
     const sec = doc.getElementById("course");
     const host = doc.querySelector("[data-school-course]");
     check("курс принятому ученику открывается", !!sec && !sec.hidden && !!host && /Набор 001/.test(host.textContent));
+    const program = host.querySelector("details");
+    check("раздел «Программа набора» с материалом редакции",
+      /Программа набора/.test(host.textContent) && !!program && /героя, а не на улицу/.test(program.textContent));
+    check("чек-лист модуля виден в карточке задания",
+      /Чек-лист: что должно получиться/.test(host.textContent) && /звук чистый/.test(host.textContent));
+    check("баннер дедлайна показан, когда срок близко",
+      /Срок близко/.test(host.textContent) && /До дедлайна/.test(host.textContent));
     check("баллы ученика видны", /баллы: 12/.test(host.textContent));
     const cardPanels = Array.from(host.querySelectorAll(".panel")).filter((pn) => /Задание 1/.test(pn.textContent));
     const tag = cardPanels[0] ? cardPanels[0].querySelector(".panel__tag") : null;
