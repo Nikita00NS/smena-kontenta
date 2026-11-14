@@ -60,6 +60,9 @@ function check(name, cond, extra) {
     Store.hiringList = function () { return Promise.resolve({ items: [] }); };
     Store.schoolList = function () { return Promise.resolve({ ok: true, applications: [], canDecide: true }); };
     Store.schoolModules = function () { return Promise.resolve({ ok: true, modules: [] }); };
+    Store.schoolQuizzes = function () { return Promise.resolve({ ok: true, quizzes: [] }); };
+    Store.schoolQuizResults = function () { return Promise.resolve({ ok: true, results: [] }); };
+    Store.schoolDiary = function () { return Promise.resolve({ ok: true, events: [] }); };
     Store.schoolSubQueue = function () { return Promise.resolve({ ok: true, subs: [] }); };
     Store.schoolAssignments = function () { return Promise.resolve({ ok: true, assignments: [] }); };
     Store.schoolCohorts = function () {

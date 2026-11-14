@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -4482,6 +4482,9 @@
       var assignments = [];
       var subs = [];
       var modules = [];
+      var quizzes = [];
+      var quizResults = [];
+      var diary = [];
       var applications = [];
 
       function cohortById(id) {
@@ -4592,6 +4595,110 @@
       }
 
       /* Редактор модулей: форма добавления/правки появляется по кнопке. */
+      /* Конструктор теста: вопросы собираются в форме, сервер проверяет структуру. */
+      function bindQuizzes() {
+        var editorHost = $("[data-sch-q-editor]", zone);
+        if (!editorHost) return;
+
+        function openEditor() {
+          var questions = [{ text: "", options: [{ text: "" }, { text: "" }], explanation: "" }];
+          editorHost.innerHTML =
+            '<div class="pcard__section" style="margin-top:12px"><span class="kicker">Новый тест</span>' +
+            '<div class="field" style="margin-top:8px"><label>Название</label>' +
+            '<input type="text" data-sch-q-title maxlength="120" style="max-width:420px" placeholder="Тест: факты и источники"></div>' +
+            '<div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">' +
+            '<label>Привязать к заданию <select data-sch-q-assignment style="max-width:320px"><option value="">— общий тест набора —</option>' +
+            assignments.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.title) + "</option>"; }).join("") +
+            "</select></label>" +
+            "<label>Зачёт с <input type=\"number\" data-sch-q-pass min=\"30\" max=\"100\" value=\"70\" style=\"max-width:70px\">%</label>" +
+            "<label>Баллов <input type=\"number\" data-sch-q-points min=\"1\" max=\"20\" value=\"5\" style=\"max-width:60px\"></label></div>" +
+            '<div data-sch-q-questions style="margin-top:10px"></div>' +
+            '<div class="row" style="gap:8px;margin-top:10px">' +
+            '<button class="btn btn--accent btn--sm" type="button" data-sch-q-save>Создать тест</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-sch-q-add-question>Добавить вопрос</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-sch-q-cancel>Отмена</button>' +
+            '<span class="form__note" data-sch-q-note></span></div></div>';
+          function drawQuestions() {
+            var qHost = $("[data-sch-q-questions]", editorHost);
+            qHost.innerHTML = questions.map(function (q, i) {
+              return '<div class="pcard__section" data-sch-q-block="' + i + '" style="margin-top:8px"><b>Вопрос ' + (i + 1) + "</b>" +
+                '<textarea data-sch-q-text rows="2" maxlength="500" placeholder="Текст вопроса" style="margin-top:6px">' + esc(q.text) + "</textarea>" +
+                q.options.map(function (o, oi) {
+                  return '<div class="row" style="gap:6px;margin-top:4px;align-items:center">' +
+                    '<label class="chip-sm"><input type="radio" name="sch-q-right-' + i + '" data-sch-q-right="' + oi + '"' +
+                    (o.correct ? " checked" : "") + "> верно</label>" +
+                    '<input type="text" data-sch-q-opt maxlength="300" placeholder="Вариант ' + (oi + 1) + '" value="' + esc(o.text) + '" style="max-width:320px">' +
+                    "</div>";
+                }).join("") +
+                '<div class="row" style="gap:8px;margin-top:4px">' +
+                '<input type="text" data-sch-q-expl maxlength="500" placeholder="Пояснение (ученик увидит после проверки)" style="max-width:420px" value="' + esc(q.explanation) + '">' +
+                (questions.length > 1 ? '<button class="btn btn--ghost btn--sm" type="button" data-sch-q-del-question="' + i + '">Убрать вопрос</button>' : "") +
+                "</div></div>";
+            }).join("");
+            $$("[data-sch-q-del-question]", qHost).forEach(function (b) {
+              b.addEventListener("click", function () {
+                questions.splice(Number(b.getAttribute("data-sch-q-del-question")), 1);
+                drawQuestions();
+              });
+            });
+          }
+          drawQuestions();
+          $("[data-sch-q-add-question]", editorHost).addEventListener("click", function () {
+            questions.push({ text: "", options: [{ text: "" }, { text: "" }], explanation: "" });
+            drawQuestions();
+          });
+          $("[data-sch-q-cancel]", editorHost).addEventListener("click", function () { editorHost.innerHTML = ""; });
+          $("[data-sch-q-save]", editorHost).addEventListener("click", function () {
+            var btn = $("[data-sch-q-save]", editorHost);
+            var note = $("[data-sch-q-note]", editorHost);
+            var title = ($("[data-sch-q-title]", editorHost).value || "").trim();
+            var payload = {
+              assignmentId: ($("[data-sch-q-assignment]", editorHost).value || "").trim(),
+              intro: "",
+              passScore: Number(($("[data-sch-q-pass]", editorHost).value || 70)),
+              points: Number(($("[data-sch-q-points]", editorHost).value || 5)),
+              questions: [],
+            };
+            if (title.length < 4) { if (note) note.textContent = "Название — минимум 4 символа."; return; }
+            $$("[data-sch-q-block]", editorHost).forEach(function (block) {
+              var opts = $$("[data-sch-q-opt]", block).map(function (input, oi) {
+                return { text: (input.value || "").trim(), correct: false };
+              });
+              var right = block.querySelector("[data-sch-q-right]:checked");
+              if (right && opts[Number(right.getAttribute("data-sch-q-right"))]) {
+                opts[Number(right.getAttribute("data-sch-q-right"))].correct = true;
+              }
+              payload.questions.push({
+                text: ((block.querySelector("[data-sch-q-text]") || {}).value || "").trim(),
+                options: opts,
+                explanation: ((block.querySelector("[data-sch-q-expl]") || {}).value || "").trim(),
+              });
+            });
+            btn.disabled = true;
+            if (note) note.textContent = "Сохраняем…";
+            Store.schoolQuizAdd(currentId, { title: title, assignmentId: payload.assignmentId,
+              passScore: payload.passScore, points: payload.points, questions: payload.questions }).then(function () {
+              editorHost.innerHTML = "";
+              return loadZone();
+            }, function (err) {
+              btn.disabled = false;
+              if (note) note.textContent = (err && err.message) || "Не сохранилось.";
+            });
+          });
+        }
+        var addBtn = $("[data-sch-q-add]", zone);
+        if (addBtn) addBtn.addEventListener("click", function () {
+          if (editorHost.innerHTML !== "") { editorHost.innerHTML = ""; return; }
+          openEditor();
+        });
+        $$("[data-sch-q-del]", zone).forEach(function (b) {
+          b.addEventListener("click", function () {
+            if (!window.confirm("Удалить тест? Результаты учеников останутся в журнале.")) return;
+            Store.schoolQuizDelete(b.getAttribute("data-sch-q-del")).then(loadZone, function () {});
+          });
+        });
+      }
+
       function bindModules() {
         var editorHost = $("[data-sch-m-editor]", zone);
         if (!editorHost) return;
@@ -4679,9 +4786,18 @@
           assignments = ares.assignments || [];
           return Store.schoolModules(currentId).then(function (mres) {
             modules = (mres && mres.modules) || [];
-            return Store.schoolSubQueue(currentId).then(function (sres) {
-              subs = sres.subs || [];
-              drawZone();
+            return Store.schoolQuizzes(currentId).then(function (qres) {
+              quizzes = (qres && qres.quizzes) || [];
+              return Store.schoolQuizResults(currentId).then(function (rres) {
+                quizResults = (rres && rres.results) || [];
+                return Store.schoolDiary(currentId).then(function (dres) {
+                  diary = (dres && dres.events) || [];
+                  return Store.schoolSubQueue(currentId).then(function (sres) {
+                    subs = sres.subs || [];
+                    drawZone();
+                  });
+                });
+              });
             });
           });
         }, function (err) {
@@ -4730,6 +4846,42 @@
             }).join("") + "</div>"
             : '<p class="form__note" style="margin-top:8px">Модулей пока нет — добавьте первый перед заданием.</p>') +
           "</div>";
+        var quizzesHtml = '<div class="panel" style="padding:20px;margin-bottom:22px"><div class="row" style="justify-content:space-between">' +
+          '<span class="kicker">Тесты набора: ' + quizzes.length + "</span>" +
+          '<button class="btn btn--ghost btn--sm" type="button" data-sch-q-add>Создать тест</button></div>' +
+          '<p class="form__note">Тест проверяется автоматически: ученик сразу видит процент, зачёт и пояснение к каждому вопросу. ' +
+          "Баллы начисляются за первый зачёт; пересдавать можно.</p>" +
+          '<div data-sch-q-editor></div>' +
+          (quizzes.length
+            ? '<div class="audit" style="margin-top:12px">' + quizzes.map(function (q) {
+              var a = assignments.filter(function (x) { return x.id === q.assignmentId; })[0];
+              var passed = quizResults.filter(function (r) { return r.quizId === q.id && r.passed; }).length;
+              return '<div class="diag__row"><span><b>' + esc(q.title) + "</b> · вопросов: " + q.questions.length +
+                (a ? " · к заданию: " + esc(a.title) : " · общий") + " · зачёт с " + q.passScore + "% · " + q.points + " б.</span><b>" +
+                passed + " зачёт(ов) " +
+                '<button class="btn btn--ghost btn--sm" type="button" data-sch-q-del="' + esc(q.id) + '">Удалить</button></b></div>';
+            }).join("") + "</div>"
+            : '<p class="form__note" style="margin-top:8px">Тестов пока нет — добавьте короткий проверочный.</p>') +
+          (quizResults.length
+            ? '<div class="audit" style="margin-top:14px"><span class="kicker">Последние попытки</span><div class="diag">' +
+              quizResults.slice(0, 8).map(function (r) {
+                var q = quizzes.filter(function (x) { return x.id === r.quizId; })[0];
+                return '<div class="diag__row"><span>' + esc(r.userName) + " · " + esc(q ? q.title : "тест") +
+                  " · попытка " + r.attempt + " · " + esc(schDate(r.createdAt)) + "</span><b>" +
+                  '<span class="status ' + (r.passed ? "status--pub" : "status--draft") + '">' +
+                  r.score + "% · " + (r.passed ? "зачёт" : "не зачёт") + "</span></b></div>";
+              }).join("") + "</div></div>"
+            : "") +
+          "</div>";
+        var diaryHtml = diary.length
+          ? '<div class="panel" style="padding:20px;margin-bottom:22px"><span class="kicker">Дневник набора</span>' +
+            '<p class="form__note">Последние события: сдачи, разборы, тесты. Полный журнал — в «Сайт-журнале».</p>' +
+            '<div class="diag">' + diary.map(function (e) {
+              var mark = e.kind === "accepted" || e.kind === "quiz_pass" ? "is-good" : (e.kind === "quiz_fail" ? "is-bad" : "");
+              return '<div class="diag__row"><span>' + esc(schDate(e.at)) + " · " + esc(e.who) + "</span><b class=\"" + mark +
+                "\">" + esc(e.text) + "</b></div>";
+            }).join("") + "</div></div>"
+          : "";
         var queueHtml = '<div class="panel" style="padding:20px"><div class="row" style="justify-content:space-between">' +
           '<span class="kicker">Работы на проверке: ' + pending.length + "</span>" +
           '<button class="btn btn--ghost btn--sm" type="button" data-sch-refresh>Обновить</button></div>' +
@@ -4748,6 +4900,7 @@
                 '<label class="chip-sm"><input type="checkbox" data-sch-aicheck> <span>ИИ проверен</span></label>' +
                 '<button class="btn btn--accent btn--sm" type="button" data-sch-accept="' + x.id + '">Принять</button>' +
                 '<button class="btn btn--ghost btn--sm" type="button" data-sch-return="' + x.id + '">Вернуть</button>' +
+                '<button class="btn btn--ghost btn--sm" type="button" data-sch-remind="' + x.id + '">Напомнить</button>' +
                 "</div><p class=\"form__note\" data-sch-review-note=\"" + x.id + "\"></p></div>";
             }).join("")
             : '<p class="form__note">Новых работ нет — всё проверено.</p>') +
@@ -4761,8 +4914,9 @@
               }).join("") + "</div></div>"
             : "") +
           "</div>";
-        zone.innerHTML = addHtml + listHtml + modulesHtml + queueHtml;
+        zone.innerHTML = addHtml + listHtml + modulesHtml + quizzesHtml + diaryHtml + queueHtml;
         bindModules();
+        bindQuizzes();
 
         var addBtn = $("[data-sch-a-add]", zone);
         addBtn.addEventListener("click", function () {
@@ -4814,6 +4968,22 @@
         }
         bindReview("[data-sch-accept]", "accepted");
         bindReview("[data-sch-return]", "returned");
+        $$("[data-sch-remind]", zone).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var id = btn.getAttribute("data-sch-remind");
+            var noteEl = zone.querySelector('[data-sch-review-note="' + id + '"]');
+            btn.disabled = true;
+            Store.schoolSubRemind(id).then(function (res) {
+              btn.disabled = false;
+              if (noteEl) noteEl.textContent = res.sent
+                ? "Напоминание ушло на почту ученика."
+                : "Сервер почты не принял письмо — проверьте настройки ящика.";
+            }, function (err) {
+              btn.disabled = false;
+              if (noteEl) noteEl.textContent = (err && err.message) || "Не отправилось.";
+            });
+          });
+        });
         var refreshBtn = $("[data-sch-refresh]", zone);
         if (refreshBtn) refreshBtn.addEventListener("click", loadZone);
       }
@@ -5519,7 +5689,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -5804,7 +5974,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6158,8 +6328,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -6959,7 +7129,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-5",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-6",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -6970,7 +7140,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-5",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-6",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -7461,6 +7631,8 @@
         var assignments = res.assignments || [];
         var subs = res.subs || [];
         var modules = res.modules || [];
+        var quizzes = res.quizzes || [];
+        var myQuiz = res.myQuiz || {};
         var mine = {};
         subs.forEach(function (sub) {
           if (sub.group) return;
@@ -7531,6 +7703,36 @@
             }).join("") + "</div></div>"
           : '<div class="fill-note fill-note--flat"><b>Групповых разборов пока нет</b>' +
             "<p>Как только редакция разберёт первую работу набора, разбор появится здесь — его увидят все.</p></div>";
+        function quizCard(q) {
+          var last = myQuiz[q.id] || null;
+          var head = '<div class="panel" style="padding:20px;margin-bottom:14px" data-quiz="' + esc(q.id) + '">' +
+            '<div class="panel__head"><h3>' + esc(q.title) + "</h3>" +
+            '<span class="panel__tag">' + (last ? (last.passed ? "зачёт · " + last.score + "%" : last.score + "% · не зачёт") :
+              "тест · " + q.points + " б.") + "</span></div>" +
+            (q.assignmentId ? '<p class="form__note">Тест к заданию. Зачёт — от ' + q.passScore +
+              "%, баллы начисляются за первый зачёт. Пересдать можно.</p>"
+              : '<p class="form__note">Зачёт — от ' + q.passScore + "%, баллы начисляются за первый зачёт. Пересдать можно.</p>");
+          if (last && last.passed) return head +
+            '<p class="form__note">Лучший результат: ' + last.score + "% · попыток: " + last.attempt +
+            (last.passed ? " — баллы начислены." : "") + "</p>" +
+            '<div class="row" style="gap:8px"><button class="btn btn--ghost btn--sm" type="button" data-quiz-show>Пройти ещё раз</button></div>' +
+            '<div data-quiz-result></div></div>';
+          var questions = q.questions.map(function (qs, qi) {
+            return '<div class="pcard__section" data-qblock="' + qi + '" style="margin-top:8px"><b>' + (qi + 1) + ". " + esc(qs.text) + "</b>" +
+              qs.options.map(function (o, oi) {
+                return '<label class="school-dir-chips-item" style="display:block;margin-top:6px"><label class="chip-sm" style="cursor:pointer">' +
+                  '<input type="radio" name="q' + esc(q.id) + "-" + qi + '" data-qopt="' + oi + '"> <span>' + esc(o.text) + "</span></label></label>";
+              }).join("") + "</div>";
+          }).join("");
+          return head +
+            '<div data-quiz-form>' + questions +
+            '<div class="row" style="gap:8px;margin-top:10px"><button class="btn btn--accent btn--sm" type="button" data-quiz-send>Проверить</button>' +
+            '<span class="form__note" data-quiz-note></span></div></div>' +
+            '<div data-quiz-result></div></div>';
+        }
+        var quizzesHtml = quizzes.length
+          ? '<div data-school-quizzes>' + quizzes.map(quizCard).join("") + "</div>"
+          : "";
         var programHtml = modules.length
           ? '<div class="panel" style="padding:20px;margin-bottom:14px"><div class="panel__head"><h3>Программа набора</h3>' +
             '<span class="panel__tag">материалы редакции</span></div>' +
@@ -7550,7 +7752,7 @@
           '<p class="form__note">Задания общие для набора, дедлайн один на всех. После разбора работу можно сдать снова.</p></div>' +
           (assignments.length ? cards : '<div class="fill-note fill-note--flat"><b>Заданий пока нет</b>' +
             "<p>Редакция скоро добавит первое задание набора — оно появится здесь.</p></div>") +
-          programHtml + groupsHtml;
+          quizzesHtml + programHtml + groupsHtml;
         $$("[data-course-send]", host).forEach(function (btn) {
           btn.addEventListener("click", function () {
             var id = btn.getAttribute("data-course-send");
@@ -7566,6 +7768,107 @@
             }, function (err) {
               btn.disabled = false;
               if (note) note.textContent = (err && err.message) || "Не отправилось.";
+            });
+          });
+        });
+
+        /* Пройти сданный тест заново: разворачиваем форму. */
+        $$("[data-quiz-show]", host).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var panel = btn.closest("[data-quiz]");
+            var quizId = panel.getAttribute("data-quiz");
+            var q = quizzes.filter(function (x) { return x.id === quizId; })[0];
+            if (!q) return;
+            var form = document.createElement("div");
+            form.setAttribute("data-quiz-form", "");
+            form.innerHTML = q.questions.map(function (qs, qi) {
+              return '<div class="pcard__section" data-qblock="' + qi + '" style="margin-top:8px"><b>' + (qi + 1) + ". " + esc(qs.text) + "</b>" +
+                qs.options.map(function (o, oi) {
+                  return '<label style="display:block;margin-top:6px"><label class="chip-sm" style="cursor:pointer">' +
+                    '<input type="radio" name="q' + esc(q.id) + "-" + qi + '" data-qopt="' + oi + '"> <span>' + esc(o.text) + "</span></label></label>";
+                }).join("") + "</div>";
+            }).join("") +
+              '<div class="row" style="gap:8px;margin-top:10px"><button class="btn btn--accent btn--sm" type="button" data-quiz-send>Проверить</button>' +
+              '<span class="form__note" data-quiz-note></span></div>';
+            var resultHost = panel.querySelector("[data-quiz-result]");
+            btn.remove();
+            if (resultHost) panel.insertBefore(form, resultHost);
+            else panel.appendChild(form);
+            form.querySelector("[data-quiz-send]").addEventListener("click", function (ev) {
+              var sendBtn = ev.currentTarget;
+              var note = form.querySelector("[data-quiz-note]");
+              var answers = [];
+              var answered = 0;
+              $$(".pcard__section[data-qblock]", form).forEach(function (block) {
+                var qi = Number(block.getAttribute("data-qblock"));
+                var picked = block.querySelector("[data-qopt]:checked");
+                answers.push({ questionId: q.questions[qi].id, optionIndex: picked ? Number(picked.getAttribute("data-qopt")) : -1 });
+                if (picked) answered++;
+              });
+              if (answered < q.questions.length) { if (note) note.textContent = "Ответьте на все вопросы."; return; }
+              sendBtn.disabled = true;
+              Store.schoolQuizSubmit(quizId, answers).then(function (resu) {
+                form.remove();
+                if (resultHost) resultHost.innerHTML = (resu.passed
+                  ? '<div class="fill-note fill-note--ok"><b>Зачёт — ' + resu.score + "%</b><p>Баллы за этот тест уже начислены.</p></div>"
+                  : '<div class="fill-note" style="border-color:rgba(214,78,58,.4);background:rgba(214,78,58,.06)"><b>Пока не зачёт — ' +
+                    resu.score + "% из " + resu.passScore + "%</b><p>Пересдать можно.</p></div>");
+              }, function (err) {
+                sendBtn.disabled = false;
+                if (note) note.textContent = (err && err.message) || "Не проверилось.";
+              });
+            });
+          });
+        });
+
+        /* Тест: проверка на сервере, моментальный результат с пояснениями. */
+        $$("[data-quiz-send]", host).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var panel = btn.closest("[data-quiz]");
+            var quizId = panel.getAttribute("data-quiz");
+            var q = quizzes.filter(function (x) { return x.id === quizId; })[0];
+            var note = panel.querySelector("[data-quiz-note]");
+            var answers = [];
+            var answered = 0;
+            $$(".pcard__section[data-qblock]", panel).forEach(function (block) {
+              var qi = Number(block.getAttribute("data-qblock"));
+              var picked = block.querySelector("[data-qopt]:checked");
+              answers.push({ questionId: q.questions[qi].id, optionIndex: picked ? Number(picked.getAttribute("data-qopt")) : -1 });
+              if (picked) answered++;
+            });
+            if (answered < q.questions.length) {
+              if (note) note.textContent = "Ответьте на все вопросы — пропущенных нет: тест проверяется целиком.";
+              return;
+            }
+            btn.disabled = true;
+            if (note) note.textContent = "Проверяем…";
+            Store.schoolQuizSubmit(quizId, answers).then(function (resu) {
+              var resultHost = panel.querySelector("[data-quiz-result]");
+              var form = panel.querySelector("[data-quiz-form]");
+              if (form) form.remove();
+              var head = resu.passed
+                ? '<div class="fill-note fill-note--ok"><b>Зачёт — ' + resu.score + "%</b>" +
+                  (resu.awarded ? "<p>Начислено " + resu.awarded + " б. Баллы за тест начисляются один раз.</p>" : "<p>Баллы за этот тест уже начислены ранее.</p>") + "</div>"
+                : '<div class="fill-note" style="border-color:rgba(214,78,58,.4);background:rgba(214,78,58,.06)"><b>Пока не зачёт — ' +
+                  resu.score + "% из необходимых " + resu.passScore + "%</b>" +
+                  "<p>Прочитайте пояснения и пересдайте — попытки не ограничены.</p></div>";
+              var rows = q.questions.map(function (qs, i) {
+                var d = (resu.detail || [])[i] || {};
+                return '<div class="diag__row"><span>' + esc(qs.text) + "</span><b class=\"" + (d.right ? "is-good" : "is-bad") +
+                  "\">" + (d.right ? "верно" : "правильный ответ: " +
+                    (qs.options[d.correctIndex] ? esc(qs.options[d.correctIndex].text) : "—")) +
+                  (d.explanation ? " · " + esc(d.explanation) : "") + "</b></div>";
+              }).join("");
+              if (resultHost) resultHost.innerHTML = head +
+                '<div class="diag" style="margin-top:10px">' + rows + "</div>" +
+                (resu.passed ? "" : '<div class="row" style="gap:8px;margin-top:10px"><button class="btn btn--accent btn--sm" type="button" data-quiz-retake>Пересдать</button></div>');
+              var retake = panel.querySelector("[data-quiz-retake]");
+              if (retake) retake.addEventListener("click", function () {
+                drawCourse(host, sec);
+              });
+            }, function (err) {
+              btn.disabled = false;
+              if (note) note.textContent = (err && err.message) || "Не проверилось.";
             });
           });
         });
@@ -7981,7 +8284,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -9029,7 +9332,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-5" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 

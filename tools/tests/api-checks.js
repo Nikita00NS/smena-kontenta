@@ -574,6 +574,63 @@ const results = [];
     r.ok ? r.entries.slice(0, 3) : r);
   r = await call("school-module-delete", { token: token3, id: moduleId });
   check("модуль удаляется", r.ok === true, r);
+  // 18в. ЭТАП 3: тест с автопроверкой, напоминание, дневник
+  r = await call("school-quiz-add", { token: token2b, cohortId: cohortId, title: "Тест", questions: [] });
+  check("тест добавляет только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-quiz-add", { token: token3, cohortId: cohortId, title: "Тест: факт-чекинг",
+    questions: [
+      { text: "Что делать с цифрой без источника?",
+        options: [{ text: "Проверить первоисточник", correct: true }, { text: "Опубликовать как есть", correct: false }],
+        explanation: "Цифра без источника не публикуется." },
+      { text: "Кого цитируем дословно?",
+        options: [{ text: "Только героя интервью", correct: false }, { text: "Героя и официальных лиц с проверкой", correct: true }],
+        explanation: "Дословная цитата — с согласия и проверкой." },
+    ] });
+  check("тест создаётся с вопросами и правильными ответами", r.ok === true && r.quiz && r.quiz.questions.length === 2, r);
+  const quizId = r.ok ? r.quiz.id : "";
+  r = await call("school-my-course", { token: token2b });
+  check("ученику виден тест набора", r.ok === true && (r.quizzes || []).some((x) => x.id === quizId), r);
+  r = await call("school-quiz-submit", { token: token2b, quizId: quizId,
+    answers: [{ questionId: r.ok ? r.quizzes[0].questions[0].id : "", optionIndex: 1 },
+              { questionId: r.ok ? r.quizzes[0].questions[1].id : "", optionIndex: 1 }] });
+  check("неверные ответы дают «не зачёт» с пояснением",
+    r.ok === true && r.passed === false && r.score === 50 &&
+    r.detail[0].correctIndex === 0 && r.detail[1].correctIndex === 1, r);
+  const firstQid = r.ok && r.detail ? r.detail[0].questionId : "";
+  const secondQid = r.ok && r.detail ? r.detail[1].questionId : "";
+  r = await call("school-my-course", { token: token2b });
+  check("попытка ученика видна в курсе",
+    r.ok === true && r.myQuiz && r.myQuiz[quizId] && r.myQuiz[quizId].score === 50, r && r.myQuiz);
+  r = await call("school-quiz-submit", { token: token2b, quizId: quizId,
+    answers: [{ questionId: firstQid, optionIndex: 1 }, { questionId: secondQid, optionIndex: 1 }] });
+  check("повторная попытка считается", r.ok === true && r.attempt === 2, r);
+  r = await call("school-quiz-submit", { token: token2b, quizId: quizId,
+    answers: [{ questionId: firstQid, optionIndex: 0 }, { questionId: secondQid, optionIndex: 1 }] });
+  check("зачёт с пересдачи начисляет баллы один раз",
+    r.ok === true && r.passed === true && r.score === 100 && r.awarded === 5, r);
+  r = await call("school-quiz-submit", { token: token2b, quizId: quizId,
+    answers: [{ questionId: firstQid, optionIndex: 0 }, { questionId: secondQid, optionIndex: 1 }] });
+  check("повторный зачёт не начисляет баллы второй раз",
+    r.ok === true && r.passed === true && r.awarded === 0, r);
+  r = await call("school-quiz-results", { token: token2b, cohortId: cohortId });
+  check("результаты тестов видит только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-quiz-results", { token: token3, cohortId: cohortId });
+  check("редакция видит попытки ученика", r.ok === true && r.results.length >= 3, r);
+  r = await call("school-diary", { token: token2b, cohortId: cohortId });
+  check("дневник закрыт участнику", r.ok === false && r.code === 403, r);
+  r = await call("school-diary", { token: token3, cohortId: cohortId });
+  check("дневник показывает сдачи, разборы и тесты",
+    r.ok === true && r.events.some((e) => e.kind === "submitted") &&
+    r.events.some((e) => e.kind === "accepted") && r.events.some((e) => /тест/.test(e.text || "")), r.ok ? r.events.slice(0, 5) : r);
+  r = await call("school-sub-remind", { token: token2b, subId: subId });
+  check("напоминание отправляет только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-sub-remind", { token: token3, subId: subId });
+  check("напоминание об ушедшей работе отправляется", r.ok === true && r.sent === true, r);
+  r = await call("mail-log", { token: token3 });
+  check("письмо-напоминание в журнале отправок",
+    r.ok === true && r.entries.some((e) => e.template === "school_homework_reminder"), r.ok ? r.entries.slice(0, 3) : r);
+  r = await call("school-quiz-delete", { token: token3, id: quizId });
+  check("тест удаляется", r.ok === true, r);
   r = await call("admin-log", { token: token3 });
   check("в журнале есть медиашкола", r.ok === true && r.entries.some((e) => /медиашкол/.test(e.action || "")), r);
 

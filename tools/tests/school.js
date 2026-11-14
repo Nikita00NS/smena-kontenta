@@ -124,10 +124,20 @@ const BASE = `
       schApp = { id: "sc_1", status: "accepted", direction: "Фотография", createdAt: "2026-11-10T00:00:00Z" };
       Store.consent = function () { return { status: "approved" }; };
       var courseSent = null;
+      var quizSubmitted = null;
       Store.schoolMyCourse = function () {
         return Promise.resolve({
           ok: true,
           cohort: { id: "sc_1", name: "Набор 001" },
+          quizzes: [{ id: "scq_1", cohortId: "sc_1", assignmentId: "as_1", title: "Тест: герой в кадре",
+            intro: "", passScore: 70, points: 5,
+            questions: [
+              { id: "sq0", text: "Кого показываем в кадре?", explanation: "Один герой — один смысл.",
+                options: [{ text: "Героя с действием", correct: true }, { text: "Пустую улицу", correct: false }] },
+              { id: "sq1", text: "Что с подписями?", explanation: "Имена проверяем у героя.",
+                options: [{ text: "Имя и фамилия героя", correct: true }, { text: "Ничего", correct: false }] },
+            ] }],
+          myQuiz: {},
           assignments: [{ id: "as_1", title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров об одном дворе и выберите три.", dueAt: new Date(Date.now() + 86400000).toISOString().slice(0, 10), order: 1 }],
           modules: [{ id: "scm_1", cohortId: "sc_1", assignmentId: "as_1", title: "Модуль 1: герой в кадре",
             checklist: "Три кадра с героем, подписи с именами, звук чистый",
@@ -143,6 +153,17 @@ const BASE = `
       Store.schoolSubSend = function (id, text, ai) {
         courseSent = { id: id, text: text, ai: ai };
         return Promise.resolve({ ok: true });
+      };
+      Store.schoolQuizSubmit = function (quizId, answers) {
+        quizSubmitted = { quizId: quizId, answers: answers };
+        var right = answers.filter(function (a) { return a.optionIndex === 0; }).length;
+        var score = Math.round(right * 100 / answers.length);
+        return Promise.resolve({ ok: true, score: score, passed: score >= 70, passScore: 70,
+          attempt: 1, awarded: score >= 70 ? 5 : 0,
+          detail: answers.map(function (a) {
+            return { questionId: a.questionId, correctIndex: 0, right: a.optionIndex === 0,
+              explanation: "Один герой — один смысл кадра." };
+          }) });
       };
     `);
     await new Promise((r) => setTimeout(r, 1500));
@@ -174,6 +195,22 @@ const BASE = `
     check("сдача работы ушла с полем про ИИ",
       !!w.courseSent && w.courseSent.id === "as_1" && w.courseSent.text.length > 40 && /ИИ помог с планом/.test(w.courseSent.ai),
       w.courseSent);
+    const quizPanel = host.querySelector('[data-quiz="scq_1"]');
+    check("тест в курсе виден с меткой баллов", !!quizPanel && /Тест: герой в кадре/.test(quizPanel.textContent) && /5 б\./.test(quizPanel.textContent));
+    const q0 = quizPanel.querySelector('.pcard__section[data-qblock="0"] input[data-qopt="1"]');
+
+    if (q0) q0.checked = true;
+    const q1a = quizPanel.querySelector('.pcard__section[data-qblock="1"] input[data-qopt="0"]');
+    if (q1a) q1a.checked = true;
+    quizPanel.querySelector("[data-quiz-send]").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    check("ответы ушли на автопроверку",
+      !!w.quizSubmitted && w.quizSubmitted.quizId === "scq_1" && w.quizSubmitted.answers.length === 2 &&
+      w.quizSubmitted.answers[0].optionIndex === 1, w.quizSubmitted);
+    check("результат: не зачёт с правильным ответом и пояснением",
+      /Пока не зачёт — 50%/.test(quizPanel.textContent) && /правильный ответ:/.test(quizPanel.textContent) &&
+      /Один герой — один смысл/.test(quizPanel.textContent) && !!quizPanel.querySelector("[data-quiz-retake]"),
+      quizPanel.textContent.slice(0, 200));
     dom.window.close();
   }
 
