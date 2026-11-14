@@ -46,8 +46,29 @@ function check(name, cond, extra) {
         data_writable: true, uploads_writable: true, mail_configured: true, rate_entries: 0,
       });
     };
-    Store.usersList = function () { return Promise.resolve({ users: [{ access: "Директор" }, { access: "Пользователь" }], roles: [] }); };
-    Store.apiPendingQueue = function () { return Promise.resolve([{ id: "p1" }, { id: "p2" }]); };
+    Store.usersList = function () {
+      return Promise.resolve({
+        users: [
+          { id: "u_1", name: "Марина Съёмкина", email: "marina@example.ru", access: "Директор", region: "moskva",
+            points: 41, emailVerified: true, consent: "approved", cardStatus: "issued", cardNumber: "СК-2026-001",
+            lastSeen: "2026-11-13T10:00:00Z", createdAt: "2026-10-01T00:00:00Z" },
+          { id: "u_2", name: "Антон Новичок", email: "anton@example.ru", access: "Пользователь", region: "",
+            points: 0, emailVerified: false, consent: "none", cardStatus: "none",
+            lastSeen: "", createdAt: "2026-11-12T00:00:00Z" },
+          { id: "u_3", name: "Пётр Пишет", email: "petr@example.ru", access: "Пользователь", region: "spb",
+            points: 12, emailVerified: true, consent: "none", cardStatus: "pending",
+            lastSeen: "2026-11-11T09:00:00Z", createdAt: "2026-11-05T00:00:00Z" },
+        ], roles: [] });
+    };
+    Store.apiPendingQueue = function () {
+      return Promise.resolve([
+        { id: "p1", title: "Двор на Лесной", authorName: "Марина Съёмкина", authorId: "u_1",
+          format: "Фотоистория", region: "moskva", date: "2026-11-13T10:00:00Z",
+          previousNote: "В третьем абзаце нет источника цифры", previousReviewedAt: "2026-11-10T10:00:00Z" },
+        { id: "p2", title: "Театр у вокзала", authorName: "Пётр Пишет", authorId: "u_3",
+          format: "Репортаж", region: "spb", date: "2026-11-14T09:00:00Z" },
+      ]);
+    };
     Store.portfolioQueue = function () { return Promise.resolve({ ok: true, items: [{ status: "pending" }] }); };
     Store.consentQueue = function () { return Promise.resolve({ ok: true, consents: [{ status: "pending" }, { status: "approved" }] }); };
     Store.adminLog = function () {
@@ -140,6 +161,30 @@ function check(name, cond, extra) {
   check("у журнала есть фильтры", doc.querySelectorAll("[data-audit-chip]").length === 6,
     doc.querySelectorAll("[data-audit-chip]").length);
   check("участников можно выгрузить в CSV", !!doc.querySelector("[data-panel=\"people\"] [data-people-csv]"));
+  const peoplePanel = doc.querySelector('[data-panel="people"]');
+  check("фильтры «Без согласия/Без карты/Почта не подтверждена» на месте",
+    !!peoplePanel.querySelector('[data-cat="noconsent"]') &&
+    !!peoplePanel.querySelector('[data-cat="nocard"]') &&
+    !!peoplePanel.querySelector('[data-cat="noverify"]'));
+  check("счётчики фильтров посчитаны",
+    /Без согласия · 2/.test(peoplePanel.querySelector('[data-cat="noconsent"]').textContent) &&
+    /Без карты · 2/.test(peoplePanel.querySelector('[data-cat="nocard"]').textContent) &&
+    /Почта не подтверждена · 1/.test(peoplePanel.querySelector('[data-cat="noverify"]').textContent));
+  check("в строках видны баллы и статусы карты/согласия",
+    /карта СК-2026-001/.test(peoplePanel.textContent) && /нет согласия/.test(peoplePanel.textContent) &&
+    /41 б\./.test(peoplePanel.textContent));
+  check("сортировка присутствует", !!peoplePanel.querySelector("[data-people-sort]"));
+  const sortSel = peoplePanel.querySelector("[data-people-sort]");
+  sortSel.value = "points";
+  sortSel.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  const firstName = peoplePanel.querySelector(".people__row .people__open b").textContent;
+  check("сортировка по баллам ставит Марину первой", firstName === "Марина Съёмкина", firstName);
+
+  const contentPanel = doc.querySelector('[data-panel="content"]');
+  check("очередь материалов отрисована", !!contentPanel && /Двор на Лесной/.test(contentPanel.textContent));
+  check("кнопка «Карточка автора» в материале", !!contentPanel.querySelector('[data-author-open="u_1"]'));
+  check("прошлый возврат автора виден редакции",
+    /Прошлый возврат/.test(contentPanel.textContent) && /нет источника цифры/.test(contentPanel.textContent));
 
   const teamTab = doc.querySelector('[data-admin-tab="team"]');
   check("вкладка «Сотрудники» на месте", !!teamTab);

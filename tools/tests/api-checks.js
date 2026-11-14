@@ -574,6 +574,35 @@ const results = [];
     r.ok ? r.entries.slice(0, 3) : r);
   r = await call("school-module-delete", { token: token3, id: moduleId });
   check("модуль удаляется", r.ok === true, r);
+  // 18б2. ОЧЕРЕДЬ МАТЕРИАЛОВ: автор и прошлый вердикт в карточке редакции
+  const confirmQ = await makeConfirm(token3);
+  /* материал от этап-автора: подаём сам — вернуть на правки, подать снова,
+     и у нового материала редакция должна увидеть прошлый вердикт и автора */
+  const qArticle = {
+    token: token2b, authorKey: "school-test-author", requestId: "q-submit-0001",
+    title: "Двор на Лесной: серия кадров",
+    excerpt: "Материал для проверки очереди публикаций.",
+    body: "Текст материала для проверки очереди. ".repeat(10),
+    topic: "Город", format: "Статья", region: "moskva",
+  };
+  r = await call("school-mine", { token: token2b });
+  r = await call("submit", qArticle);
+  check("материал для очереди подан", r.ok === true, r);
+  r = await call("queue", { token: token3 });
+  check("очередь отдаёт авторId редакции",
+    r.ok === true && r.pending.some((p) => typeof p.authorId === "string" && p.authorId !== ""), r.ok ? r.pending[0] : r);
+  const qPost = r.ok ? r.pending.filter((p) => p.authorId)[0] : null;
+  r = await call("review", { token: token3, confirm: confirmQ, id: qPost ? qPost.id : "",
+    decision: "reject", note: "В третьем абзаце нет источника цифры" });
+  check("материал возвращён с замечанием", r.ok === true, r);
+  r = await call("submit", Object.assign({}, qArticle, { requestId: "q-submit-0002",
+    title: "Двор на Лесной: серия кадров, вторая версия" }));
+  check("повторный материал подан", r.ok === true, r);
+  r = await call("queue", { token: token3 });
+  check("новый материал того же автора показывает прошлый вердикт и автора",
+    r.ok === true && r.pending.some((p) => /источника цифры/.test(p.previousNote || "") && p.authorId),
+    r.ok ? r.pending.map((p) => [p.title, p.previousNote || "-"]) : r);
+
   // 18в. ЭТАП 3: тест с автопроверкой, напоминание, дневник
   r = await call("school-quiz-add", { token: token2b, cohortId: cohortId, title: "Тест", questions: [] });
   check("тест добавляет только редакция школы", r.ok === false && r.code === 403, r);

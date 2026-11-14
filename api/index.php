@@ -1945,8 +1945,31 @@ if ($act === 'queue') {
     $posts = read_json($DATA_DIR . '/posts.json', array());
     $pending = array();
     $published = 0;
+    $lastReject = array();
     foreach ($posts as $post) {
-        if ($post['status'] === 'pending') $pending[] = array_merge(public_post($post), array('authorEmail' => ''));
+        if ($post['status'] === 'rejected' && !empty($post['authorId']) && !empty($post['reviewNote'])) {
+            $prevAt = isset($lastReject[(string) $post['authorId']]['at']) ? $lastReject[(string) $post['authorId']]['at'] : '';
+            $at = isset($post['reviewedAt']) ? (string) $post['reviewedAt'] : '';
+            if ($at >= $prevAt) {
+                $lastReject[(string) $post['authorId']] = array('at' => $at, 'note' => (string) $post['reviewNote']);
+            }
+        }
+    }
+    foreach ($posts as $post) {
+        if ($post['status'] === 'pending') {
+            /* внутренний идентификатор — только редакции: для кнопки «Карточка автора» */
+            $item = array_merge(public_post($post), array(
+                'authorEmail' => '',
+                'authorId' => isset($post['authorId']) ? (string) $post['authorId'] : '',
+            ));
+            /* если этот автор уже получал возврат по другому материалу — показать редакции */
+            $aid = isset($post['authorId']) ? (string) $post['authorId'] : '';
+            if ($aid !== '' && isset($lastReject[$aid])) {
+                $item['previousNote'] = $lastReject[$aid]['note'];
+                $item['previousReviewedAt'] = $lastReject[$aid]['at'];
+            }
+            $pending[] = $item;
+        }
         if ($post['status'] === 'published') $published++;
     }
     usort($pending, function ($a, $b) {
