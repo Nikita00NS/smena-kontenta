@@ -119,6 +119,14 @@ function check(name, cond, extra) {
   check("переход по вкладке работает", !doc.querySelector('[data-panel="cards"]').hidden);
   check("выбор запоминается", dom.window.localStorage.getItem("smena_admin_tab") === "cards");
 
+  /* Регротест «узкой колонки»: центрирующий отступ (100vw-1200px)/2 должен быть
+     только на .admin-layout. Если он попадает и в .admin-panel — отступы
+     складываются, контенту вкладок остаётся ~200px и текст режется посреди слова. */
+  const css = fs.readFileSync(path.join(ROOT, "assets/css/site.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const panelRule = css.match(/\.admin-panel\s*\{[^}]*\}/);
+  check("в .admin-panel нет второго центрирующего отступа 100vw",
+    !!panelRule && panelRule[0].indexOf("100vw") === -1);
+
   dom.window.close();
   errors.slice(0, 5).forEach((e) => console.log("ОШИБКА", e.slice(0, 300)));
   if (errors.length || bad) {
