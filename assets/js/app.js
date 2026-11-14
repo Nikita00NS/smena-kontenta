@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -2488,7 +2488,14 @@
           '<div class="admin-review__top"><b>' + esc(p.title) + "</b>" +
           '<span class="status status--pending">на проверке</span></div>' +
           '<div class="admin-review__meta">' + esc(p.authorName || "Автор") + " · " + esc(p.format || "") +
-          " · " + esc(regionName(p.region) || "регион не выбран") + " · " + esc(fmtDate(p.date)) + "</div>" +
+          " · " + esc(regionName(p.region) || "регион не выбран") + " · " + esc(fmtDate(p.date)) +
+          (p.authorId
+            ? ' · <button class="btn btn--ghost btn--sm" type="button" data-author-open="' + esc(p.authorId) +
+              '" style="padding:1px 8px;font-size:12px">Карточка автора</button>' : "") +
+          "</div>" +
+          (p.previousNote
+            ? '<p class="form__note">Прошлый возврат (' + esc(fmtDate(p.previousReviewedAt || "")) + "): " +
+              esc(p.previousNote) + "</p>" : "") +
           '<p class="admin-review__excerpt">' + esc(p.excerpt || "") + "</p>" +
           (body ? '<details class="admin-review__text"><summary>Читать материал</summary><div>' +
             body.split(/\n{2,}/).map(function (par) { return "<p>" + esc(par) + "</p>"; }).join("") +
@@ -2511,6 +2518,11 @@
             : '<div class="fill-note fill-note--flat"><b>Очередь пуста</b>' +
               "<p>Новые материалы появятся здесь сразу после отправки из редактора.</p></div>";
 
+          $$("[data-author-open]", listEl).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              document.dispatchEvent(new CustomEvent("smena-open-person", { detail: btn.getAttribute("data-author-open") }));
+            });
+          });
           $$("[data-approve], [data-reject]", listEl).forEach(function (btn) {
             btn.addEventListener("click", function () {
               var approve = btn.hasAttribute("data-approve");
@@ -2805,6 +2817,14 @@
         '<button class="people-cat" type="button" data-cat="team">Команда</button>' +
         '<button class="people-cat" type="button" data-cat="members">Участники</button>' +
         '<button class="people-cat" type="button" data-cat="requests">Заявки</button>' +
+        '<button class="people-cat" type="button" data-cat="noconsent">Без согласия</button>' +
+        '<button class="people-cat" type="button" data-cat="nocard">Без карты</button>' +
+        '<button class="people-cat" type="button" data-cat="noverify">Почта не подтверждена</button>' +
+        '<select data-people-sort aria-label="Сортировка" style="max-width:220px;margin-left:8px">' +
+        '<option value="new">Сначала новые</option>' +
+        '<option value="old">Сначала давние</option>' +
+        '<option value="points">По баллам</option>' +
+        '<option value="name">По имени</option></select>' +
         "</div>" +
         '<div data-people-list><p class="form__note">Загружаем участников…</p></div>' +
         '<div data-person-card></div>';
@@ -2816,9 +2836,13 @@
       var csvBtn = $("[data-people-csv]", host);
       if (csvBtn) csvBtn.addEventListener("click", function () {
         if (!all.length) return;
-        var head = "Имя;Почта;Роль;Доступ;Регион;Регистрация";
+        var head = "Имя;Почта;Роль;Доступ;Регион;Регистрация;Баллы;Пресс-карта;Согласие;Почта подтверждена";
         var lines = all.map(function (u) {
-          return [u.name, u.email, u.role || "", u.access || "Пользователь", u.region || "", u.createdAt || ""]
+          return [u.name, u.email, u.role || "", u.access || "Пользователь", u.region || "", u.createdAt || "",
+            Number(u.points) || 0,
+            u.cardStatus === "issued" ? (u.cardNumber || "") + (u.cardValidUntil ? " до " + u.cardValidUntil : "") : (u.cardStatus || "нет"),
+            (u.consent || "none") === "approved" ? "подписано" : u.consent || "нет",
+            u.emailVerified ? "да" : "нет"]
             .map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(";");
         });
         var blob = new Blob(["\uFEFF" + head + "\n" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -2835,6 +2859,20 @@
       var openedId = "";
       var needScroll = false;
       var cat = "all";
+      var sort = "new";
+      var sortEl = $("[data-people-sort]", host);
+      if (sortEl) sortEl.addEventListener("change", function () {
+        sort = sortEl.value;
+        draw();
+      });
+      /* Материалы открывают карточку автора прямо из очереди публикаций. */
+      document.addEventListener("smena-open-person", function (ev) {
+        var id = ev && ev.detail ? String(ev.detail) : "";
+        if (!id) return;
+        var tabBtn = document.querySelector('[data-admin-tab="people"]');
+        if (tabBtn) tabBtn.click();
+        setTimeout(function () { openCard(id); }, 60);
+      });
 
       function chip(access) {
         var cls = access === "Директор" ? "status--pub"
@@ -2852,9 +2890,18 @@
           if (cat === "team" && !isStaff(u)) return false;
           if (cat === "members" && isStaff(u)) return false;
           if (cat === "requests" && !(u.hasRequests || u.recoveryOpen)) return false;
+          if (cat === "noconsent" && (u.consent || "none") === "approved") return false;
+          if (cat === "nocard" && (u.cardStatus || "none") === "issued") return false;
+          if (cat === "noverify" && u.emailVerified) return false;
           if (!q) return true;
           return (u.name || "").toLowerCase().indexOf(q) !== -1 ||
             (u.email || "").toLowerCase().indexOf(q) !== -1;
+        });
+        list = list.slice().sort(function (a, b) {
+          if (sort === "points") return (Number(b.points) || 0) - (Number(a.points) || 0);
+          if (sort === "name") return String(a.name || "").localeCompare(String(b.name || ""), "ru");
+          if (sort === "old") return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+          return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
         });
 
         var counts = {
@@ -2862,12 +2909,16 @@
           team: all.filter(isStaff).length,
           members: all.filter(function (u) { return !isStaff(u); }).length,
           requests: all.filter(function (u) { return u.hasRequests || u.recoveryOpen; }).length,
+          noconsent: all.filter(function (u) { return (u.consent || "none") !== "approved"; }).length,
+          nocard: all.filter(function (u) { return (u.cardStatus || "none") !== "issued"; }).length,
+          noverify: all.filter(function (u) { return !u.emailVerified; }).length,
         };
         $$("[data-cat]", host).forEach(function (b) {
           var key = b.getAttribute("data-cat");
           b.classList.toggle("is-on", key === cat);
           var n = counts[key] || 0;
-          b.textContent = { all: "Все", team: "Команда", members: "Участники", requests: "Заявки" }[key] +
+          b.textContent = { all: "Все", team: "Команда", members: "Участники", requests: "Заявки",
+            noconsent: "Без согласия", nocard: "Без карты", noverify: "Почта не подтверждена" }[key] +
             " · " + n;
         });
 
@@ -2883,12 +2934,23 @@
           return;
         }
 
+        function rowBadges(u) {
+          var out = "";
+          if (u.emailVerified === false) out += '<span class="status status--draft">почта не подтверждена</span> ';
+          if ((u.consent || "none") !== "approved") out += '<span class="status status--draft">нет согласия</span> ';
+          if (u.cardStatus === "issued") out += '<span class="status status--pub">карта ' + esc(u.cardNumber || "") + "</span> ";
+          else if (u.cardStatus && u.cardStatus !== "none") out += '<span class="status status--pending">карта: ' +
+            esc(u.cardStatus === "pending" ? "заявка" : u.cardStatus === "expired" ? "истекла" : u.cardStatus) + "</span> ";
+          out += '<span class="form__note">' + (Number(u.points) || 0) + " б. · был " +
+            esc(u.lastSeen ? fmtDate(u.lastSeen) : "давно") + "</span>";
+          return out;
+        }
         listEl.innerHTML = '<div class="people">' + list.map(function (u) {
           return '<div class="people__row' + (u.id === openedId ? " is-open" : "") + '">' +
             '<button class="people__open" type="button" data-open="' + esc(u.id) + '">' +
             "<b>" + esc(u.name) + "</b><small>" + esc(u.email) + "</small></button>" +
             '<div class="people__meta">' + esc(regionName(u.region) || "регион не указан") + " · " +
-            chip(u.access) + "</div>" +
+            chip(u.access) + "<br>" + rowBadges(u) + "</div>" +
             '<button class="btn btn--ghost btn--sm" type="button" data-open="' + esc(u.id) + '">' +
             (u.id === openedId ? "Свернуть" : "Открыть") + "</button></div>";
         }).join("") + "</div>";
@@ -5756,7 +5818,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -6041,7 +6103,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6395,8 +6457,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -7196,7 +7258,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-7",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-8",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -7207,7 +7269,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-7",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-8",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -8364,7 +8426,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -9412,7 +9474,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-8" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 
