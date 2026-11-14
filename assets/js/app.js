@@ -617,10 +617,10 @@
     { href: "/news", label: "Материалы", key: "news" },
     { href: "/#map", label: "Регионы", key: "region" },
     { href: "/poisk", label: "Поиск смен", key: "poisk" },
-    { href: "/media-school", label: "Медиашкола", key: "school" },
+    { href: "/school", label: "Медиашкола", key: "school" },
     { href: "/about", label: "О проекте", key: "about" },
     { href: "/founders", label: "Основатели", key: "founders" },
-    { href: "/#press-card", label: "Пресс-карта", key: "press" },
+    { href: "/press-card", label: "Пресс-карта", key: "press" },
     { href: "/partners", label: "Партнёрам", key: "partners" },
   ];
 
@@ -790,7 +790,7 @@
       '<li><a href="/news">Все материалы</a></li>' +
       '<li><a href="/#map">Регионы</a></li>' +
       '<li><a href="/write">Опубликовать материал</a></li>' +
-      '<li><a href="/media-school">Медиашкола</a></li>' +
+      '<li><a href="/school">Медиашкола</a></li>' +
       "</ul></div>" +
       '<div class="footer-col"><h3>Проект</h3><ul>' +
       '<li><a href="/about">О проекте</a></li>' +
@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -1007,7 +1007,7 @@
       { title: "Все материалы", url: "/news", note: "Лента редакции", keys: "материалы лента новости публикации статьи" },
       { title: "Карта регионов", url: "/#map", note: "Главная страница", keys: "карта регионы регион география" },
       { title: "Смена контента в поиске", url: "/poisk", note: "Смены, конкурсы, гранты", keys: "поиск смены смена артек орлёнок океан сириус лагерь конкурс грант олимпиада школа стажировка возможности" },
-      { title: "Медиашкола", url: "/media-school", note: "Программа обучения", keys: "медиашкола школа обучение практика программа курсы" },
+      { title: "Медиашкола", url: "/school", note: "Программа обучения", keys: "медиашкола школа обучение практика программа курсы" },
       { title: "Документы и пресс-кит", url: "/docs", note: "Файлы проекта", keys: "документы пресс-кит pdf политика соглашение памятка редакция" },
       { title: "О проекте", url: "/about", note: "Миссия и принципы", keys: "о проекте миссия принципы план развитие идея" },
       { title: "Основатели", url: "/founders", note: "Кто делает проект", keys: "основатели основатель команда авторы проекта кто делает" },
@@ -2051,12 +2051,11 @@
       var panels = $("[data-admin-panels]", host);
       var TABS = [
         ["overview", "Обзор", hasCap("server.diag")],
-        ["people", "Люди", hasCap("people.view") || hasCap("people.edit") || hasCap("consents.review")],
-        ["hiring", "Приём на работу", hasCap("hiring.view")],
+        ["people", "Люди", hasCap("people.view") || hasCap("people.edit") || hasCap("consents.review") || hasCap("cards.view") || hasCap("cards.issue")],
+        ["team", "Сотрудники", hasCap("hiring.view")],
         ["school", "Медиашкола", hasCap("hiring.view")],
         ["content", "Материалы", hasCap("posts.review") || hasCap("portfolio.review")],
         ["editorials", "Редакции", hasCap("editorials.appoint")],
-        ["cards", "Карты", hasCap("cards.view") || hasCap("cards.issue")],
         ["support", "Поддержка и почта", hasCap("support.answer") || hasCap("mail.use") || hasCap("mail.manage")],
         ["site", "Сайт", hasCap("site.manage")],
         ["server", "Сервер", hasCap("server.diag")],
@@ -2090,20 +2089,19 @@
       }
       if (hasCap("server.diag")) safeMount("Обзор", panel("overview"), function () { mountOverview(panel("overview")); });
       if (hasCap("people.view")) safeMount("Люди", panel("people"), function () { mountPeople(panel("people")); });
+      if (hasCap("cards.view") || hasCap("cards.issue")) safeMount("Карты в людях", panel("people"), function () { mountCardQueue(panel("people")); });
       if (hasCap("people.edit")) safeMount("Чат команды", panel("people"), function () { mountTeamChat(panel("people")); });
       if (hasCap("consents.review")) safeMount("Согласия", panel("people"), function () { mountConsentQueue(panel("people")); });
       if (hasCap("people.edit")) safeMount("Задачи", panel("people"), function () { mountTasksAdmin(panel("people")); });
       if (hasCap("posts.review")) safeMount("Материалы", panel("content"), function () { mountContent(panel("content")); });
       if (hasCap("portfolio.review")) safeMount("Портфолио", panel("content"), function () { mountPortfolioQueue(panel("content")); });
       if (hasCap("editorials.appoint")) safeMount("Редакции", panel("editorials"), function () { mountEditorialQueue(panel("editorials")); });
-      if (hasCap("cards.view") || hasCap("cards.issue")) safeMount("Карты", panel("cards"), function () { mountCardQueue(panel("cards")); });
       if (hasCap("support.answer")) safeMount("Поддержка", panel("support"), function () { mountSupportQueue(panel("support")); });
       if (hasCap("mail.use")) safeMount("Почта", panel("support"), function () { mountMailClient(panel("support")); });
       if (hasCap("mail.manage")) safeMount("Настройки почты", panel("support"), function () { mountMailSettings(panel("support")); });
-      if (hasCap("hiring.view")) safeMount("Приём на работу", panel("hiring"), function () { mountHiringAdmin(panel("hiring")); });
+      if (hasCap("hiring.view")) safeMount("Сотрудники", panel("team"), function () { mountHiringAdmin(panel("team")); });
       if (hasCap("hiring.view")) safeMount("Медиашкола", panel("school"), function () { mountSchoolAdmin(panel("school")); });
       if (hasCap("site.manage")) safeMount("Сайт", panel("site"), function () { mountSite(panel("site")); });
-      if (hasCap("site.manage")) safeMount("Показ авторов", panel("site"), function () { mountAuthorsShow(panel("site")); });
       if (hasCap("server.diag")) safeMount("Сервер", panel("server"), function () { mountDiag(panel("server")); });
 
       try { buildAdminTabs(host, TABS); } catch (e) {
@@ -2318,7 +2316,7 @@
               tile("content", "материалов", d.posts || 0, "на сайте") +
               tile("cards", "заявок на карту", d.cards_pending || 0, "ждут решения") +
               tile("support", "обращений", d.support_open || 0, "открыты") +
-              tile("hiring", "заявок на работу", d.hiring_open || 0, "ждут решения") +
+              tile("team", "заявок на работу", d.hiring_open || 0, "ждут решения") +
               tile("school", "заявок в школу", d.school_open || 0, "ждут решения");
 
             var rows = [];
@@ -2353,7 +2351,7 @@
             }
             if (hasCap("hiring.view")) {
               badges.hiring = d.hiring_open || 0;
-              rows.push(queueRow("hiring", "mail", "Заявки на работу", d.hiring_open || 0, "приём в команду"));
+              rows.push(queueRow("team", "mail", "Заявки на работу", d.hiring_open || 0, "сотрудники"));
             }
             if (hasCap("hiring.view")) {
               badges.school = d.school_open || 0;
@@ -2573,8 +2571,38 @@
         'placeholder="Например: набор авторов открыт до 1 декабря"></div>' +
         '<div class="row" style="gap:10px;flex-wrap:wrap">' +
         '<button class="btn btn--accent btn--sm" type="button" data-site-save>Сохранить</button>' +
-        '<span class="form__note" data-site-status></span></div></div>';
+        '<span class="form__note" data-site-status></span></div>' +
+        '<div class="diag" data-site-diag style="margin-top:16px"></div>' +
+        '<div class="audit" style="margin-top:20px"><span class="kicker">Журнал изменений сайта</span>' +
+        '<div class="diag" data-site-journal style="margin-top:8px"><p class="form__note">Загружаем…</p></div></div></div>';
       host.appendChild(section);
+
+      var siteDiag = $("[data-site-diag]", section);
+      if (siteDiag) {
+        var rowS = function (label, value) {
+          return '<div class="diag__row"><span>' + esc(label) + "</span><b>" + esc(String(value)) + "</b></div>";
+        };
+        siteDiag.innerHTML =
+          rowS("Сборка интерфейса", (SC && SC.build) || "—") +
+          rowS("Адрес сайта", location.host) +
+          rowS("Публичные разделы", "Главная, Материалы, Регионы, Поиск смен, Медиашкола, Пресс-карта, О проекте, Основатели, Документы, Партнёрам, Поддержка");
+      }
+      var journalEl = $("[data-site-journal]", section);
+      if (journalEl && Store.adminLog) {
+        Store.adminLog().then(function (res) {
+          var rows = ((res && res.log) || []).filter(function (e) {
+            return /site|объявлен|режим|настройк|sitemap/i.test(e.action || "");
+          }).slice(0, 30);
+          journalEl.innerHTML = rows.length
+            ? rows.map(function (e) {
+              return '<div class="diag__row"><span>' + esc(fmtDate(e.at)) + " · " + esc(e.by || "") +
+                "</span><b>" + esc(e.action || "") + (e.target ? ": " + e.target : "") + "</b></div>";
+            }).join("")
+            : '<p class="form__note">Изменений сайта в журнале пока нет.</p>';
+        }, function () {
+          journalEl.innerHTML = '<p class="form__note">Журнал недоступен.</p>';
+        });
+      }
 
       var maint = $("[data-site-maint]", section);
       var noticeOn = $("[data-site-notice-on]", section);
@@ -2717,7 +2745,7 @@
 
     /* Вкладки: каждая показывает ровно одну панель и поднимает страницу к её началу. */
     var TAB_ICONS = {
-      overview: "chart", people: "users", hiring: "mail", school: "school", content: "doc",
+      overview: "chart", people: "users", team: "mail", school: "school", content: "doc",
       editorials: "map", cards: "card", support: "inbox", site: "settings", server: "shield",
     };
 
@@ -2764,8 +2792,11 @@
 
       var saved = "";
       try { saved = window.localStorage.getItem("smena_admin_tab") || ""; } catch (e) {}
-      /* «Почта» раньше была отдельной вкладкой — теперь живёт внутри поддержки */
+      /* «Почта» теперь внутри поддержки; «Приём на работу» стал «Сотрудниками»,
+         «Карты» переехали в «Люди» — старые сохранённые вкладки мапим на новые. */
       if (saved === "mail") saved = "support";
+      if (saved === "hiring") saved = "team";
+      if (saved === "cards") saved = "people";
       var exists = TABS.some(function (t) { return t[0] === saved; });
       show(exists ? saved : TABS[0][0]);
     }
@@ -2976,11 +3007,22 @@
       }
 
       function openCard(id) {
-        cardEl.innerHTML = '<p class="form__note" style="margin-top:16px">Открываем карточку…</p>';
+        openedId = id;
+        /* Карточка открывается как отдельная страница участника: список, поиск
+           и категории скрываются, наверху кнопка «К списку». */
+        host.setAttribute("data-person-open", "1");
+        cardEl.innerHTML = '<p class="form__note" style="margin-top:16px">Открываем страницу участника…</p>';
         Store.userCard(id).then(renderCard, function (err) {
           cardEl.innerHTML = '<p class="form__note is-error" style="margin-top:16px">' +
             esc((err && err.message) || "Карточка не открылась.") + "</p>";
         });
+      }
+
+      function closeCard() {
+        openedId = "";
+        host.removeAttribute("data-person-open");
+        cardEl.innerHTML = "";
+        draw();
       }
 
       function appsList(d) {
@@ -3054,10 +3096,11 @@
 
         cardEl.innerHTML =
           '<div class="pcard">' +
-          '<div class="pcard__head"><div><h3>' + esc(u.name) + "</h3>" +
+          '<div class="pcard__head"><div><button class="btn btn--ghost btn--sm" type="button" data-close-card ' +
+          'style="margin-bottom:10px">← К списку участников</button><h3>' + esc(u.name) + "</h3>" +
           '<p class="pcard__sub">' + esc(u.email) + " · " + esc(regionName(u.region) || "регион не указан") +
           " · с " + esc(fmtDate(u.createdAt)) + "</p></div>" +
-          '<div class="pcard__badges"><button class="btn btn--ghost btn--sm" type="button" data-close-card>Свернуть</button>' +
+          '<div class="pcard__badges">' + chip(u.access) +
           chip(u.access) +
           (u.emailVerified ? '<span class="status status--pub">почта подтверждена</span>'
             : '<span class="status status--draft">почта не подтверждена</span>') + "</div></div>" +
@@ -3113,8 +3156,13 @@
             : '<p class="form__note">Материалов нет.</p>') + "</div>" +
 
           '<div class="pcard__section"><span class="kicker">Написать участнику</span>' +
-          '<div class="pcard__compose"><textarea rows="2" data-msg-text ' +
-          'placeholder="Уйдёт письмом и появится в кабинете участника"></textarea>' +
+          '<p class="form__note">Письмо уходит с официального адреса редакции и сохраняется в кабинете участника. Выберите шаблон — текст встанет в поле, поправьте и отправьте.</p>' +
+          '<div class="pcard__compose"><div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+          '<select data-msg-tpl aria-label="Шаблон письма" style="max-width:320px">' +
+          '<option value="">— выбрать шаблон —</option></select>' +
+          "</div>" +
+          '<textarea rows="4" data-msg-text ' +
+          'placeholder="Текст письма. Уйдёт письмом и появится в кабинете участника"></textarea>' +
           '<button class="btn btn--sm" type="button" data-msg-send>Отправить</button></div>' +
           '<p class="form__note" data-msg-note></p>' +
           ((d.messages || []).length
@@ -3122,7 +3170,23 @@
               return '<div class="pcard__line"><span>' + esc(m.text) + "</span><small>" +
                 esc(m.from || "редакция") + " · " + esc(fmtDate(m.createdAt)) + "</small><span></span></div>";
             }).join("") + "</div>"
-            : "") + "</div></div>";
+            : "") + "</div>" +
+
+          '<div class="pcard__section"><span class="kicker">Баллы</span>' +
+          '<p class="form__note">Баланс участника: <b data-points-balance>' + esc(String(d.points || 0)) +
+          "</b>. Начислите за работу или спишите с основанием — история сохранится.</p>" +
+          '<div class="pcard__compose"><div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+          '<input type="number" data-points-delta style="max-width:110px" placeholder="+10" aria-label="Сколько баллов">' +
+          '<select data-points-reason style="max-width:260px" aria-label="Основание">' +
+          '<option value="manual">Решение редакции</option>' +
+          '<option value="contest">Конкурс проекта</option>' +
+          '<option value="school">Медиашкола</option>' +
+          '<option value="correction">Исправление / штраф</option>' +
+          "</select>" +
+          '<input type="text" data-points-comment style="max-width:280px" placeholder="Комментарий (виден в истории)">' +
+          '<button class="btn btn--sm" type="button" data-points-apply>Применить</button></div>' +
+          '<p class="form__note" data-points-note></p></div>' +
+          "</div></div>";
 
         if (needScroll) {
           needScroll = false;
@@ -3223,6 +3287,59 @@
           });
         });
 
+        var tplSel = $("[data-msg-tpl]", cardEl);
+        if (tplSel && Store.mailTemplates) {
+          Store.mailTemplates().then(function (res) {
+            (res.templates || []).forEach(function (t) {
+              var o = document.createElement("option");
+              o.value = t.key;
+              o.textContent = t.name;
+              tplSel.appendChild(o);
+            });
+          }, function () {});
+          tplSel.addEventListener("change", function () {
+            if (!tplSel.value) return;
+            var field = $("[data-msg-text]", cardEl);
+            var note = $("[data-msg-note]", cardEl);
+            if (note) note.textContent = "Вставляем шаблон…";
+            Store.mailTemplatePreview(tplSel.value).then(function (pv) {
+              if (field) field.value = (pv.subject ? pv.subject + "\n\n" : "") + (pv.text || "");
+              if (note) note.textContent = "Шаблон вставлен — отредактируйте текст под человека и отправьте.";
+            }, function (err) {
+              if (note) note.textContent = (err && err.message) || "Шаблон не открылся.";
+            });
+          });
+        }
+
+        var pointsBtn = $("[data-points-apply]", cardEl);
+        if (pointsBtn && Store.pointsAdd) {
+          pointsBtn.addEventListener("click", function () {
+            var deltaEl = $("[data-points-delta]", cardEl);
+            var reasonEl = $("[data-points-reason]", cardEl);
+            var commentEl = $("[data-points-comment]", cardEl);
+            var note = $("[data-points-note]", cardEl);
+            var delta = Math.round(Number((deltaEl && deltaEl.value) || 0));
+            if (!delta) { if (note) note.textContent = "Укажите сколько баллов: +10 или −5."; return; }
+            if (Math.abs(delta) > 100) { if (note) note.textContent = "За раз — не больше 100 баллов."; return; }
+            pointsBtn.disabled = true;
+            if (note) note.textContent = "Сохраняем…";
+            Store.pointsAdd(u.id, delta, reasonEl ? reasonEl.value : "manual",
+              (commentEl && commentEl.value || "").trim()).then(function (res) {
+              pointsBtn.disabled = false;
+              var bal = $("[data-points-balance]", cardEl);
+              if (bal) bal.textContent = String(res.balance || 0);
+              if (note) note.textContent = res.skipped
+                ? "Сервер пропустил операцию — см. историю баллов."
+                : (delta > 0 ? "Начислено " : "Списано ") + Math.abs(delta) + " б. Новый баланс: " + (res.balance || 0) + ".";
+              if (deltaEl) deltaEl.value = "";
+              openCard(u.id);
+            }, function (err) {
+              pointsBtn.disabled = false;
+              if (note) note.textContent = (err && err.message) || "Баллы не применились.";
+            });
+          });
+        }
+
         var sendBtn = $("[data-msg-send]", cardEl);
         if (sendBtn) {
           sendBtn.addEventListener("click", function () {
@@ -3246,12 +3363,8 @@
           });
         }
 
-        var closeCard = $("[data-close-card]", cardEl);
-        if (closeCard) closeCard.addEventListener("click", function () {
-          openedId = "";
-          cardEl.innerHTML = "";
-          draw();
-        });
+        var closeBtn = $("[data-close-card]", cardEl);
+        if (closeBtn) closeBtn.addEventListener("click", closeCard);
 
         function after() { openCard(u.id); }
         var confirmSlot = $('[data-confirm-slot]', cardEl);
@@ -3368,8 +3481,11 @@
         "можно ли писать файлы, настроена ли почта.</p></div></div>" +
         '<div class="panel" style="padding:20px"><div class="diag" data-diag-list>' +
         '<p class="form__note">Проверяем…</p></div>' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-diag-refresh ' +
-        'style="margin-top:12px">Проверить снова</button>' +
+        '<div class="diag" style="margin-top:6px"><div class="diag__row" data-diag-accounts><span>Аккаунтов на сервере</span><b>…</b></div></div>' +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:12px">' +
+        '<button class="btn btn--ghost btn--sm" type="button" data-diag-refresh>Проверить снова</button>' +
+        '<label class="switch" style="margin:0"><input type="checkbox" data-diag-auto>' +
+        "<span><b>Обновлять каждые 30 секунд</b></span></label></div>" +
         '<div class="audit" style="margin-top:22px"><span class="kicker">Журнал действий</span>' +
         '<p class="form__note">Кто и когда менял роли, карты, почту и состояние сайта. ' +
         "Последние 120 записей.</p>" +
@@ -3383,6 +3499,13 @@
           (good === false ? "is-bad" : good === true ? "is-good" : "") + '">' + esc(String(value)) + "</b></div>";
       }
 
+      var autoTimer = null;
+      var autoEl = $("[data-diag-auto]", section);
+      if (autoEl) autoEl.addEventListener("change", function () {
+        if (autoEl.checked) autoTimer = window.setInterval(load, 30000);
+        else window.clearInterval(autoTimer);
+      });
+
       function load() {
         listEl.innerHTML = '<p class="form__note">Проверяем…</p>';
         Store.diag().then(function (d) {
@@ -3393,6 +3516,7 @@
           listEl.innerHTML =
             row("PHP", d.php) +
             row("Подтверждение действий", "код на почту") +
+            row("Сборка интерфейса", (SC && SC.build) || "—") +
             row("Материалов", d.posts) +
             row("Запись данных", d.data_writable ? "разрешена" : "запрещена", !!d.data_writable) +
             row("Загрузка медиа", d.uploads_writable ? "разрешена" : "запрещена", !!d.uploads_writable) +
@@ -3400,6 +3524,12 @@
             row("Попыток входа за час", d.rate_entries) +
             row("Время сервера", fmtDate(d.server_time));
         });
+        if (Store.whoami) {
+          Store.whoami().then(function (info) {
+            var el = $("[data-diag-accounts]", section);
+            if (el) el.outerHTML = row("Аккаунтов на сервере", (info && info.accounts) || 0);
+          }, function () {});
+        }
       }
 
       var auditEl = $("[data-audit-list]", section);
@@ -4059,12 +4189,66 @@
       section.setAttribute("data-hiring-admin", "");
       section.innerHTML =
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Команда</span>' +
-        "<h2>Приём на работу</h2>" +
-        '<p class="sec-head__text">Заявка → тест знаний → чек-лист документов → согласование. ' +
-        "Роль «Сотрудник» выдаёт сервер и только после всех этапов.</p></div></div>" +
+        "<h2>Сотрудники</h2>" +
+        '<p class="sec-head__text">Приглашения будущим сотрудникам, заявки с резюме и решениями. ' +
+        "Заявка → тест знаний → чек-лист документов → согласование. Роль «Сотрудник» выдаёт сервер " +
+        "и только после всех этапов.</p></div></div>" +
+        '<div class="panel" style="padding:20px;margin-bottom:22px">' +
+        '<div class="pcard__section" style="margin:0 0 6px"><span class="kicker">Пригласить сотрудников</span>' +
+        '<p class="form__note">Впишите адреса — по одному в строке. Каждому уйдёт письмо с официальной почты ' +
+        "редакции: откройте «Поддержка и почта», чтобы ответить человеку, когда он напишет.</p>" +
+        '<div class="pcard__compose">' +
+        '<textarea rows="3" data-invite-emails placeholder="anna@example.ru&#10;mark.petrov@mail.ru"></textarea>' +
+        '<textarea rows="5" data-invite-text style="margin-top:8px"></textarea>' +
+        '<div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="btn btn--accent btn--sm" type="button" data-invite-send>Разослать приглашения</button>' +
+        '<span class="form__note" data-invite-note></span></div></div></div></div>' +
         '<div class="panel" style="padding:20px"><div data-hiring-banner class="fill-note fill-note--flat">' +
         "Загружаем заявки…</div><div data-hiring-list></div></div>";
       host.appendChild(section);
+
+      var inviteTextEl = $("[data-invite-text]", section);
+      if (inviteTextEl) {
+        var DEFAULT_INVITE = "Здравствуйте!\n\nМы — редакция молодёжного медиа «Смена контента». " +
+          "Ищем сотрудников в команду: авторов, редакторов, наставников и тех, кто помогает " +
+          "проекту жить. Если вам близко то, что мы делаем, — напишите нам в ответ на это письмо: " +
+          "расскажите о себе, что умеете и почему хотите работать с нами. Пришлите пару работ " +
+          "или видеовизитку — посмотрим и обязательно ответим.\n\nСмена контента";
+        inviteTextEl.value = DEFAULT_INVITE;
+      }
+      var inviteBtn = $("[data-invite-send]", section);
+      if (inviteBtn && Store.mailSend) {
+        inviteBtn.addEventListener("click", function () {
+          var emailsEl = $("[data-invite-emails]", section);
+          var note = $("[data-invite-note]", section);
+          var text = (inviteTextEl && inviteTextEl.value || "").trim();
+          var raw = (emailsEl && emailsEl.value || "").split(/[\s,;]+/).filter(Boolean);
+          var emails = [];
+          raw.forEach(function (e) {
+            e = e.toLowerCase();
+            if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && emails.indexOf(e) === -1) emails.push(e);
+          });
+          if (!emails.length) { if (note) note.textContent = "Впишите хотя бы один корректный адрес."; return; }
+          if (emails.length > 40) { if (note) note.textContent = "За раз — не больше 40 адресов."; return; }
+          if (text.length < 30) { if (note) note.textContent = "Текст приглашения слишком короткий."; return; }
+          inviteBtn.disabled = true;
+          if (note) note.textContent = "Отправляем: " + emails.length + " …";
+          var done = 0, failed = [];
+          emails.forEach(function (to) {
+            Store.mailSend({ key: "editorial", to: to, subject: "Приглашение в команду «Смены контента»",
+              text: text, confirm: true })
+              .then(function () { done++; check(); }, function () { failed.push(to); check(); });
+          });
+          function check() {
+            if (done + failed.length < emails.length) return;
+            inviteBtn.disabled = false;
+            if (note) note.textContent = failed.length
+              ? "Отправлено " + done + ", не ушло: " + failed.join(", ") + ". Проверьте ящик в «Поддержке и почте»."
+              : "Все приглашения отправлены (" + done + ").";
+            if (emailsEl && !failed.length) emailsEl.value = "";
+          }
+        });
+      }
       var banner = $("[data-hiring-banner]", section);
       var listEl = $("[data-hiring-list]", section);
 
@@ -4836,7 +5020,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -5074,7 +5258,7 @@
       var oppList = opp.length ? opp : fallback;
       oppHost.innerHTML = oppList.length
         ? oppList.map(function (a) { return card(a); }).join("")
-        : '<a class="fill-card" href="/media-school"><span class="kicker">Медиашкола</span>' +
+        : '<a class="fill-card" href="/school"><span class="kicker">Медиашкола</span>' +
           '<b>Учиться делать материалы</b><p>Практика, разборы и наставники: от первой заметки ' +
           'до собственного проекта.</p><span class="fill-card__go">Перейти →</span></a>' +
           '<a class="fill-card" href="/docs"><span class="kicker">Пресс-карта</span>' +
@@ -5177,7 +5361,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -5531,8 +5715,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -6332,7 +6516,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-2",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-3",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -6343,7 +6527,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-2",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-3",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -6808,7 +6992,7 @@
         "<p>" + dir + "Подана " + schDate(app.createdAt) + ". Редакция читает заявки по мере поступления: " +
         "статус сменится здесь же, письмо придёт на почту аккаунта.</p>" +
         '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
-        '<a class="btn btn--ghost btn--sm" href="/media-school">Программа школы</a>' +
+        '<a class="btn btn--ghost btn--sm" href="/school">Программа школы</a>' +
         '<a class="btn btn--ghost btn--sm" href="#ucheba">Посмотреть первые задания</a></div></div>';
     }
 
@@ -7091,7 +7275,6 @@
         ["card", "Пресс-карта", ICONS.card],
         ["progress", "Баллы и портфолио", ICONS.star],
         ["team", "Редакция и задачи", ICONS.users],
-        ["mail", "Почта", ICONS.mail],
         ["settings", "Профиль и безопасность", ICONS.settings],
       ];
 
@@ -7223,7 +7406,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -7245,15 +7428,13 @@
         '<div class="cab-head"><span class="kicker">Команда</span><h2>Редакция, вакансии и задачи</h2>' +
         "<p>Своя редакция, заявления в штат и поручения от редакции проекта.</p></div>" +
         '<div data-my-editorial></div>' +
+        '<div class="cab-head" style="margin-top:22px"><span class="kicker">Письма редакции</span>' +
+        "<h2>Что вам написали</h2>" +
+        "<p>Сообщения администрации приходят сюда и на вашу почту.</p></div>" +
+        '<div data-inbox></div>' +
         '<div data-hiring-cabinet style="margin-top:18px"></div>' +
         '<div data-tasks-cabinet style="margin-top:18px"></div>' +
         "</section>" +
-
-        /* ---- Почта ------------------------------------------------------ */
-        '<section class="cab-panel" data-cab-panel="mail" role="tabpanel" aria-label="Почта" hidden>' +
-        '<div class="cab-head"><span class="kicker">Почта</span><h2>Письма проекта</h2>' +
-        "<p>Входящие письма ящика, к которому у вас есть доступ.</p></div>" +
-        '<div data-inbox></div></section>' +
 
         /* ---- Профиль и безопасность ------------------------------------- */
         '<section class="cab-panel" data-cab-panel="settings" role="tabpanel" aria-label="Профиль и безопасность" hidden>' +
@@ -8273,7 +8454,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-2" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 

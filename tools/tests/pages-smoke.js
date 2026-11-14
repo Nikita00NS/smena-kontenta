@@ -13,7 +13,7 @@ const ARTIFACT = /Not implemented/i;
 /* Страницы со своим каркасом: у них нет шапки и подвала сайта — это норма. */
 const standalone = ["poisk/index.html"];
 
-const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html", "poisk/index.html", "docs/index.html", "media-school/index.html", "school/index.html", "about/index.html", "partners/index.html", "founders/index.html", "verify/index.html"];
+const pages = ["index.html", "profile/index.html", "admin/index.html", "join/index.html", "news/index.html", "poisk/index.html", "docs/index.html", "media-school/index.html", "school/index.html", "press-card/index.html", "about/index.html", "partners/index.html", "founders/index.html", "verify/index.html"];
 
 /* каждая страница с папкой обязана иметь короткий адрес в .htaccess — иначе 403 */
 const htaccess = fs.readFileSync(path.join(ROOT, ".htaccess"), "utf8");
@@ -68,7 +68,14 @@ function inline(html) {
     await new Promise((r) => setTimeout(r, 1200));
     const doc = dom.window.document;
     const main = doc.getElementById("main") || doc.body;
-    const status = errors.length ? "ОШИБКИ" : "ok";
+    if (rel === "media-school/index.html") {
+    const raw = fs.readFileSync(file, "utf8");
+    const redirects = raw.includes('location.replace("/school"');
+    console.log((redirects ? "ok " : "FAIL ") + rel + (redirects ? " | переадресация на /school" : " | нет переадресации на /school"));
+    if (!redirects) bad++;
+    continue;
+  }
+  const status = errors.length ? "ОШИБКИ" : "ok";
     if (errors.length) bad++;
     const own = standalone.indexOf(rel) !== -1;
     console.log(status, rel, "| шапка:", own ? "свой каркас" : !!doc.querySelector(".site-header"),

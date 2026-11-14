@@ -89,7 +89,7 @@ function check(name, cond, extra) {
 
   check("боковая навигация с иконками", !!doc.querySelector(".admin-layout .admin-tabs"));
   const tabs = Array.from(doc.querySelectorAll("[data-admin-tab]"));
-  check("десять разделов", tabs.length === 10, tabs.length);
+  check("девять разделов (Карты ушли в Людей)", tabs.length === 9, tabs.length);
   check("у разделов есть иконки", tabs.every((t) => t.querySelector("svg")));
   check("у разделов есть бейджи", tabs.every((t) => t.querySelector("[data-admin-badge]")));
 
@@ -104,9 +104,9 @@ function check(name, cond, extra) {
   check("очередь школы показывает 4", rows.some((r) => /Заявки в медиашколу/.test(r.textContent) && /4/.test(r.querySelector(".pulse-row__count").textContent)));
   check("бейдж на «Медиашколе» равен 4",
     (doc.querySelector('[data-admin-badge="school"]') || {}).textContent === "4");
-  check("бейдж на «Картах» равен 3",
-    (doc.querySelector('[data-admin-badge="cards"]') || {}).textContent === "3",
-    (doc.querySelector('[data-admin-badge="cards"]') || {}).textContent);
+  check("вкладки «Карты» больше нет, карты внутри «Людей»",
+    !doc.querySelector('[data-admin-tab="cards"]') &&
+    !!doc.querySelector('[data-panel="people"] [data-card-queue], [data-panel="people"]'));
   check("бейдж на «Поддержке» равен 5",
     (doc.querySelector('[data-admin-badge="support"]') || {}).textContent === "5");
   check("последние действия из журнала", /cards.issue/.test((doc.querySelector("[data-pulse-audit]") || {}).textContent || ""));
@@ -114,10 +114,12 @@ function check(name, cond, extra) {
     doc.querySelectorAll("[data-audit-chip]").length);
   check("участников можно выгрузить в CSV", !!doc.querySelector("[data-panel=\"people\"] [data-people-csv]"));
 
-  const cardsTab = doc.querySelector('[data-admin-tab="cards"]');
-  cardsTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
-  check("переход по вкладке работает", !doc.querySelector('[data-panel="cards"]').hidden);
-  check("выбор запоминается", dom.window.localStorage.getItem("smena_admin_tab") === "cards");
+  const teamTab = doc.querySelector('[data-admin-tab="team"]');
+  check("вкладка «Сотрудники» на месте", !!teamTab);
+  teamTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  check("переход во «Сотрудники» работает", !doc.querySelector('[data-panel="team"]').hidden);
+  check("выбор запоминается", dom.window.localStorage.getItem("smena_admin_tab") === "team");
+  check("приглашения сотрудников в разделе", !!doc.querySelector('[data-panel="team"] [data-invite-send]'));
 
   /* Регротест «узкой колонки»: при box-sizing:border-box связка
      max-width + паддинг (100vw-1200)/2 схлопывает контентную область до

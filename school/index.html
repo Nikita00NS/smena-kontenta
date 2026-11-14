@@ -27,34 +27,35 @@
   <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
   <link rel="manifest" href="/site.webmanifest">
   <link rel="preload" href="/assets/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-14-2">
-  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-14-2">
+  <link rel="stylesheet" href="/assets/css/site.css?v=2026-11-14-3">
+  <link rel="stylesheet" href="/assets/css/light.css?v=2026-11-14-3">
 </head>
 <body data-page="school-hub">
   <div data-header></div>
 
   <main id="main">
-    <section class="page-hero">
-      <div class="wrap page-hero__grid">
-        <div>
-          <span class="kicker">Медиашкола</span>
-          <h1>Заявка, статус<br>и первые задания</h1>
-          <p class="lead">Отдельная страница ученика «Смены контента»: здесь вы подаёте заявку
-          в медиашколу, следите за её статусом и начинаете учиться — без ожидания писем
-          и без лишних вкладок.</p>
-          <div class="row" style="gap:10px;flex-wrap:wrap">
-            <a class="btn btn--accent" href="#apply">Подать заявку</a>
-            <a class="btn btn--ghost" href="#ucheba">Начать учиться</a>
-          </div>
+    <!-- ===== Хир лендинга: тёмная сцена, крупная типографика ===== -->
+    <section class="sl-hero">
+      <div class="wrap">
+        <span class="sl-hero__tag">Смена контента · медиашкола</span>
+        <h1>Учимся делать<br>материалы, которые<br><em>читают до конца</em></h1>
+        <p class="sl-hero__lead">Бесплатная практика для тех, кто начинает: текст, интервью, фото,
+        видео, соцсети и факт-чекинг. Настоящие задания, живой редактор и публикация
+        на сайте — вместо учебников и сертификатов.</p>
+        <div class="sl-hero__actions">
+          <a class="btn btn--accent" href="#apply">Подать заявку</a>
+          <a class="btn btn--ghost" href="#ucheba">Как проходит учёба</a>
         </div>
-        <div class="page-hero__aside">
-          <p class="lead"><b>Как это устроено:</b> аккаунт и два подписанных согласия →
-          заявка с направлением → решение редакции на этой странице → первое задание →
-          публикация с вашей подписью.</p>
+        <div class="sl-hero__facts">
+          <div><b>6</b><span>направлений</span></div>
+          <div><b>5</b><span>шагов до публикации</span></div>
+          <div><b>0 ₽</b><span>за всё время</span></div>
+          <div><b>1-в-1</b><span>разбор каждого материала</span></div>
         </div>
       </div>
     </section>
 
+    <!-- ===== Статус и заявка (рабочие механизмы страницы) ===== -->
     <section class="section wrap" id="status">
       <div class="sec-head"><div class="sec-head__left"><span class="kicker">Мой статус</span>
         <h2>Что с вашей заявкой</h2>
@@ -72,11 +73,12 @@
       <div data-school-apply><p class="form__note">Проверяем аккаунт…</p></div>
     </section>
 
+    <!-- ===== Как проходит учёба ===== -->
     <section class="section wrap" id="ucheba">
       <div class="sec-head"><div class="sec-head__left"><span class="kicker">Учёба</span>
-        <h2>Дорожная карта ученика</h2>
-        <p class="sec-head__text">Пять шагов от заявки до публикации. Материал каждого шага
-        вы делаете сами, редактор разбирает и подсказывает.</p></div></div>
+        <h2>Пять шагов от заявки до публикации</h2>
+        <p class="sec-head__text">Материал каждого шага вы делаете сами, редактор разбирает
+        и подсказывает. Без звонков по расписанию — в темпе, который вам подходит.</p></div></div>
       <ol class="school-road">
         <li><b>Заявка</b><span>Направление и пара абзацев о себе. Решение — на этой странице и на почте.</span></li>
         <li><b>Направление</b><span>Выбираете, чему учиться: текст, интервью, фото, видео, соцсети, факт-чекинг.</span></li>
@@ -84,46 +86,53 @@
         <li><b>Разбор</b><span>Редактор смотрит материал и пишет подробно: что получилось, что переписать.</span></li>
         <li><b>Публикация</b><span>Материал выходит на сайте с вашей подписью — и вы идёте к следующему.</span></li>
       </ol>
+    </section>
 
-      <div class="sec-head" style="margin-top:34px"><div class="sec-head__left"><span class="kicker">Шесть направлений</span>
-        <h2>Первые задания по каждому</h2>
-        <p class="sec-head__text">Задания стартовые: их можно сделать без опыта и без дорогой техники.
-        Полная программа — <a href="/media-school">на странице медиашколы</a>, файлом —
-        <a href="/assets/docs/programma-mediashkoly.pdf?v=2026-11-14-2">в PDF</a>.</p></div></div>
-      <div class="school-tasks">
-        <details open>
-          <summary>Текст и работа с фактурой</summary>
-          <p>Напишите 3–5 абзацев об одном человеке из вашего двора, школы или района: что он делает
-          и почему это важно. Один факт — один источник. Цель, чтобы незнакомый человек дочитал.</p>
-        </details>
-        <details>
-          <summary>Интервью</summary>
-          <p>Задайте пять вопросов человеку, о котором хотите рассказать, и запишите ответы дословно.
-          Принесите расшифровку: из неё отберём три лучшие цитаты вместе.</p>
-        </details>
-        <details>
-          <summary>Фотография</summary>
-          <p>Снимите серию из 10 кадров об одном месте — утром и вечером, издалека и вблизи.
-          Выберите из неё три кадра, которые расскажут историю без подписи.</p>
-        </details>
-        <details>
-          <summary>Видео и монтаж</summary>
-          <p>Снимите на телефон минутный сюжет: одна мысль, один герой, первый кадр,
-          который цепляет внимание. Звук важнее картинки — следите, чтобы речь была слышна.</p>
-        </details>
-        <details>
-          <summary>Соцсети и дизайн</summary>
-          <p>Сделайте обложку и подпись для уже опубликованного материала проекта: как рассказать
-          о нём в одной картинке и двух строках, чтобы захотелось прочитать.</p>
-        </details>
-        <details>
-          <summary>Проверка информации</summary>
-          <p>Возьмите любую новость дня и найдите первоисточник: где она вышла впервые и кто
-          автор данных. Напишите короткую справку: что подтвердилось, что нет.</p>
-        </details>
+    <!-- ===== Направления и первые задания ===== -->
+    <section class="sl-dir" id="napravleniya">
+      <div class="wrap">
+        <div class="sec-head"><div class="sec-head__left"><span class="kicker">Шесть направлений</span>
+          <h2>Первое задание по каждому</h2>
+          <p class="sec-head__text">Стартовые задания можно сделать без опыта и дорогой техники.
+          Полная программа — в <a href="/assets/docs/programma-mediashkoly.pdf?v=2026-11-14-3" style="text-decoration:underline">PDF</a>.</p></div></div>
+        <div class="school-tasks">
+          <details open>
+            <summary>Текст и работа с фактурой</summary>
+            <p>Напишите 3–5 абзацев об одном человеке из вашего двора, школы или района: что он делает
+            и почему это важно. Один факт — один источник. Цель, чтобы незнакомый человек дочитал.</p>
+          </details>
+          <details>
+            <summary>Интервью</summary>
+            <p>Задайте пять вопросов человеку, о котором хотите рассказать, и запишите ответы дословно.
+            Принесите расшифровку: из неё отберём три лучшие цитаты вместе.</p>
+          </details>
+          <details>
+            <summary>Фотография</summary>
+            <p>Снимите серию из 10 кадров об одном месте — утром и вечером, издалека и вблизи.
+            Выберите из неё три кадра, которые расскажут историю без подписи.</p>
+          </details>
+          <details>
+            <summary>Видео и монтаж</summary>
+            <p>Снимите на телефон минутный сюжет: одна мысль, один герой, первый кадр,
+            который цепляет внимание. Звук важнее картинки — следите, чтобы речь была слышна.</p>
+          </details>
+          <details>
+            <summary>Соцсети и дизайн</summary>
+            <p>Сделайте обложку и подпись для уже опубликованного материала проекта: как рассказать
+            о нём в одной картинке и двух строках, чтобы захотелось прочитать.</p>
+          </details>
+          <details>
+            <summary>Проверка информации</summary>
+            <p>Возьмите любую новость дня и найдите первоисточник: где она вышла впервые и кто
+            автор данных. Напишите короткую справку: что подтвердилось, что нет.</p>
+          </details>
+        </div>
       </div>
+    </section>
 
-      <div class="fill-note fill-note--flat" style="margin-top:26px">
+    <!-- ===== Честно о формате ===== -->
+    <section class="section wrap">
+      <div class="fill-note fill-note--flat">
         <b>Честно о формате</b>
         <p>Медиашкола бесплатна: дипломов и сертификатов нет, расписания со звонками тоже —
         встречи зависят от набора. Зато есть разбор каждого материала и публикация на сайте.</p>
@@ -137,7 +146,7 @@
           <p>Напишите в поддержку — отвечает редакция, а не бот.</p></div>
         <div class="cta__actions">
           <a class="btn" href="/support">Спросить о медиашколе</a>
-          <a class="btn btn--ghost" href="/media-school">Программа школы</a>
+          <a class="btn btn--ghost" href="/join">Стать автором</a>
         </div>
       </div>
     </section>
@@ -145,9 +154,9 @@
 
   <div data-footer></div>
 
-  <script src="/assets/js/data.js?v=2026-11-14-2"></script>
-  <script src="/assets/js/store.js?v=2026-11-14-2"></script>
-  <script src="/assets/js/i18n.js?v=2026-11-14-2"></script>
-  <script src="/assets/js/app.js?v=2026-11-14-2"></script>
-<script>/* smena-v-check */(function(){if(location.protocol==="file:")return;function go(f){try{if(sessionStorage.getItem("smena-v")===f)return;sessionStorage.setItem("smena-v",f);var u=new URL(location.href);u.searchParams.set("v",f);location.replace(u.href)}catch(e){}}function ck(){try{if(!window.SC||!window.SC.build)return false;if(typeof fetch!=="function")return true;fetch("/assets/js/data.js?v=2026-11-14-2"+Date.now(),{cache:"no-store"}).then(function(r){return r.text()}).then(function(t){var m=t.match(/build\s*:\s*"([^"]+)"/);if(m&&m[1]&&m[1]!==window.SC.build)go(m[1])}).catch(function(){});return true}catch(e){return true}}var n=0;(function w(){if(ck()||++n>20)return;setTimeout(w,150)})()})();</script></body>
+  <script src="/assets/js/data.js?v=2026-11-14-3"></script>
+  <script src="/assets/js/store.js?v=2026-11-14-3"></script>
+  <script src="/assets/js/i18n.js?v=2026-11-14-3"></script>
+  <script src="/assets/js/app.js?v=2026-11-14-3"></script>
+<script>/* smena-v-check */(function(){if(location.protocol==="file:")return;function go(f){try{if(sessionStorage.getItem("smena-v")===f)return;sessionStorage.setItem("smena-v",f);var u=new URL(location.href);u.searchParams.set("v",f);location.replace(u.href)}catch(e){}}function ck(){try{if(!window.SC||!window.SC.build)return false;if(typeof fetch!=="function")return true;fetch("/assets/js/data.js?v=2026-11-14-3"+Date.now(),{cache:"no-store"}).then(function(r){return r.text()}).then(function(t){var m=t.match(/build\s*:\s*"([^"]+)"/);if(m&&m[1]&&m[1]!==window.SC.build)go(m[1])}).catch(function(){});return true}catch(e){return true}}var n=0;(function w(){if(ck()||++n>20)return;setTimeout(w,150)})()})();</script></body>
 </html>
