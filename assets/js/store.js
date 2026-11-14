@@ -1296,6 +1296,25 @@ window.Store = (function () {
   }
   function schoolModuleDelete(id) { return withToken("school-module-delete", { id: id }); }
   function schoolCohortCsv(cohortId) { return withToken("school-cohort-csv", { cohortId: cohortId || "" }).then(fileResponse); }
+
+  /* тесты набора с автопроверкой и дневник */
+  function schoolQuizzes(cohortId) { return withToken("school-quizzes", { cohortId: cohortId || "" }); }
+  function schoolQuizAdd(cohortId, payload) {
+    payload = payload || {};
+    return withToken("school-quiz-add", {
+      cohortId: cohortId || "", assignmentId: payload.assignmentId || "",
+      title: payload.title || "", intro: payload.intro || "",
+      passScore: payload.passScore || 70, points: payload.points || 5,
+      questions: payload.questions || [],
+    });
+  }
+  function schoolQuizDelete(id) { return withToken("school-quiz-delete", { id: id }); }
+  function schoolQuizSubmit(quizId, answers) {
+    return withToken("school-quiz-submit", { quizId: quizId, answers: answers || [] });
+  }
+  function schoolQuizResults(cohortId) { return withToken("school-quiz-results", { cohortId: cohortId || "" }); }
+  function schoolDiary(cohortId) { return withToken("school-diary", { cohortId: cohortId || "" }); }
+  function schoolSubRemind(subId) { return withToken("school-sub-remind", { subId: subId || "" }); }
   function schoolEnroll(appId, cohortId) { return withToken("school-enroll", { appId: appId, cohortId: cohortId }); }
   function schoolSubSend(assignmentId, text, aiNote) {
     return withToken("school-sub-send", { assignmentId: assignmentId, text: text || "", aiNote: aiNote || "" });
@@ -2215,6 +2234,13 @@ window.Store = (function () {
     schoolModuleSet: schoolModuleSet,
     schoolModuleDelete: schoolModuleDelete,
     schoolCohortCsv: schoolCohortCsv,
+    schoolQuizzes: schoolQuizzes,
+    schoolQuizAdd: schoolQuizAdd,
+    schoolQuizDelete: schoolQuizDelete,
+    schoolQuizSubmit: schoolQuizSubmit,
+    schoolQuizResults: schoolQuizResults,
+    schoolDiary: schoolDiary,
+    schoolSubRemind: schoolSubRemind,
     schoolEnroll: schoolEnroll,
     schoolSubSend: schoolSubSend,
     cardActPdf: cardActPdf,

@@ -233,6 +233,54 @@ function school_module_public($m) {
     );
 }
 
+/* ---- тесты набора: вопросы с вариантами, автопроверка, баллы за первый зачёт ---- */
+function school_quizzes_file($dir) { return $dir . '/school-quizzes.json'; }
+
+function read_school_quizzes($dir) {
+    $v = read_json(school_quizzes_file($dir), array());
+    return is_array($v) ? $v : array();
+}
+
+function school_quiz_public($q) {
+    $questions = array();
+    foreach ((isset($q['questions']) && is_array($q['questions'])) ? $q['questions'] : array() as $qs) {
+        $options = array();
+        foreach ((isset($qs['options']) && is_array($qs['options'])) ? $qs['options'] : array() as $oi => $opt) {
+            $options[] = array('text' => (string) (isset($opt['text']) ? $opt['text'] : ''), 'correct' => !empty($opt['correct']));
+        }
+        $questions[] = array(
+            'id' => (string) (isset($qs['id']) ? $qs['id'] : ('q' . $oi)),
+            'text' => (string) (isset($qs['text']) ? $qs['text'] : ''),
+            'explanation' => (string) (isset($qs['explanation']) ? $qs['explanation'] : ''),
+            'options' => $options,
+        );
+    }
+    return array(
+        'id' => isset($q['id']) ? $q['id'] : '',
+        'cohortId' => isset($q['cohortId']) ? $q['cohortId'] : '',
+        'assignmentId' => isset($q['assignmentId']) ? $q['assignmentId'] : '',
+        'title' => isset($q['title']) ? $q['title'] : '',
+        'intro' => isset($q['intro']) ? $q['intro'] : '',
+        'passScore' => isset($q['passScore']) ? (int) $q['passScore'] : 70,
+        'points' => isset($q['points']) ? (int) $q['points'] : 5,
+        'questions' => $questions,
+        'createdAt' => isset($q['createdAt']) ? $q['createdAt'] : '',
+    );
+}
+
+function school_quiz_result_public($r) {
+    return array(
+        'quizId' => isset($r['quizId']) ? $r['quizId'] : '',
+        'userId' => isset($r['userId']) ? $r['userId'] : '',
+        'userName' => isset($r['userName']) ? $r['userName'] : '',
+        'score' => isset($r['score']) ? (int) $r['score'] : 0,
+        'passed' => !empty($r['passed']),
+        'attempt' => isset($r['attempt']) ? (int) $r['attempt'] : 1,
+        'answers' => isset($r['answers']) && is_array($r['answers']) ? $r['answers'] : array(),
+        'createdAt' => isset($r['createdAt']) ? $r['createdAt'] : '',
+    );
+}
+
 function school_cohort_students($dir, $cohortId) {
     $out = array();
     foreach (read_school($dir) as $app) {
@@ -318,6 +366,9 @@ function school_platform_routes($act, $dir) {
         'school-enroll',
         'school-module-add', 'school-module-set', 'school-module-delete',
         'school-modules', 'school-cohort-csv',
+        'school-quiz-add', 'school-quiz-delete', 'school-quizzes',
+        'school-quiz-submit', 'school-quiz-results', 'school-diary',
+        'school-sub-remind',
     );
     if (!in_array($act, $handled, true)) return false;
 
@@ -546,6 +597,272 @@ function school_platform_routes($act, $dir) {
         respond(array('ok' => true, 'modules' => $out));
     }
 
+    /* ---- тесты с автопроверкой (этап 3) ---- */
+    if ($act === 'school-quiz-add') {
+        if (!can($me, 'school.manage')) fail('Тесты добавляет редакция школы.', 403);
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $assignmentId = text((string) (isset($in['assignmentId']) ? $in['assignmentId'] : ''), 40);
+        $title = text((string) (isset($in['title']) ? $in['title'] : ''), 120);
+        $intro = text((string) (isset($in['intro']) ? $in['intro'] : ''), 600);
+        $passScore = max(30, min(100, (int) (isset($in['passScore']) ? $in['passScore'] : 70)));
+        $points = max(1, min(20, (int) (isset($in['points']) ? $in['points'] : 5)));
+        if (slen($title) < 4) fail('Название теста слишком короткое.');
+        $questionsIn = isset($in['questions']) && is_array($in['questions']) ? $in['questions'] : array();
+        if (count($questionsIn) < 1) fail('Добавьте хотя бы один вопрос.');
+        $questions = array();
+        foreach ($questionsIn as $qi => $qs) {
+            $qText = text((string) (isset($qs['text']) ? $qs['text'] : ''), 500);
+            if (slen($qText) < 5) fail('Вопрос ' . ($qi + 1) . ' слишком короткий.');
+            $optsIn = isset($qs['options']) && is_array($qs['options']) ? $qs['options'] : array();
+            if (count($optsIn) < 2) fail('В вопросе ' . ($qi + 1) . ' нужно минимум два варианта ответа.');
+            $correctCount = 0;
+            $options = array();
+            foreach ($optsIn as $opt) {
+                $oText = text((string) (isset($opt['text']) ? $opt['text'] : ''), 300);
+                $correct = !empty($opt['correct']);
+                if ($correct) $correctCount++;
+                $options[] = array('text' => $oText, 'correct' => $correct);
+            }
+            if ($correctCount !== 1) fail('В вопросе ' . ($qi + 1) . ' должен быть ровно один правильный вариант.');
+            $questions[] = array(
+                'id' => 'sq' . $qi . '_' . bin2hex(random_bytes(2)),
+                'text' => $qText,
+                'explanation' => text((string) (isset($qs['explanation']) ? $qs['explanation'] : ''), 500),
+                'options' => $options,
+            );
+        }
+        $found = false;
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) $cohortId) { $found = true; break; }
+        }
+        if (!$found) fail('Набор не найден.', 404);
+        if ($assignmentId !== '') {
+            $linked = false;
+            foreach (read_school_assignments($dir) as $a) {
+                if ((string) $a['id'] === (string) $assignmentId && (string) $a['cohortId'] === (string) $cohortId) { $linked = true; break; }
+            }
+            if (!$linked) fail('Задание не найдено в этом наборе.', 404);
+        }
+        $list = read_school_quizzes($dir);
+        $row = array(
+            'id' => 'scq_' . bin2hex(random_bytes(4)),
+            'cohortId' => $cohortId,
+            'assignmentId' => $assignmentId,
+            'title' => $title,
+            'intro' => $intro,
+            'passScore' => $passScore,
+            'points' => $points,
+            'questions' => $questions,
+            'createdAt' => date('c'),
+        );
+        $list[] = $row;
+        if (!write_json(school_quizzes_file($dir), $list)) fail('Не удалось сохранить тест.', 500);
+        audit_log($dir, $me['email'], 'медиашкола', 'тест «' . $title . '» добавлен');
+        respond(array('ok' => true, 'quiz' => school_quiz_public($row)));
+    }
+
+    if ($act === 'school-quiz-delete') {
+        if (!can($me, 'school.manage')) fail('Тесты удаляет редакция школы.', 403);
+        $id = text((string) (isset($in['id']) ? $in['id'] : ''), 40);
+        $list = read_school_quizzes($dir);
+        $left = array();
+        $removed = '';
+        foreach ($list as $q) {
+            if ((string) $q['id'] === (string) $id) { $removed = isset($q['title']) ? $q['title'] : ''; continue; }
+            $left[] = $q;
+        }
+        if ($removed === '') fail('Тест не найден.', 404);
+        if (!write_json(school_quizzes_file($dir), $left)) fail('Не удалось удалить тест.', 500);
+        audit_log($dir, $me['email'], 'медиашкола', 'тест удалён: ' . $removed);
+        respond(array('ok' => true));
+    }
+
+    if ($act === 'school-quizzes') {
+        if (!can($me, 'school.manage') && !can($me, 'school.teach') && !can($me, 'school.review')
+            && !can($me, 'school.enroll')) {
+            fail('Тесты доступны редакции и ученикам школы.', 403);
+        }
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $out = array();
+        foreach (read_school_quizzes($dir) as $q) {
+            if ((string) (isset($q['cohortId']) ? $q['cohortId'] : '') !== (string) $cohortId) continue;
+            $out[] = school_quiz_public($q);
+        }
+        respond(array('ok' => true, 'quizzes' => $out));
+    }
+
+    if ($act === 'school-quiz-submit') {
+        $cohort = school_user_cohort($dir, $me['id']);
+        if (!$cohort) fail('Вы не зачислены в набор школы.', 403);
+        $quizId = text((string) (isset($in['quizId']) ? $in['quizId'] : ''), 40);
+        $answersIn = isset($in['answers']) && is_array($in['answers']) ? $in['answers'] : array();
+        $quiz = null;
+        foreach (read_school_quizzes($dir) as $q) {
+            if ((string) $q['id'] === (string) $quizId && (string) $q['cohortId'] === (string) $cohort['id']) { $quiz = $q; break; }
+        }
+        if (!$quiz) fail('Тест не найден в вашем наборе.', 404);
+        $total = count($quiz['questions']);
+        $correctCount = 0;
+        $answers = array();
+        foreach ($quiz['questions'] as $qs) {
+            $chosen = '';
+            foreach ($answersIn as $a) {
+                if ((string) (isset($a['questionId']) ? $a['questionId'] : '') === (string) $qs['id']) {
+                    $chosen = (string) (isset($a['optionIndex']) ? $a['optionIndex'] : '-1');
+                }
+            }
+            $correctIndex = -1;
+            foreach ($qs['options'] as $oi => $opt) {
+                if (!empty($opt['correct'])) $correctIndex = $oi;
+            }
+            $isRight = ($chosen !== '' && (int) $chosen === $correctIndex);
+            if ($isRight) $correctCount++;
+            $answers[] = array(
+                'questionId' => $qs['id'],
+                'chosen' => $chosen === '' ? -1 : (int) $chosen,
+                'correct' => $isRight,
+            );
+        }
+        $score = $total > 0 ? (int) round($correctCount * 100 / $total) : 0;
+        $passed = $score >= (int) $quiz['passScore'];
+        /* история попыток; баллы — за первый зачёт (ref защищает от повторов) */
+        $resultsFile = $dir . '/school-quiz-results.json';
+        $results = read_json($resultsFile, array());
+        if (!is_array($results)) $results = array();
+        $attempt = 1;
+        $passedBefore = false;
+        foreach ($results as $r) {
+            if ((string) $r['quizId'] !== (string) $quizId || (string) $r['userId'] !== (string) $me['id']) continue;
+            $attempt++;
+            if (!empty($r['passed'])) $passedBefore = true;
+        }
+        $row = array(
+            'quizId' => $quizId,
+            'userId' => $me['id'],
+            'userName' => isset($me['name']) ? $me['name'] : '',
+            'score' => $score,
+            'passed' => $passed,
+            'attempt' => $attempt,
+            'answers' => $answers,
+            'createdAt' => date('c'),
+        );
+        $results[] = $row;
+        if (!write_json($resultsFile, $results)) fail('Не удалось сохранить попытку.', 500);
+        $awarded = 0;
+        if ($passed && !$passedBefore && $quiz['points'] > 0 && function_exists('points_add')) {
+            $res = points_add($dir, $me['id'], (int) $quiz['points'], 'school.test',
+                'Медиашкола', 'Тест «' . $quiz['title'] . '» — ' . $score . '%', 'quiz:' . $quizId . ':' . $me['id']);
+            if (!empty($res['ok']) && empty($res['skipped'])) $awarded = (int) $quiz['points'];
+        }
+        $detail = array();
+        foreach ($quiz['questions'] as $qi => $qs) {
+            $correctIndex = -1;
+            foreach ($qs['options'] as $oi => $opt) {
+                if (!empty($opt['correct'])) $correctIndex = $oi;
+            }
+            $detail[] = array(
+                'questionId' => $qs['id'],
+                'correctIndex' => $correctIndex,
+                'right' => $answers[$qi]['correct'],
+                'explanation' => isset($qs['explanation']) ? $qs['explanation'] : '',
+            );
+        }
+        audit_log($dir, $me['email'], 'медиашкола', 'тест «' . $quiz['title'] . '»: ' . $score . '%' .
+            ($passed ? ' зачёт' : ' не зачёт'));
+        respond(array('ok' => true, 'score' => $score, 'passed' => $passed,
+            'passScore' => (int) $quiz['passScore'], 'attempt' => $attempt, 'awarded' => $awarded, 'detail' => $detail));
+    }
+
+    if ($act === 'school-quiz-results') {
+        if (!can($me, 'school.manage') && !can($me, 'school.teach') && !can($me, 'school.review')) {
+            fail('Результаты тестов видит редакция школы.', 403);
+        }
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $results = read_json($dir . '/school-quiz-results.json', array());
+        if (!is_array($results)) $results = array();
+        $quizIds = array();
+        foreach (read_school_quizzes($dir) as $q) {
+            if ((string) (isset($q['cohortId']) ? $q['cohortId'] : '') === (string) $cohortId) $quizIds[] = (string) $q['id'];
+        }
+        $out = array();
+        foreach ($results as $r) {
+            if (!in_array((string) (isset($r['quizId']) ? $r['quizId'] : ''), $quizIds, true)) continue;
+            $out[] = school_quiz_result_public($r);
+        }
+        usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
+        respond(array('ok' => true, 'results' => array_slice($out, 0, 100)));
+    }
+
+    /* ---- напоминание ученику о задании (кнопка в очереди работ) ---- */
+    if ($act === 'school-sub-remind') {
+        if (!can($me, 'school.review')) fail('Напоминания отправляет редакция школы.', 403);
+        $subId = text((string) (isset($in['subId']) ? $in['subId'] : ''), 40);
+        $target = null;
+        foreach (read_school_subs($dir) as $sub) {
+            if ((string) $sub['id'] === (string) $subId) { $target = $sub; break; }
+        }
+        if (!$target) fail('Работа не найдена.', 404);
+        $user = null;
+        foreach (read_users($dir) as $u) {
+            if ((string) $u['id'] === (string) $target['userId']) { $user = $u; break; }
+        }
+        if (!$user || empty($user['email'])) fail('У ученика нет подтверждённой почты.', 409);
+        $assignment = null;
+        foreach (read_school_assignments($dir) as $a) {
+            if ((string) $a['id'] === (string) $target['assignmentId']) { $assignment = $a; break; }
+        }
+        $cohortName = '';
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) (isset($target['cohortId']) ? $target['cohortId'] : '')) {
+                $cohortName = isset($c['name']) ? $c['name'] : ''; break;
+            }
+        }
+        $ok = mail_notify($dir, 'school_homework_reminder', (string) $user['email'], array(
+            'name' => isset($user['name']) ? $user['name'] : '',
+            'cohort' => $cohortName,
+            'title' => $assignment ? $assignment['title'] : 'текущее задание',
+            'due' => $assignment && !empty($assignment['dueAt']) ? (string) $assignment['dueAt'] : 'без жёсткого срока',
+        ), array('kind' => 'school_homework_reminder', 'by' => isset($me['name']) ? $me['name'] : 'редакция'));
+        audit_log($dir, $me['email'], 'медиашкола', 'напоминание отправлено: ' . (isset($user['name']) ? $user['name'] : ''));
+        respond(array('ok' => true, 'sent' => (bool) $ok));
+    }
+
+    /* ---- дневник набора: последние события для редакции ---- */
+    if ($act === 'school-diary') {
+        if (!can($me, 'school.manage') && !can($me, 'school.teach') && !can($me, 'school.review')) {
+            fail('Дневник набора видит редакция школы.', 403);
+        }
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $events = array();
+        foreach (read_school_subs($dir) as $sub) {
+            if ((string) (isset($sub['cohortId']) ? $sub['cohortId'] : '') !== (string) $cohortId) continue;
+            $events[] = array('at' => isset($sub['createdAt']) ? $sub['createdAt'] : '', 'kind' => 'submitted',
+                'who' => isset($sub['userName']) ? $sub['userName'] : '', 'text' => 'сдал работу (попытка ' .
+                (isset($sub['attempt']) ? (int) $sub['attempt'] : 1) . ')',
+                'detail' => isset($sub['assignmentId']) ? (string) $sub['assignmentId'] : '');
+            if (!empty($sub['reviewedAt'])) {
+                $events[] = array('at' => $sub['reviewedAt'], 'kind' => isset($sub['status']) && $sub['status'] === 'accepted' ? 'accepted' : 'returned',
+                    'who' => isset($sub['userName']) ? $sub['userName'] : '',
+                    'text' => ($sub['status'] === 'accepted' ? 'работа принята, ' .
+                        (isset($sub['points']) ? (int) $sub['points'] : 0) . ' б.' : 'работа возвращена с разбором'),
+                    'detail' => '');
+            }
+        }
+        foreach (read_json($dir . '/school-quiz-results.json', array()) as $r) {
+            $qTitle = '';
+            foreach (read_school_quizzes($dir) as $q) {
+                if ((string) $q['id'] === (string) (isset($r['quizId']) ? $r['quizId'] : '')) { $qTitle = $q['title']; break; }
+            }
+            if ($qTitle === '') continue;
+            $events[] = array('at' => isset($r['createdAt']) ? $r['createdAt'] : '', 'kind' => !empty($r['passed']) ? 'quiz_pass' : 'quiz_fail',
+                'who' => isset($r['userName']) ? $r['userName'] : '',
+                'text' => 'тест «' . $qTitle . '»: ' . (isset($r['score']) ? (int) $r['score'] : 0) . '%' .
+                    (!empty($r['passed']) ? ' зачёт' : ' не зачёт'), 'detail' => '');
+        }
+        usort($events, function ($a, $b) { return strcmp((string) $b['at'], (string) $a['at']); });
+        respond(array('ok' => true, 'events' => array_slice($events, 0, 20)));
+    }
+
     /* ---- успеваемость набора: CSV для редакции ---- */
     if ($act === 'school-cohort-csv') {
         if (!can($me, 'school.manage')) fail('Выгрузку делает редакция школы.', 403);
@@ -732,8 +1049,19 @@ function school_platform_routes($act, $dir) {
             $mods[] = school_module_public($m);
         }
         usort($mods, function ($a, $b) { return (int) $a['order'] - (int) $b['order']; });
+        $quizzes = array();
+        foreach (read_school_quizzes($dir) as $q) {
+            if ((string) (isset($q['cohortId']) ? $q['cohortId'] : '') !== (string) $cohort['id']) continue;
+            $quizzes[] = school_quiz_public($q);
+        }
+        $myQuiz = array();
+        foreach (read_json($dir . '/school-quiz-results.json', array()) as $r) {
+            if ((string) (isset($r['userId']) ? $r['userId'] : '') !== (string) $me['id']) continue;
+            $myQuiz[(string) $r['quizId']] = school_quiz_result_public($r);
+        }
         respond(array('ok' => true, 'cohort' => array('id' => $cohort['id'], 'name' => $cohort['name']),
-            'assignments' => $assignments, 'subs' => $mine, 'modules' => $mods,
+            'assignments' => $assignments, 'subs' => $mine, 'modules' => $mods, 'quizzes' => $quizzes,
+            'myQuiz' => $myQuiz,
             'points' => function_exists('points_balance') ? points_balance($dir, $me['id']) : 0));
     }
 
