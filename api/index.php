@@ -1741,6 +1741,66 @@ if ($act === 'card-verify') {
 /* PDF действующей карты. Файл собирается на сервере из тех же данных, что
    и кабинет; код проверки попадает только владельцу и ответственной редакции.
    Ответ — JSON с base64: так проще проверить права и отдать ошибку словом. */
+/* Справка об авторстве: документ проекта, подтверждает опубликованные
+   материалы и действующую пресс-карту. Готовится редакцией из карточки. */
+if ($act === 'person-cert-pdf') {
+    $in = body();
+    $me = require_cap($DATA_DIR, $in, 'people.view');
+    $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ((string) $u['id'] === (string) $userId && (!isset($u['status']) || $u['status'] !== 'deleted')) {
+            $target = $u; break;
+        }
+    }
+    if (!$target) fail('Участник не найден.', 404);
+    $number = '';
+    $until = '';
+    $published = 0;
+    foreach (read_json($DATA_DIR . '/posts.json', array()) as $p) {
+        if ((string) $p['authorId'] === (string) $target['id'] && isset($p['status']) && $p['status'] === 'published') $published++;
+    }
+    foreach (read_cards($DATA_DIR) as $c) {
+        if ((string) $c['userId'] === (string) $target['id'] && card_effective_status($c) === 'issued') {
+            $number = (string) $c['number'];
+            $until = card_pdf_date(isset($c['validUntil']) ? $c['validUntil'] : '');
+            break;
+        }
+    }
+    try {
+        $bytes = person_cert_pdf_bytes($target, $number, $until, $published, $me);
+    } catch (Exception $e) {
+        fail('Не удалось собрать справку. Обратитесь в поддержку.', 500);
+    }
+    audit_log($DATA_DIR, $me['email'], 'документ из сайта', 'справка об авторстве: ' . $target['name']);
+    respond(array('ok' => true, 'filename' => 'spravka-avtorstva.pdf',
+        'mime' => 'application/pdf', 'data' => base64_encode($bytes)));
+}
+
+/* Благодарность: официальная благодарность проекта участнику. */
+if ($act === 'person-thanks-pdf') {
+    $in = body();
+    $me = require_cap($DATA_DIR, $in, 'people.view');
+    $userId = text(isset($in['userId']) ? $in['userId'] : '', 40);
+    $textValue = text(isset($in['text']) ? $in['text'] : '', 600);
+    $target = null;
+    foreach (read_users($DATA_DIR) as $u) {
+        if ((string) $u['id'] === (string) $userId && (!isset($u['status']) || $u['status'] !== 'deleted')) {
+            $target = $u; break;
+        }
+    }
+    if (!$target) fail('Участник не найден.', 404);
+    if (slen($textValue) < 20) fail('Напишите, за что благодарите — хотя бы 20 символов.');
+    try {
+        $bytes = person_thanks_pdf_bytes($target, $textValue, $me);
+    } catch (Exception $e) {
+        fail('Не удалось собрать благодарность. Обратитесь в поддержку.', 500);
+    }
+    audit_log($DATA_DIR, $me['email'], 'документ из сайта', 'благодарность: ' . $target['name']);
+    respond(array('ok' => true, 'filename' => 'blagodarnost.pdf',
+        'mime' => 'application/pdf', 'data' => base64_encode($bytes)));
+}
+
 if ($act === 'card-pdf') {
     $in = body();
     $me = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
@@ -4890,5 +4950,6 @@ if (tasks_routes($act, $DATA_DIR)) exit;
 if (ai_routes($act, $DATA_DIR)) exit;
 if (hiring_routes($act, $DATA_DIR)) exit;
 if (school_routes($act, $DATA_DIR)) exit;
+if (school_platform_routes($act, $DATA_DIR)) exit;
 
 fail('Неизвестное действие. Доступны: state, submit, reg, login, me, profile-save, media-upload, queue, review, card-request, mailboxes, mail-list, mail-send, hiring-apply, school-apply, selftest.', 404);

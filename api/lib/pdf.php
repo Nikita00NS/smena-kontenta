@@ -502,10 +502,9 @@ function card_act_pdf_bytes($card) {
     $y = $pdf->textBlock($left, $y, 9.5, 'о выдаче пресс-карты автора проекта «Смена контента»', $width, 4.8, 'regular', '333333', 1) - 6.0;
 
     $y = $pdf->textBlock($left, $y, 9.0,
-        'Проект «Смена контента» (г. Москва, сайт smenakontenta.ru) в лице основателей, являющихся ' .
-        'операторами персональных данных, — Сирика Никиты Сергеевича (ИНН 940802781550) и ' .
-        'Ильина Бориса Павловича (ИНН 784304154610) — передал, а указанный ниже человек получил ' .
-        'пресс-карту автора на основании заявки и решения редакции проекта.',
+        'Проект «Смена контента» (г. Москва, сайт smenakontenta.ru), оператор персональных ' .
+        'данных которого — Ильин Борис Павлович (ИНН 784304154610), передал, а указанный ниже ' .
+        'человек получил пресс-карту автора на основании заявки и решения редакции проекта.',
         $width, 4.6, 'regular', '111111', 6) - 4.0;
 
     $rows = array(
@@ -541,8 +540,7 @@ function card_act_pdf_bytes($card) {
         }
     }
     $signs = array(
-        array('От проекта — основатель', 'Сирик Никита Сергеевич', isset($scan['sirik']) ? $scan['sirik'] : null),
-        array('От проекта — сооснователь', 'Ильин Борис Павлович', isset($scan['ilin']) ? $scan['ilin'] : null),
+        array('От проекта — оператор персональных данных, сооснователь', 'Ильин Борис Павлович', isset($scan['ilin']) ? $scan['ilin'] : null),
         array('Карту получил', $name !== '' ? $name : '____________________', null),
     );
     foreach ($signs as $sign) {
@@ -562,6 +560,126 @@ function card_act_pdf_bytes($card) {
         'Дата составления акта: «____» ______________ 20____ г. Акт хранится в редакции проекта ' .
         'вместе с заявкой на карту. Электронная отметка о выдаче — в истории карты.',
         $width, 4.0, 'regular', '555555', 3);
+
+    return $pdf->output();
+}
+
+/* ============================================================================
+   ДОКУМЕНТЫ ИЗ САЙТА: справка об авторстве и благодарность.
+   Готовятся редакцией из карточки участника тем же движком, что и пресс-карта.
+   Документы проекта составляются от проекта; оператор персональных данных —
+   Ильин Борис Павлович.
+   ========================================================================== */
+
+function person_pdf_sign_line($pdf, $left, &$y, $role, $name, $scanFile, $w) {
+    $scan = null;
+    $signDir = __DIR__ . '/../../assets/img/';
+    if ($scanFile && is_readable($signDir . $scanFile)) {
+        $bytes = file_get_contents($signDir . $scanFile);
+        if ($bytes !== false && pdf_jpeg_size($bytes)) $scan = $bytes;
+    }
+    if ($scan) $pdf->image($left + 16.0, $y - 7.0, 30.0, $scan);
+    $pdf->text($left, $y, 8.5, $role, 'regular', '555555');
+    $y -= 3.6;
+    $pdf->text($left, $y, 9.0, 'подпись', 'regular', '999999');
+    $pdf->line($left + 16.0, $y - 1.2, $left + 88.0, $y - 1.2, '111111', 0.3);
+    $pdf->text($left + 92.0, $y, 9.0, $name, 'bold', '111111');
+    $y -= 14.0;
+}
+
+function person_cert_pdf_bytes($user, $number, $until, $published, $by) {
+    $pdf = new SmenaPdf();
+    $pdf->addPage(210, 297);
+
+    $left = 20.0;
+    $width = 170.0;
+    $top = 297.0 - 24.0;
+
+    $name = isset($user['name']) ? (string) $user['name'] : '';
+    $region = '';
+    if (isset($user['region']) && $user['region'] !== '') {
+        $region = (string) $user['region'];
+        $regions = function_exists('regions_list') ? regions_list() : array();
+        foreach ($regions as $r) {
+            if ((isset($r['slug']) && $r['slug'] === $region)) { $region = $r['name']; break; }
+        }
+    }
+    $date = card_pdf_date(date('c'));
+    $docNo = 'СК-СП-' . date('y') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+
+    $pdf->text($left + $width / 2 - 30.0, $top, 13.5, 'СПРАВКА', 'bold', '111111');
+    $y = $top - 6.5;
+    $y = $pdf->textBlock($left, $y, 10.0, 'об авторстве в проекте «Смена контента»', $width, 5.0, 'regular', '333333', 1) - 7.0;
+
+    $y = $pdf->textBlock($left, $y, 9.5,
+        'Проект «Смена контента» (город Москва, сайт smenakontenta.ru) подтверждает, что ' .
+        'указанный ниже человек является автором проекта: его материалы проходят редакцию ' .
+        'и выходят на сайте с подписью автора. Справка выдаётся по данным проекта на дату ' .
+        'выдачи и не является удостоверением журналиста зарегистрированного СМИ.',
+        $width, 4.8, 'regular', '111111', 8) - 5.0;
+
+    $rows = array(
+        array('Автор', $name !== '' ? $name : '—'),
+        array('Регион', $region !== '' ? $region : '—'),
+        array('Опубликованных материалов', (string) $published),
+        array('Пресс-карта', $number !== '' ? '№ ' . $number . ($until !== '' ? ' · действует до ' . $until : '') : 'не выдана'),
+        array('Номер справки', $docNo),
+        array('Дата выдачи', $date),
+        array('Проверка проекта', 'smenakontenta.ru'),
+    );
+    foreach ($rows as $row) {
+        $pdf->text($left, $y, 9.0, $row[0], 'regular', '555555');
+        $pdf->text($left + 62.0, $y, 9.0, $row[1], 'bold', '111111');
+        $pdf->line($left, $y - 1.6, $left + $width, $y - 1.6, 'DDDDDD', 0.15);
+        $y -= 7.2;
+    }
+    $y -= 4.0;
+
+    $y = $pdf->textBlock($left, $y, 8.0,
+        'Справка действует как документ проекта при проверке номера пресс-карты на странице ' .
+        'smenakontenta.ru/verify. При отзыве карты справка считается недействующей.',
+        $width, 4.0, 'regular', '333333', 3) - 14.0;
+
+    person_pdf_sign_line($pdf, $left, $y, 'От проекта — оператор персональных данных, сооснователь',
+        'Ильин Борис Павлович', 'sign-ilin.jpg', $width);
+    person_pdf_sign_line($pdf, $left, $y, 'Документ подготовил', 
+        isset($by['name']) && $by['name'] !== '' ? $by['name'] : 'Редакция', null, $width);
+
+    return $pdf->output();
+}
+
+function person_thanks_pdf_bytes($user, $textValue, $by) {
+    $pdf = new SmenaPdf();
+    $pdf->addPage(210, 297);
+
+    $left = 20.0;
+    $width = 170.0;
+    $top = 297.0 - 24.0;
+
+    $name = isset($user['name']) ? (string) $user['name'] : '';
+    $date = card_pdf_date(date('c'));
+
+    $pdf->text($left + $width / 2 - 42.0, $top, 13.5, 'БЛАГОДАРНОСТЬ', 'bold', '111111');
+    $y = $top - 6.5;
+    $y = $pdf->textBlock($left, $y, 10.0, 'проекта «Смена контента»', $width, 5.0, 'regular', '333333', 1) - 8.0;
+
+    $y = $pdf->textBlock($left, $y, 11.0,
+        ($name !== '' ? $name : 'Участнику проекта') . ',',
+        $width, 5.4, 'bold', '111111', 2) - 6.0;
+
+    $y = $pdf->textBlock($left, $y, 9.8, $textValue, $width, 5.0, 'regular', '111111', 14) - 6.0;
+
+    $y = $pdf->textBlock($left, $y, 8.5,
+        'Проект «Смена контента» — молодёжное медиа и медиашкола: материалы авторов из регионов ' .
+        'России выходят на сайте smenakontenta.ru.',
+        $width, 4.2, 'regular', '333333', 3) - 14.0;
+
+    person_pdf_sign_line($pdf, $left, $y, 'От проекта — оператор персональных данных, сооснователь',
+        'Ильин Борис Павлович', 'sign-ilin.jpg', $width);
+    person_pdf_sign_line($pdf, $left, $y, 'Документ подготовил',
+        isset($by['name']) && $by['name'] !== '' ? $by['name'] : 'Редакция', null, $width);
+
+    $pdf->text($left + $width, $top - 58.0, 8.0, $date, 'regular', '777777');
 
     return $pdf->output();
 }

@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -2053,10 +2053,11 @@
         ["overview", "Обзор", hasCap("server.diag")],
         ["people", "Люди", hasCap("people.view") || hasCap("people.edit") || hasCap("consents.review") || hasCap("cards.view") || hasCap("cards.issue")],
         ["team", "Сотрудники", hasCap("hiring.view")],
-        ["school", "Медиашкола", hasCap("hiring.view")],
+        ["school", "Медиашкола", hasCap("hiring.view") || hasCap("school.manage")],
         ["content", "Материалы", hasCap("posts.review") || hasCap("portfolio.review")],
         ["editorials", "Редакции", hasCap("editorials.appoint")],
-        ["support", "Поддержка и почта", hasCap("support.answer") || hasCap("mail.use") || hasCap("mail.manage")],
+        ["mail", "Почта", hasCap("mail.use") || hasCap("mail.manage")],
+        ["support", "Поддержка", hasCap("support.answer")],
         ["site", "Сайт", hasCap("site.manage")],
         ["server", "Сервер", hasCap("server.diag")],
       ].filter(function (t) { return t[2]; }).map(function (t) { return [t[0], t[1]]; });
@@ -2097,10 +2098,10 @@
       if (hasCap("portfolio.review")) safeMount("Портфолио", panel("content"), function () { mountPortfolioQueue(panel("content")); });
       if (hasCap("editorials.appoint")) safeMount("Редакции", panel("editorials"), function () { mountEditorialQueue(panel("editorials")); });
       if (hasCap("support.answer")) safeMount("Поддержка", panel("support"), function () { mountSupportQueue(panel("support")); });
-      if (hasCap("mail.use")) safeMount("Почта", panel("support"), function () { mountMailClient(panel("support")); });
-      if (hasCap("mail.manage")) safeMount("Настройки почты", panel("support"), function () { mountMailSettings(panel("support")); });
+      if (hasCap("mail.use")) safeMount("Почта", panel("mail"), function () { mountMailClient(panel("mail")); });
+      if (hasCap("mail.manage")) safeMount("Настройки почты", panel("mail"), function () { mountMailSettings(panel("mail")); });
       if (hasCap("hiring.view")) safeMount("Сотрудники", panel("team"), function () { mountHiringAdmin(panel("team")); });
-      if (hasCap("hiring.view")) safeMount("Медиашкола", panel("school"), function () { mountSchoolAdmin(panel("school")); });
+      if (hasCap("hiring.view") || hasCap("school.manage")) safeMount("Медиашкола", panel("school"), function () { mountSchoolAdmin(panel("school")); });
       if (hasCap("site.manage")) safeMount("Сайт", panel("site"), function () { mountSite(panel("site")); });
       if (hasCap("server.diag")) safeMount("Сервер", panel("server"), function () { mountDiag(panel("server")); });
 
@@ -2641,111 +2642,9 @@
       });
     }
 
-    /* Кого показывать в блоке «Кто делает материалы» на главной: лучших по
-       баллам или выбранных вручную. Видят только люди с публикациями. */
-    function mountAuthorsShow(host) {
-      var old = $("[data-authors-show]");
-      if (old) old.remove();
-      if (!Store.authorsShowSave) return;
-
-      var section = document.createElement("section");
-      section.className = "section wrap";
-      section.setAttribute("style", "padding-top:0");
-      section.setAttribute("data-authors-show", "");
-      section.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Главная</span>' +
-        "<h2>Кто делает материалы</h2>" +
-        '<p class="sec-head__text">Блок на главной странице. Можно показывать лучших по баллам — ' +
-        "или выбрать людей вручную. В список попадают только те, у кого есть опубликованные " +
-        "материалы: выдуманных карточек на сайте нет.</p></div></div>" +
-        '<div class="panel" style="padding:22px">' +
-        '<label class="switch"><input type="radio" name="authors-show-mode" value="points" data-ash-mode>' +
-        "<span><b>Лучшие по баллам</b><small>Сортировка по баллам, затем по числу материалов</small></span></label>" +
-        '<label class="switch"><input type="radio" name="authors-show-mode" value="manual" data-ash-mode>' +
-        "<span><b>Выбрать вручную</b><small>Показываем тех, кого отметите, в вашем порядке</small></span></label>" +
-        '<div class="field" style="max-width:220px"><label for="ash-limit">Сколько человек</label>' +
-        '<input id="ash-limit" type="number" min="3" max="8" value="6" data-ash-limit></div>' +
-        '<div data-ash-people style="margin-top:6px"><p class="form__note">Загружаем список…</p></div>' +
-        '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:12px">' +
-        '<button class="btn btn--accent btn--sm" type="button" data-ash-save>Сохранить</button>' +
-        '<span class="form__note" data-ash-status></span></div></div>';
-      host.appendChild(section);
-
-      var peopleEl = $("[data-ash-people]", section);
-      var limitEl = $("[data-ash-limit]", section);
-      var statusEl = $("[data-ash-status]", section);
-      var chosen = [];
-
-      function modeNow() {
-        var picked = $$("[data-ash-mode]", section).filter(function (el) { return el.checked; })[0];
-        return picked ? picked.value : "points";
-      }
-
-      function drawPeople(users) {
-        var list = (users || []).filter(function (u) {
-          return (u.posts || u.published || u.points || 0) && u.status !== "deleted";
-        });
-        if (!list.length) {
-          peopleEl.innerHTML = '<p class="form__note">Пока не у кого выбирать: список появится, ' +
-            "когда участники опубликуют первые материалы.</p>";
-          return;
-        }
-        peopleEl.innerHTML = list.map(function (u) {
-          return '<label class="authors-show__row"><input type="checkbox" data-ash-pick="' + esc(u.id) + '"' +
-            (chosen.indexOf(u.id) !== -1 ? " checked" : "") + ">" +
-            "<b>" + esc(u.name) + "</b><small>" + esc(u.email || "") + " · " +
-            (u.points || 0) + " б.</small></label>";
-        }).join("");
-        $$("[data-ash-pick]", peopleEl).forEach(function (box) {
-          box.addEventListener("change", function () {
-            var id = box.getAttribute("data-ash-pick");
-            if (box.checked) {
-              if (chosen.indexOf(id) === -1) chosen.push(id);
-            } else {
-              chosen = chosen.filter(function (x) { return x !== id; });
-            }
-          });
-        });
-      }
-
-      Store.authorsShow().then(function (res) {
-        if (!res || !res.ok) return;
-        limitEl.value = res.limit || 6;
-        $$("[data-ash-mode]", section).forEach(function (el) {
-          el.checked = el.value === (res.mode || "points");
-        });
-        chosen = (res.authors || []).map(function (a) { return a.id; });
-        if (Store.usersList) {
-          Store.usersList().then(function (list) {
-            drawPeople((list && list.users) || []);
-          }, function () { drawPeople([]); });
-        }
-      }, function () {
-        peopleEl.innerHTML = '<p class="form__note">Список не загрузился: сервер не ответил.</p>';
-      });
-
-      $("[data-ash-save]", section).addEventListener("click", function () {
-        var mode = modeNow();
-        if (mode === "manual" && !chosen.length) {
-          statusEl.textContent = "Отметьте хотя бы одного человека.";
-          return;
-        }
-        statusEl.textContent = "Сохраняем…";
-        Store.authorsShowSave({
-          mode: mode,
-          limit: Number(limitEl.value) || 6,
-          ids: chosen,
-        }).then(function (res) {
-          statusEl.textContent = "Сохранено. На главной " + ((res.authors || []).length) + " карточек.";
-        }, function (err) {
-          statusEl.textContent = (err && err.message) || "Не сохранилось.";
-        });
-      });
-    }
-
     /* Вкладки: каждая показывает ровно одну панель и поднимает страницу к её началу. */
     var TAB_ICONS = {
-      overview: "chart", people: "users", team: "mail", school: "school", content: "doc",
+      overview: "chart", people: "users", team: "mail", mail: "mail", school: "school", content: "doc",
       editorials: "map", cards: "card", support: "inbox", site: "settings", server: "shield",
     };
 
@@ -3101,7 +3000,6 @@
           '<p class="pcard__sub">' + esc(u.email) + " · " + esc(regionName(u.region) || "регион не указан") +
           " · с " + esc(fmtDate(u.createdAt)) + "</p></div>" +
           '<div class="pcard__badges">' + chip(u.access) +
-          chip(u.access) +
           (u.emailVerified ? '<span class="status status--pub">почта подтверждена</span>'
             : '<span class="status status--draft">почта не подтверждена</span>') + "</div></div>" +
 
@@ -3144,6 +3042,15 @@
 
           '<div class="pcard__section"><span class="kicker">Заявления</span>' + appsList(d) + "</div>" +
 
+          '<div class="pcard__section"><span class="kicker">Документы из сайта</span>' +
+          '<p class="form__note">Официальные документы проекта, готовятся прямо из панели: ' +
+          "справка подтверждает авторство и карту, благодарность — текст за конкретную работу.</p>" +
+          '<div class="row" style="gap:10px;flex-wrap:wrap">' +
+          '<button class="btn btn--sm" type="button" data-person-cert>Справка об авторстве</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-person-thanks>Благодарность…</button>' +
+          "</div>" +
+          '<p class="form__note" data-person-doc-note></p></div>' +
+
           '<div class="pcard__section"><span class="kicker">Материалы</span>' +
           ((d.posts || []).length
             ? '<div class="pcard__list">' + d.posts.slice(0, 6).map(function (post) {
@@ -3175,6 +3082,42 @@
           '<div class="pcard__section"><span class="kicker">Баллы</span>' +
           '<p class="form__note">Баланс участника: <b data-points-balance>' + esc(String(d.points || 0)) +
           "</b>. Начислите за работу или спишите с основанием — история сохранится.</p>" +
+          ((d.timeline || []).length
+            ? '<div class="pcard__section"><span class="kicker">История</span>' +
+              '<div class="diag">' + d.timeline.slice(0, 12).map(function (t) {
+                return '<div class="diag__row"><span>' + esc(fmtDate(t.at || t.createdAt || "")) +
+                  (t.label ? " · " + esc(t.label) : "") + "</span><b>" +
+                  esc(t.title || t.text || t.detail || t.kind || "") + "</b></div>";
+              }).join("") + "</div></div>"
+            : "") +
+          ((d.notes || []).length || Store.can(user, "people.note")
+            ? '<div class="pcard__section"><span class="kicker">Заметки команды</span>' +
+              ((d.notes || []).length
+                ? '<div class="diag">' + d.notes.slice(-8).map(function (n) {
+                  return '<div class="diag__row"><span>' + esc(n.by || "команда") + " · " +
+                    esc(fmtDate(n.at || n.createdAt || "")) + "</span><b>" + esc(n.text || "") + "</b></div>";
+                }).join("") + "</div>"
+                : "") +
+              (Store.can(user, "people.note")
+                ? '<div class="pcard__compose" style="margin-top:10px"><textarea rows="2" data-pnote-text ' +
+                  'placeholder="Заметка видна только команде"></textarea>' +
+                  '<button class="btn btn--ghost btn--sm" type="button" data-pnote-add style="margin-top:6px">Добавить заметку</button>' +
+                  '<p class="form__note" data-pnote-note></p></div>' : "") +
+              "</div>"
+            : "") +
+          (Store.can(user, "people.block")
+            ? '<div class="pcard__section"><span class="kicker">Статус аккаунта</span>' +
+              '<p class="form__note">Сейчас: <b>' + esc(u.status === "suspended" ? "приостановлен" : "активен") +
+              (u.statusReason ? " — " + esc(u.statusReason) : "") +
+              '</b>. Приостановка отключает вход и доступ к материалам до восстановления.</p>' +
+              '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+              (u.status === "suspended"
+                ? '<button class="btn btn--sm" type="button" data-person-unblock>Восстановить доступ</button>'
+                : '<input class="admin-review__note" type="text" placeholder="Причина приостановки" data-person-block-reason>' +
+                  '<button class="btn btn--sm btn--ghost" type="button" data-person-block>Приостановить</button>') +
+              "</div>" +
+              '<p class="form__note" data-person-status-note></p></div>'
+            : "") +
           '<div class="pcard__compose"><div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
           '<input type="number" data-points-delta style="max-width:110px" placeholder="+10" aria-label="Сколько баллов">' +
           '<select data-points-reason style="max-width:260px" aria-label="Основание">' +
@@ -3310,6 +3253,87 @@
             });
           });
         }
+
+        function saveDocFile(file, note) {
+          var url = URL.createObjectURL(file.blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = file.filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+          if (note) note.textContent = "PDF готов: " + file.filename;
+        }
+        var certBtn = $("[data-person-cert]", cardEl);
+        if (certBtn) certBtn.addEventListener("click", function () {
+          var note = $("[data-person-doc-note]", cardEl);
+          certBtn.disabled = true;
+          if (note) note.textContent = "Готовим справку…";
+          Store.personCertPdf(u.id).then(function (file) {
+            certBtn.disabled = false;
+            saveDocFile(file, note);
+          }, function (err) {
+            certBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Справка не собралась.";
+          });
+        });
+        var thanksBtn = $("[data-person-thanks]", cardEl);
+        if (thanksBtn) thanksBtn.addEventListener("click", function () {
+          var note = $("[data-person-doc-note]", cardEl);
+          var text = window.prompt("За что благодарим? Текст войдёт в документ:", "");
+          if (text === null) return;
+          if (text.trim().length < 20) { if (note) note.textContent = "Минимум 20 символов."; return; }
+          thanksBtn.disabled = true;
+          if (note) note.textContent = "Готовим благодарность…";
+          Store.personThanksPdf(u.id, text.trim()).then(function (file) {
+            thanksBtn.disabled = false;
+            saveDocFile(file, note);
+          }, function (err) {
+            thanksBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Благодарность не собралась.";
+          });
+        });
+        var pnoteBtn = $("[data-pnote-add]", cardEl);
+        if (pnoteBtn) pnoteBtn.addEventListener("click", function () {
+          var field = $("[data-pnote-text]", cardEl);
+          var note = $("[data-pnote-note]", cardEl);
+          var text = (field.value || "").trim();
+          if (text.length < 5) { if (note) note.textContent = "Заметка слишком короткая."; return; }
+          pnoteBtn.disabled = true;
+          Store.personNote(u.id, text).then(function () {
+            openCard(u.id);
+          }, function (err) {
+            pnoteBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Заметка не сохранилась.";
+          });
+        });
+        var blockBtn = $("[data-person-block]", cardEl);
+        if (blockBtn) blockBtn.addEventListener("click", function () {
+          var reasonEl = $("[data-person-block-reason]", cardEl);
+          var note = $("[data-person-status-note]", cardEl);
+          var reason = (reasonEl && reasonEl.value || "").trim();
+          if (reason.length < 5) { if (note) note.textContent = "Нужна причина — минимум 5 символов."; return; }
+          if (!window.confirm("Приостановить участнику доступ? Войти он не сможет до восстановления.")) return;
+          blockBtn.disabled = true;
+          Store.personStatus(u.id, "suspended", reason).then(function () {
+            openCard(u.id);
+          }, function (err) {
+            blockBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Статус не изменился.";
+          });
+        });
+        var unblockBtn = $("[data-person-unblock]", cardEl);
+        if (unblockBtn) unblockBtn.addEventListener("click", function () {
+          var note = $("[data-person-status-note]", cardEl);
+          unblockBtn.disabled = true;
+          Store.personStatus(u.id, "active", "").then(function () {
+            openCard(u.id);
+          }, function (err) {
+            unblockBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Статус не изменился.";
+          });
+        });
 
         var pointsBtn = $("[data-points-apply]", cardEl);
         if (pointsBtn && Store.pointsAdd) {
@@ -3670,6 +3694,7 @@
             '<div class="mail-side__label">Ещё</div>' +
             '<button class="mail-side__link" type="button" data-mail-drafts>Черновики</button>' +
             '<button class="mail-side__link" type="button" data-mail-templates>Шаблоны писем</button>' +
+            '<button class="mail-side__link" type="button" data-mail-log>Журнал отправок</button>' +
           "</aside>" +
           '<section class="mail-list-wrap">' +
             '<div class="mail-bar">' +
@@ -3924,6 +3949,8 @@
           '<div class="field"><label>Копия</label><input type="text" data-c-cc placeholder="необязательно"></div>' +
           '<div class="field"><label>Скрытая копия</label><input type="text" data-c-bcc placeholder="необязательно"></div>' +
           '<div class="field"><label>Тема</label><input type="text" data-c-subject placeholder="О чём письмо"></div>' +
+          '<div class="field"><label>Шаблон</label><select data-compose-tpl>' +
+          '<option value="">— начать с чистого листа —</option></select></div>' +
           "</div>" +
           '<div class="field" style="margin-top:10px"><label>Текст</label>' +
           '<textarea data-c-text rows="8" placeholder="Текст письма. Пробелы и абзацы сохраняются."></textarea></div>' +
@@ -4068,6 +4095,56 @@
             noteEl.textContent = (err && err.message) || "Письмо не ушло.";
           });
         });
+
+        /* Шаблон при создании письма: подставляет тему и текст, переменные {{...}} правите руками. */
+        var composeTpl = composeEl.querySelector("[data-compose-tpl]");
+        if (composeTpl && Store.mailTemplates) {
+          Store.mailTemplates().then(function (res) {
+            (res.templates || []).forEach(function (t) {
+              var o = document.createElement("option");
+              o.value = t.key;
+              o.textContent = t.name;
+              composeTpl.appendChild(o);
+            });
+          }, function () {});
+          composeTpl.addEventListener("change", function () {
+            if (!composeTpl.value) return;
+            Store.mailTemplates().then(function (res2) {
+              var t = (res2.templates || []).filter(function (x) { return x.key === composeTpl.value; })[0];
+              if (!t) return;
+              subjEl.value = t.subject || "";
+              textEl.value = (t.body || "") + "\n\n(шаблон: замените {{...}} на свои значения)";
+              noteEl.textContent = "Шаблон «" + t.name + "» вставлен.";
+            }, function () {});
+          });
+        }
+      }
+
+      /* Журнал отправок: что и когда ушло с официальных адресов. */
+      function openMailLog() {
+        readEl.innerHTML = '<div class="mail-sheet"><div class="mail-sheet__head">' +
+          '<span class="kicker">Почта</span><h3>Журнал отправок</h3>' +
+          '<p class="form__note">Последние 300 писем, отправленных сайтом: уведомления, приглашения, ответы редакции.</p></div>' +
+          '<p class="form__note">Загружаем…</p></div>';
+        Store.mailLog().then(function (res) {
+          var rows = res.entries || [];
+          readEl.innerHTML = '<div class="mail-sheet"><div class="mail-sheet__head">' +
+            '<span class="kicker">Почта</span><h3>Журнал отправок</h3>' +
+            '<p class="form__note">Последние 300 писем, отправленных сайтом.</p></div>' +
+            (rows.length
+              ? '<div class="mail-sheet__list">' + rows.map(function (e) {
+                return '<div class="mail-sheet__row"><div class="mail-sheet__main">' +
+                  "<b>" + esc(e.subject || "(без темы)") + "</b>" +
+                  '<span class="form__note">' + esc(e.to || "") + " · " + esc(fmtMailDate(e.at || e.createdAt || "")) +
+                  (e.by ? " · " + esc(e.by) : "") + "</span></div>" +
+                  '<span class="status ' + (e.ok === false ? "status--draft" : "status--pub") + '">' +
+                  (e.ok === false ? "не ушло" : "отправлено") + "</span></div>";
+              }).join("") + "</div>"
+              : '<div class="mail-empty"><b>Писем пока нет</b><p>Как только сайт отправит письмо — оно появится здесь.</p></div>') +
+            "</div>";
+        }, function (err) {
+          readEl.innerHTML = '<div class="mail-sheet"><p class="form__note">' + esc(err.message) + "</p></div>";
+        });
       }
 
       function openTemplates() {
@@ -4084,6 +4161,7 @@
                 '<div class="row" style="gap:6px"><button class="btn btn--ghost btn--sm" type="button" data-tpl-preview="' +
                 esc(t.key) + '">Предпросмотр</button>' +
                 '<button class="btn btn--ghost btn--sm" type="button" data-tpl-test="' + esc(t.key) + '">Прислать себе</button>' +
+                (res.canManage ? '<button class="btn btn--ghost btn--sm" type="button" data-tpl-edit="' + esc(t.key) + '">Редактировать</button>' : "") +
                 "</div></div>";
             }).join("") + "</div>" +
             '<div data-tpl-preview-box style="margin-top:14px"></div>' +
@@ -4105,6 +4183,45 @@
                 b.disabled = false;
                 note("Тестовое письмо ушло на " + res.to + ".");
               }, function (err) { b.disabled = false; note(err.message, true); });
+            });
+          });
+          $$("[data-tpl-edit]", readEl).forEach(function (b) {
+            b.addEventListener("click", function () {
+              var key = b.getAttribute("data-tpl-edit");
+              var t = res.templates.filter(function (x) { return x.key === key; })[0];
+              if (!t) return;
+              var box = $("[data-tpl-preview-box]", readEl);
+              box.innerHTML =
+                '<div class="panel" style="padding:18px"><span class="kicker">Редактор шаблона</span>' +
+                "<h3 style=\"margin:6px 0 10px\">" + esc(t.name) + "</h3>" +
+                '<div class="field"><label>Тема письма</label><input type="text" data-tpl-subject value="' +
+                esc(t.subject) + '" maxlength="200"></div>' +
+                '<div class="field" style="margin-top:8px"><label>Заголовок в письме</label><input type="text" data-tpl-title value="' +
+                esc(t.title || "") + '" maxlength="200"></div>' +
+                '<div class="field" style="margin-top:8px"><label>Текст</label>' +
+                '<textarea data-tpl-body rows="8" maxlength="2000">' + esc(t.body || "") + "</textarea>" +
+                '<p class="form__note">Переменные вида {{name}}, {{code}}, {{points}} подставляются при отправке.</p></div>' +
+                '<div class="row" style="gap:8px;margin-top:10px">' +
+                '<button class="btn btn--accent btn--sm" type="button" data-tpl-save>Сохранить шаблон</button>' +
+                '<span class="form__note" data-tpl-save-note></span></div></div>';
+              box.querySelector("[data-tpl-save]").addEventListener("click", function () {
+                var btn = box.querySelector("[data-tpl-save]");
+                var snote = box.querySelector("[data-tpl-save-note]");
+                btn.disabled = true;
+                if (snote) snote.textContent = "Сохраняем…";
+                Store.mailTemplateSave({
+                  key: key,
+                  subject: box.querySelector("[data-tpl-subject]").value.trim(),
+                  title: box.querySelector("[data-tpl-title]").value.trim(),
+                  body: box.querySelector("[data-tpl-body]").value,
+                }).then(function () {
+                  btn.disabled = false;
+                  if (snote) snote.textContent = "Сохранено — шаблон используется сразу.";
+                }, function (err) {
+                  btn.disabled = false;
+                  if (snote) snote.textContent = (err && err.message) || "Не сохранилось.";
+                });
+              });
             });
           });
         }, function (err) {
@@ -4156,6 +4273,7 @@
       $("[data-mail-write]", section).addEventListener("click", function () { openCompose({}); });
       $("[data-mail-drafts]", section).addEventListener("click", openDrafts);
       $("[data-mail-templates]", section).addEventListener("click", openTemplates);
+      $("[data-mail-log]", section).addEventListener("click", openMailLog);
       var searchTimer = null;
       qEl.addEventListener("input", function () {
         clearTimeout(searchTimer);
@@ -4328,79 +4446,330 @@
 
     /* --- Медиашкола: заявки и решения -------------------------------------- */
     function mountSchoolAdmin(host) {
-      if (!Store.schoolList) return;
+      if (!Store.schoolCohorts) return;
+      var old = $("[data-school-admin]");
+      if (old) old.remove();
+
       var section = document.createElement("section");
       section.className = "section wrap";
       section.setAttribute("style", "padding-top:8px");
       section.setAttribute("data-school-admin", "");
       section.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Медиашкола</span>' +
-        "<h2>Заявки на обучение</h2>" +
-        '<p class="sec-head__text">Человек выбирает направление и пишет о себе. Решение простое: ' +
-        "принять или отказать с объяснением — ответ уходит заявителю на почту.</p></div></div>" +
-        '<div class="panel" style="padding:20px"><div data-school-banner class="fill-note fill-note--flat">' +
-        "Загружаем заявки…</div><div data-school-list></div></div>";
+        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Медиашкола · платформа</span>' +
+        "<h2>Наборы, задания и работы</h2>" +
+        '<p class="sec-head__text">Набор — группа учеников с общими дедлайнами. Приём в набор открыт ' +
+        "только когда вы его откроете: пока он закрыт, сервер не принимает заявки. Задания добавляются " +
+        "по порядку, работы проверяются здесь: групповой разбор видит весь набор, личный — только автор.</p></div></div>" +
+        '<div class="panel" style="padding:20px;margin-bottom:22px" data-sch-cohort-panel>' +
+        '<p class="form__note">Загружаем наборы…</p></div>' +
+        '<div data-sch-zone></div>' +
+        '<div class="panel" style="padding:20px;margin-top:22px"><span class="kicker">Заявки в школу</span>' +
+        '<p class="form__note" data-sch-apps-note>Загружаем…</p>' +
+        '<div data-sch-apps></div></div>';
       host.appendChild(section);
-      var banner = $("[data-school-banner]", section);
-      var listEl = $("[data-school-list]", section);
 
-      var SCHOOL_STATUS = { pending: "на рассмотрении", accepted: "принят", rejected: "отказ" };
+      var cohortPanel = $("[data-sch-cohort-panel]", section);
+      var zone = $("[data-sch-zone]", section);
+      var appsEl = $("[data-sch-apps]", section);
+      var appsNote = $("[data-sch-apps-note]", section);
+      var cohorts = [];
+      var currentId = "";
+      var assignments = [];
+      var subs = [];
+      var applications = [];
 
-      function draw(apps, canDecide) {
-        if (!apps.length) {
-          banner.textContent = "Заявок пока нет. Они появятся здесь сразу после подачи.";
-          listEl.innerHTML = "";
-          return;
-        }
-        banner.textContent = "Заявок: " + apps.length + ". Письмо заявителю уходит автоматически.";
-        listEl.innerHTML = apps.map(function (a) {
-          return '<div class="hiring-row" data-school-app="' + esc(a.id) + '">' +
-            '<div class="hiring-row__main"><b>' + esc(a.name) + "</b> · " + esc(a.direction) +
-            '<br><span class="form__note">' + esc(a.email) + " · " + schDate(a.createdAt) +
-            " · статус: " + esc(SCHOOL_STATUS[a.status] || a.status) + "</span>" +
-            (a.motivation ? '<p class="form__note" style="margin:8px 0 0">' + esc(a.motivation) + "</p>" : "") +
-            (a.note ? '<p class="form__note" style="margin:6px 0 0">Решение: ' + esc(a.note) + "</p>" : "") +
-            "</div>" +
-            '<div class="hiring-row__side">' +
-            (canDecide && a.status === "pending"
-              ? '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">' +
-                '<button class="btn btn--accent btn--sm" type="button" data-approve>Принять в школу</button>' +
-                '<input type="text" data-reason placeholder="причина отказа" style="max-width:180px">' +
-                '<button class="btn btn--ghost btn--sm" type="button" data-reject>Отказать</button>' +
-                "</div>"
-              : "") +
-            "</div></div>";
-        }).join("");
+      function cohortById(id) {
+        return cohorts.filter(function (c) { return c.id === id; })[0] || null;
+      }
 
-        $$("[data-school-app]", listEl).forEach(function (row) {
-          var id = row.getAttribute("data-school-app");
-          var appr = $("[data-approve]", row);
-          if (appr) appr.addEventListener("click", function () {
-            if (!window.confirm("Принять человека в медиашколу?")) return;
-            appr.disabled = true;
-            Store.schoolDecide(id, "approve", "").then(refresh, function (err) {
-              appr.disabled = false;
-              banner.textContent = err.message;
+      function drawCohortPanel() {
+        if (!cohorts.length) {
+          cohortPanel.innerHTML =
+            '<div class="pcard__section" style="margin:0"><span class="kicker">Набор 001</span>' +
+            "<p>Наборов пока нет. Создайте первый: приём заявок остаётся закрытым, " +
+            "пока вы не откроете его кнопкой — ученики не смогут подать заявку.</p>" +
+            '<div class="pcard__compose"><div class="row" style="gap:8px;flex-wrap:wrap">' +
+            '<input type="text" data-sch-cohort-name placeholder="Название набора" style="max-width:320px">' +
+            '<button class="btn btn--accent btn--sm" type="button" data-sch-cohort-create>Создать набор</button>' +
+            '<span class="form__note" data-sch-cohort-note></span></div></div></div>';
+          var createBtn = $("[data-sch-cohort-create]", cohortPanel);
+          createBtn.addEventListener("click", function () {
+            var nameEl = $("[data-sch-cohort-name]", cohortPanel);
+            var note = $("[data-sch-cohort-note]", cohortPanel);
+            var name = (nameEl.value || "").trim();
+            if (name.length < 3) { if (note) note.textContent = "Название — минимум 3 символа."; return; }
+            createBtn.disabled = true;
+            Store.schoolCohortCreate(name).then(function () {
+              currentId = arguments.length ? "" : "";
+              return refresh();
+            }, function (err) {
+              createBtn.disabled = false;
+              if (note) note.textContent = (err && err.message) || "Не создалось.";
             });
           });
-          var rej = $("[data-reject]", row);
-          if (rej) rej.addEventListener("click", function () {
-            var reason = ($("[data-reason]", row) || {}).value || "";
-            if (reason.trim().length < 5) { banner.textContent = "Напишите причину отказа — человек должен её увидеть."; return; }
-            rej.disabled = true;
+          return;
+        }
+        var c = cohortById(currentId) || cohorts[0];
+        currentId = c.id;
+        var chips = cohorts.map(function (x) {
+          return '<button class="chip-sm' + (x.id === currentId ? " is-on" : "") + '" type="button" data-sch-cohort="' +
+            x.id + '">' + esc(x.name) + (x.open ? " · приём открыт" : " · приём закрыт") + "</button>";
+        }).join("");
+        cohortPanel.innerHTML =
+          '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">' + chips +
+          '<input type="text" data-sch-cohort-new placeholder="новый набор" style="max-width:180px">' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-sch-cohort-create>Создать</button>' +
+          '<span class="form__note" data-sch-cohort-note></span></div>' +
+          '<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center">' +
+          "<b>" + esc(c.name) + "</b>" +
+          '<span class="status ' + (c.open ? "status--pub" : "status--draft") + '">' +
+          (c.open ? "приём открыт" : "приём закрыт") + "</span>" +
+          "<span>учеников: " + c.students + " · заданий: " + c.assignments + " · проверено работ: " + c.checked + "</span>" +
+          '<button class="btn btn--sm ' + (c.open ? "btn--ghost" : "btn--accent") + '" type="button" data-sch-toggle>' +
+          (c.open ? "Закрыть приём" : "Открыть приём") + "</button>" +
+          '<span class="form__note" data-sch-toggle-note></span></div>';
+        $$( "[data-sch-cohort]", cohortPanel).forEach(function (b) {
+          b.addEventListener("click", function () {
+            currentId = b.getAttribute("data-sch-cohort");
+            loadZone();
+            drawCohortPanel();
+          });
+        });
+        var newBtn = $("[data-sch-cohort-create]", cohortPanel);
+        newBtn.addEventListener("click", function () {
+          var nameEl = $("[data-sch-cohort-new]", cohortPanel);
+          var note = $("[data-sch-cohort-note]", cohortPanel);
+          var name = (nameEl.value || "").trim();
+          if (name.length < 3) { if (note) note.textContent = "Название — минимум 3 символа."; return; }
+          newBtn.disabled = true;
+          Store.schoolCohortCreate(name).then(function () {
+            nameEl.value = "";
+            newBtn.disabled = false;
+            return refresh();
+          }, function (err) {
+            newBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Не создалось.";
+          });
+        });
+        $("[data-sch-toggle]", cohortPanel).addEventListener("click", function () {
+          var note = $("[data-sch-toggle-note]", cohortPanel);
+          var willOpen = !c.open;
+          if (willOpen && !window.confirm("Открыть приём в набор? Заявки начнут приниматься сервером.")) return;
+          Store.schoolCohortSet(c.id, willOpen).then(function () {
+            refresh();
+          }, function (err) {
+            if (note) note.textContent = (err && err.message) || "Не переключилось.";
+          });
+        });
+      }
+
+      function loadZone() {
+        if (!currentId) { zone.innerHTML = ""; return; }
+        zone.innerHTML = '<p class="form__note">Загружаем набор…</p>';
+        Store.schoolAssignments(currentId).then(function (ares) {
+          assignments = ares.assignments || [];
+          return Store.schoolSubQueue(currentId).then(function (sres) {
+            subs = sres.subs || [];
+            drawZone();
+          });
+        }, function (err) {
+          zone.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>";
+        });
+      }
+
+      function drawZone() {
+        var addHtml =
+          '<div class="panel" style="padding:20px;margin-bottom:22px"><span class="kicker">Новое задание</span>' +
+          '<p class="form__note">Порядок задаётся автоматически (следующий номер), дедлайн общий для набора — формат даты: 2026-12-01.</p>' +
+          '<div class="field"><label>Название</label><input type="text" data-sch-a-title placeholder="Задание 3: интервью с героем района" style="max-width:520px"></div>' +
+          '<div class="field" style="margin-top:8px"><label>Что сделать</label>' +
+          '<textarea rows="4" data-sch-a-brief placeholder="Пошагово: что снять/написать, к какому сроку, куда прикладывать"></textarea></div>' +
+          '<div class="row" style="gap:8px;margin-top:8px;align-items:center">' +
+          '<input type="text" data-sch-a-due placeholder="дедлайн: 2026-12-01" style="max-width:220px">' +
+          '<button class="btn btn--accent btn--sm" type="button" data-sch-a-add>Добавить задание</button>' +
+          '<span class="form__note" data-sch-a-note></span></div></div>';
+
+        var listHtml = assignments.length
+          ? '<div class="panel" style="padding:20px;margin-bottom:22px"><span class="kicker">Задания набора</span>' +
+            '<div class="diag">' + assignments.map(function (a, i) {
+              return '<div class="diag__row"><span>' + (i + 1) + ". " + esc(a.title) +
+                (a.dueAt ? " · до " + esc(a.dueAt) : "") + "</span><b>" + esc(a.brief.slice(0, 60)) +
+                (a.brief.length > 60 ? "…" : "") + "</b></div>";
+            }).join("") + "</div></div>"
+          : '<div class="fill-note fill-note--flat" style="margin-bottom:22px"><b>Заданий пока нет</b>' +
+            "<p>Добавьте первое — оно появится у учеников набора в кабинете.</p></div>";
+
+        var pending = subs.filter(function (x) { return x.status === "pending"; });
+        var done = subs.filter(function (x) { return x.status !== "pending"; });
+        var queueHtml = '<div class="panel" style="padding:20px"><div class="row" style="justify-content:space-between">' +
+          '<span class="kicker">Работы на проверке: ' + pending.length + "</span>" +
+          '<button class="btn btn--ghost btn--sm" type="button" data-sch-refresh>Обновить</button></div>' +
+          (pending.length
+            ? pending.map(function (x) {
+              return '<div class="pcard__section" style="margin-top:14px"><div class="row" style="justify-content:space-between">' +
+                "<b>" + esc(x.userName) + " · " + esc((assignments.filter(function (a) { return a.id === x.assignmentId; })[0] || {}).title || "задание") +
+                (x.attempt > 1 ? " · попытка " + x.attempt : "") + "</b>" +
+                '<span class="form__note">' + esc(fmtDate(x.createdAt)) + "</span></div>" +
+                '<p style="white-space:pre-wrap">' + esc(x.text) + "</p>" +
+                (x.aiNote ? '<p class="form__note">Использование ИИ: ' + esc(x.aiNote) + "</p>" : "") +
+                '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">' +
+                '<input type="number" data-sch-points placeholder="баллы" min="0" max="50" style="max-width:90px" value="10">' +
+                '<input type="text" data-sch-gnote placeholder="групповой разбор (увидят все)" style="max-width:300px">' +
+                '<input type="text" data-sch-pnote placeholder="лично автору" style="max-width:240px">' +
+                '<label class="chip-sm"><input type="checkbox" data-sch-aicheck> <span>ИИ проверен</span></label>' +
+                '<button class="btn btn--accent btn--sm" type="button" data-sch-accept="' + x.id + '">Принять</button>' +
+                '<button class="btn btn--ghost btn--sm" type="button" data-sch-return="' + x.id + '">Вернуть</button>' +
+                "</div><p class=\"form__note\" data-sch-review-note=\"" + x.id + "\"></p></div>";
+            }).join("")
+            : '<p class="form__note">Новых работ нет — всё проверено.</p>') +
+          (done.length
+            ? '<div class="audit" style="margin-top:16px"><span class="kicker">Проверено: ' + done.length + "</span>" +
+              '<div class="diag">' + done.slice(0, 12).map(function (x) {
+                return '<div class="diag__row"><span>' + esc(x.userName) + " · " +
+                  esc((assignments.filter(function (a) { return a.id === x.assignmentId; })[0] || {}).title || "") +
+                  "</span><b>" + (x.status === "accepted" ? "принято · " + x.points + " б." : "возвращено") +
+                  (x.aiChecked ? " · ИИ проверен" : "") + "</b></div>";
+              }).join("") + "</div></div>"
+            : "") +
+          "</div>";
+        zone.innerHTML = addHtml + listHtml + queueHtml;
+
+        var addBtn = $("[data-sch-a-add]", zone);
+        addBtn.addEventListener("click", function () {
+          var titleEl = $("[data-sch-a-title]", zone);
+          var briefEl = $("[data-sch-a-brief]", zone);
+          var dueEl = $("[data-sch-a-due]", zone);
+          var note = $("[data-sch-a-note]", zone);
+          var title = (titleEl.value || "").trim();
+          var brief = (briefEl.value || "").trim();
+          if (title.length < 4) { if (note) note.textContent = "Название — минимум 4 символа."; return; }
+          if (brief.length < 20) { if (note) note.textContent = "Опишите задание — минимум 20 символов."; return; }
+          addBtn.disabled = true;
+          Store.schoolAssignmentAdd(currentId, title, brief, (dueEl.value || "").trim()).then(function () {
+            titleEl.value = ""; briefEl.value = ""; dueEl.value = "";
+            return loadZone();
+          }, function (err) {
+            addBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Не добавилось.";
+          });
+        });
+
+        function bindReview(selector, decision) {
+          $$(selector, zone).forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var id = btn.getAttribute(selector.indexOf("accept") !== -1 ? "data-sch-accept" : "data-sch-return");
+              var row = btn.closest(".pcard__section");
+              var noteEl = zone.querySelector('[data-sch-review-note="' + id + '"]');
+              var points = Number((row.querySelector("[data-sch-points]") || {}).value || 0);
+              var gnote = ((row.querySelector("[data-sch-gnote]") || {}).value || "").trim();
+              var pnote = ((row.querySelector("[data-sch-pnote]") || {}).value || "").trim();
+              var aic = row.querySelector("[data-sch-aicheck]");
+              if (decision === "accepted" && gnote.length < 10) {
+                if (noteEl) noteEl.textContent = "Групповой разбор — минимум 10 символов: его увидит весь набор.";
+                return;
+              }
+              if (decision === "returned" && gnote.length < 10 && pnote.length < 10) {
+                if (noteEl) noteEl.textContent = "Напишите разбор — хотя бы один, групповой или личный.";
+                return;
+              }
+              btn.disabled = true;
+              Store.schoolSubReview(id, decision, points, gnote, pnote, aic && aic.checked).then(function () {
+                loadZone();
+              }, function (err) {
+                btn.disabled = false;
+                if (noteEl) noteEl.textContent = (err && err.message) || "Не сохранилось.";
+              });
+            });
+          });
+        }
+        bindReview("[data-sch-accept]", "accepted");
+        bindReview("[data-sch-return]", "returned");
+        var refreshBtn = $("[data-sch-refresh]", zone);
+        if (refreshBtn) refreshBtn.addEventListener("click", loadZone);
+      }
+
+      function drawApps() {
+        var pending = applications.filter(function (a) { return a.status === "pending"; });
+        var accepted = applications.filter(function (a) { return a.status === "accepted"; });
+        appsNote.textContent = "Новых заявок: " + pending.length +
+          " · принято: " + accepted.length + ". Приём работает, только когда набор открыт.";
+        appsEl.innerHTML =
+          (pending.length
+            ? '<div class="audit"><span class="kicker">Ждут решения</span>' +
+              pending.map(function (a) {
+                return '<div class="pcard__section" style="margin-top:12px"><div class="row" style="justify-content:space-between">' +
+                  "<b>" + esc(a.name) + " · " + esc(a.direction) + "</b>" +
+                  '<span class="form__note">' + esc(fmtDate(a.createdAt)) + "</span></div>" +
+                  '<p class="form__note" style="white-space:pre-wrap">' + esc(a.motivation) + "</p>" +
+                  '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">' +
+                  '<button class="btn btn--accent btn--sm" type="button" data-approve="' + a.id + '">Принять в школу</button>' +
+                  '<input type="text" data-reason="' + a.id + '" placeholder="причина отказа" style="max-width:200px">' +
+                  '<button class="btn btn--ghost btn--sm" type="button" data-reject="' + a.id + '">Отказать</button>' +
+                  "</div></div>";
+              }).join("") + "</div>"
+            : '<p class="form__note">Новых заявок нет.</p>') +
+          (accepted.length
+            ? '<div class="audit" style="margin-top:16px"><span class="kicker">Принятые — зачислить в набор</span>' +
+              accepted.map(function (a) {
+                var inCohort = a.cohortId ? (cohortById(a.cohortId) || {}).name || "" : "";
+                return '<div class="pcard__section" style="margin-top:12px"><div class="row" style="justify-content:space-between;align-items:center">' +
+                  "<b>" + esc(a.name) + " · " + esc(a.direction) + "</b>" +
+                  (inCohort
+                    ? '<span class="status status--pub">в наборе: ' + esc(inCohort) + "</span>"
+                    : '<div class="row" style="gap:6px"><select data-enroll-cohort>' +
+                      cohorts.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + "</option>"; }).join("") +
+                      '</select><button class="btn btn--accent btn--sm" type="button" data-enroll="' +
+                      a.id + '">Зачислить</button></div>') +
+                  "</div></div>";
+              }).join("") + "</div>"
+            : "");
+        $$( "[data-enroll]", appsEl).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var appId = btn.getAttribute("data-enroll");
+            var sel = btn.parentNode.querySelector("[data-enroll-cohort]");
+            btn.disabled = true;
+            Store.schoolEnroll(appId, sel.value).then(function () {
+              refresh();
+            }, function (err) {
+              btn.disabled = false;
+              appsNote.textContent = (err && err.message) || "Не зачислилось.";
+            });
+          });
+        });
+        $$( "[data-approve]", appsEl).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            if (!window.confirm("Принять человека в школу?")) return;
+            btn.disabled = true;
+            Store.schoolDecide(btn.getAttribute("data-approve"), "approve", "").then(refresh, function (err) {
+              btn.disabled = false;
+              appsNote.textContent = err.message;
+            });
+          });
+        });
+        $$( "[data-reject]", appsEl).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var id = btn.getAttribute("data-reject");
+            var reason = (($('[data-reason="' + id + '"]', appsEl) || {}).value || "").trim();
+            if (reason.length < 5) { appsNote.textContent = "Напишите причину отказа — человек должен её увидеть."; return; }
+            btn.disabled = true;
             Store.schoolDecide(id, "reject", reason).then(refresh, function (err) {
-              rej.disabled = false;
-              banner.textContent = err.message;
+              btn.disabled = false;
+              appsNote.textContent = err.message;
             });
           });
         });
       }
 
       function refresh() {
-        Store.schoolList().then(function (res) {
-          draw(res.applications || [], res.canDecide);
-        }, function () {
-          section.remove();
+        return Store.schoolCohorts().then(function (res) {
+          cohorts = res.cohorts || [];
+          applications = res.applications || [];
+          drawCohortPanel();
+          drawApps();
+          loadZone();
+        }, function (err) {
+          cohortPanel.innerHTML = '<p class="form__note">' + esc(err.message) + "</p>";
+          appsEl.innerHTML = "";
         });
       }
       refresh();
@@ -5020,7 +5389,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -5194,62 +5563,6 @@
           : "");
     }
 
-    // лица проекта
-    var authorsHost = $("[data-authors]");
-    if (authorsHost) {
-      var faces = (SC.authors || []).slice(0, 8);
-      /* Уже опубликовавшие авторы приходят с сервера: редакция решает в
-         админке, показывать лучших по баллам или свой список. Пока таких
-         нет — честные «места свободны», без выдуманных имён. */
-      function drawRealAuthors(list) {
-        if (!list || !list.length) return false;
-        authorsHost.innerHTML = list
-          .map(function (a, i) {
-            return '<div class="author-card" data-reveal data-delay="' + (i % 4) + '">' +
-              '<span class="author-card__ava">' + esc(a.initials) + "</span>" +
-              '<div><div class="author-card__name">' + esc(a.name) + "</div>" +
-              '<div class="author-card__role">' + esc(a.role || "автор проекта") +
-              (a.regionName || a.region ? " · " + esc(regionName(a.region) || a.region) : "") + "</div>" +
-              '<div class="author-card__points">' + (a.points || 0) + " " +
-              plural(a.points || 0, ["балл", "балла", "баллов"]) + " · " +
-              (a.posts || 0) + " " + plural(a.posts || 0, ["материал", "материала", "материалов"]) +
-              "</div></div></div>";
-          })
-          .join("");
-        return true;
-      }
-
-      authorsHost.innerHTML = faces.length
-        ? faces
-            .map(function (a, i) {
-              return '<div class="author-card" data-reveal data-delay="' + (i % 4) + '">' +
-                '<span class="author-card__ava">' + esc(a.initials) + "</span>" +
-                '<div><div class="author-card__name">' + esc(a.name) + "</div>" +
-                '<div class="author-card__role">' + esc(a.role) + "</div></div></div>";
-            })
-            .join("")
-        : ["Автор текстов", "Фотограф", "Видеограф"]
-            .map(function (role) {
-              return '<div class="author-card author-card--slot">' +
-                '<span class="author-card__ava" aria-hidden="true">+</span>' +
-                '<div><div class="author-card__name">Место свободно</div>' +
-                '<div class="author-card__role">' + esc(role) + "</div></div></div>";
-            })
-            .join("") +
-          '<div class="fill-note fill-note--flat"><b>Здесь будут настоящие имена</b>' +
-          "<p>Мы не показываем выдуманных авторов: карточки появятся, когда участники " +
-          "зарегистрируются и опубликуют первые материалы.</p>" +
-          '<a class="btn btn--accent btn--sm" href="/join">Занять место</a></div>';
-
-      if (Store.authorsShow) {
-        Store.authorsShow().then(function (res) {
-          if (res && res.ok) drawRealAuthors(res.authors || []);
-        }, function () {
-          /* сервер молчит — остаются места и приглашение */
-        });
-      }
-    }
-
     // возможности
     var oppHost = $("[data-opportunities]");
     if (oppHost) {
@@ -5361,7 +5674,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -5715,8 +6028,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -6516,7 +6829,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-3",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-4",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -6527,7 +6840,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-3",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-4",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -6865,10 +7178,11 @@
     var dir = app.direction ? "Направление: " + esc(app.direction) + ". " : "";
     if (app.status === "accepted") {
       return '<div class="fill-note fill-note--ok" data-school-state><b>Вы приняты в медиашколу</b>' +
-        "<p>" + dir + "Следующий шаг — первое задание: напишите материал, редактор разберёт его до публикации.</p>" +
+        "<p>" + dir + "Задания и разборы набора — в «Мой курс» на странице школы: сдавайте работы " +
+        "и читайте разборы редакции.</p>" +
         '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
-        '<a class="btn btn--accent btn--sm" href="/write">Написать материал</a>' +
-        '<a class="btn btn--ghost btn--sm" href="/school">Страница школы: статус и задания</a></div></div>';
+        '<a class="btn btn--accent btn--sm" href="/school#course">Открыть мой курс</a>' +
+        '<a class="btn btn--ghost btn--sm" href="/write">Написать материал</a></div></div>';
     }
     return '<div class="fill-note fill-note--flat" data-school-state><b>Заявка на рассмотрении</b>' +
       "<p>" + dir + "Подана " + schDate(app.createdAt) +
@@ -7002,7 +7316,97 @@
         "Первое задание: " + schoolTask(app.direction) + ". Сделайте материал — редактор разберёт его до публикации.</p>" +
         '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
         '<a class="btn btn--accent btn--sm" href="/write">Сделать первый материал</a>' +
+        '<a class="btn btn--accent btn--sm" href="#course">Открыть мой курс</a>' +
         '<a class="btn btn--ghost btn--sm" href="#ucheba">Дорожная карта ученика</a></div></div>';
+    }
+
+    /* Курс ученика: задания набора, сдача работ, групповые и личные разборы. */
+    function drawCourse(host, sec) {
+      if (!Store.schoolMyCourse) return;
+      host.innerHTML = '<p class="form__note">Загружаем курс…</p>';
+      Store.schoolMyCourse().then(function (res) {
+        var cohort = res.cohort || null;
+        if (sec) sec.hidden = !cohort;
+        if (!cohort) { host.innerHTML = ""; return; }
+        var assignments = res.assignments || [];
+        var subs = res.subs || [];
+        var mine = {};
+        subs.forEach(function (sub) {
+          if (sub.group) return;
+          var cur = mine[sub.assignmentId];
+          if (!cur || (cur.attempt || 0) < (sub.attempt || 0)) mine[sub.assignmentId] = sub;
+        });
+        var groups = subs.filter(function (sub) { return sub.group; });
+        var statusLabel = { pending: "на проверке", accepted: "принято", returned: "есть разбор" };
+        function sendForm(a) {
+          return '<div class="field" style="margin-top:10px"><label>Ваша работа</label>' +
+            '<textarea data-course-text rows="4" maxlength="4000" placeholder="Текст работы. После разбора её можно сдать снова"></textarea></div>' +
+            '<div class="field" style="margin-top:6px"><label>Как использовали ИИ (честно)</label>' +
+            '<input type="text" data-course-ai maxlength="300" placeholder="например: придумал план, текст писал сам" style="max-width:460px">' +
+            '<p class="field__hint">Мы не запрещаем ИИ, но хотим видеть ваш вклад — редактор учтёт это в разборе.</p></div>' +
+            '<div class="row" style="gap:8px;margin-top:8px"><button class="btn btn--accent btn--sm" type="button" data-course-send="' +
+            esc(a.id) + '">Сдать работу</button><span class="form__note" data-course-note="' + esc(a.id) + '"></span></div>';
+        }
+        var cards = assignments.map(function (a) {
+          var sub = mine[a.id];
+          var body = "";
+          if (sub && sub.status === "accepted") {
+            body = '<p style="white-space:pre-wrap">' + esc(sub.text) + "</p>" +
+              '<p class="form__note">Сдано ' + esc(schDate(sub.createdAt)) + " · принято · " + (sub.points || 0) + " б." +
+              (sub.groupNote ? " Разбор набору: «" + esc(sub.groupNote) + "»." : "") +
+              (sub.personalNote ? " Лично вам: «" + esc(sub.personalNote) + "»." : "") + "</p>";
+          } else if (sub && sub.status === "pending") {
+            body = '<p style="white-space:pre-wrap">' + esc(sub.text) + "</p>" +
+              '<p class="form__note">Сдано ' + esc(schDate(sub.createdAt)) +
+              " · работа на проверке. Разбор появится здесь и уйдёт на почту.</p>";
+          } else if (sub && sub.status === "returned") {
+            body = '<p class="form__note">Возвращено с разбором ' + esc(schDate(sub.reviewedAt || sub.createdAt)) + ":</p>" +
+              (sub.groupNote ? '<p style="white-space:pre-wrap"><b>Группе:</b> ' + esc(sub.groupNote) + "</p>" : "") +
+              (sub.personalNote ? '<p style="white-space:pre-wrap"><b>Лично вам:</b> ' + esc(sub.personalNote) + "</p>" : "") +
+              sendForm(a);
+          } else {
+            body = "<p>" + esc(a.brief) + (a.dueAt ? ' <span class="form__note">Срок: ' + esc(a.dueAt) + ".</span>" : "") + "</p>" +
+              sendForm(a);
+          }
+          return '<div class="panel" style="padding:20px;margin-bottom:14px"><div class="panel__head"><h3>' + esc(a.title) + "</h3>" +
+            '<span class="panel__tag">' + (sub ? esc(statusLabel[sub.status] || sub.status) : "ждёт работы") + "</span></div>" + body + "</div>";
+        }).join("");
+        var groupsHtml = groups.length
+          ? '<div class="panel" style="padding:20px"><div class="panel__head"><h3>Разборы набора</h3><span class="panel__tag">видят все</span></div>' +
+            '<div class="diag">' + groups.map(function (g) {
+              var a = assignments.filter(function (x) { return x.id === g.assignmentId; })[0];
+              return '<div class="diag__row"><span>' + esc(g.userName) + " · " + esc(a ? a.title : "") +
+                " · " + esc(schDate(g.reviewedAt)) + "</span><b>" + esc((g.groupNote || "").slice(0, 160)) + "</b></div>";
+            }).join("") + "</div></div>"
+          : '<div class="fill-note fill-note--flat"><b>Групповых разборов пока нет</b>' +
+            "<p>Как только редакция разберёт первую работу набора, разбор появится здесь — его увидят все.</p></div>";
+        host.innerHTML =
+          '<div class="panel" style="padding:20px;margin-bottom:14px"><div class="panel__head"><h3>' + esc(cohort.name) + "</h3>" +
+          '<span class="panel__tag">баллы: ' + Number(res.points || 0) + "</span></div>" +
+          '<p class="form__note">Задания общие для набора, дедлайн один на всех. После разбора работу можно сдать снова.</p></div>' +
+          (assignments.length ? cards : '<div class="fill-note fill-note--flat"><b>Заданий пока нет</b>' +
+            "<p>Редакция скоро добавит первое задание набора — оно появится здесь.</p></div>") + groupsHtml;
+        $$("[data-course-send]", host).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var id = btn.getAttribute("data-course-send");
+            var note = host.querySelector('[data-course-note="' + id + '"]');
+            var box = btn.closest(".panel");
+            var text = ((box.querySelector("[data-course-text]") || {}).value || "").trim();
+            var ai = ((box.querySelector("[data-course-ai]") || {}).value || "").trim();
+            if (text.length < 40) { if (note) note.textContent = "Работа — минимум 40 символов: опишите её полно."; return; }
+            btn.disabled = true;
+            if (note) note.textContent = "Отправляем…";
+            Store.schoolSubSend(id, text, ai).then(function () {
+              drawCourse(host, sec);
+            }, function (err) {
+              btn.disabled = false;
+              if (note) note.textContent = (err && err.message) || "Не отправилось.";
+            });
+          });
+        });
+      }, function () {
+        host.innerHTML = '<p class="form__note">Сервер не отвечает — обновите страницу позже.</p>';
+      });
     }
 
     function drawRejected(app) {
@@ -7049,6 +7453,12 @@
             (!consentsOk ? '<p class="form__note">Для заявки нужны два подписанных согласия — ' +
               '<a href="/profile">подписать в кабинете</a>.</p>' : "") +
             "</div>";
+        }
+        var courseSec = document.getElementById("course");
+        var courseHost = $("[data-school-course]");
+        if (courseHost) {
+          if (app && app.status === "accepted") drawCourse(courseHost, courseSec);
+          else if (courseSec) courseSec.hidden = true;
         }
         if (applyHost) {
           if (app && app.status === "accepted") applyHost.innerHTML = drawAccepted(app);
@@ -7406,7 +7816,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -8454,7 +8864,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-3" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-4" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 

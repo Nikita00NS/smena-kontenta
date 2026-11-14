@@ -482,7 +482,16 @@ const results = [];
   check("в журнале есть приём в команду",
     r.ok === true && r.entries.some((e) => /приём в команду/.test(e.action || "")), r && r.entries && r.entries[0]);
 
-  // 18б. МЕДИАШКОЛА: заявка → решение редакции
+  // 18б. МЕДИАШКОЛА-ПЛАТФОРМА: набор → приём → заявка → зачисление → задания → работы
+  r = await call("school-cohort-create", { token: token2b, name: "Набор 001" });
+  check("набор создаёт только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-cohort-create", { token: token3, name: "Набор 001" });
+  check("набор создаётся с закрытым приёмом", r.ok === true && r.cohort && r.cohort.open === false, r);
+  const cohortId = r.ok ? r.cohort.id : "";
+  r = await call("school-apply", { token: token2b, direction: "Фотография", motivation: "Снимаю город и людей: серии о районах и людях рядом." });
+  check("пока приём закрыт, заявка не принимается", r.ok === false && r.code === 409, r);
+  r = await call("school-cohort-set", { token: token3, id: cohortId, open: true });
+  check("приём открывается редакцией", r.ok === true && r.cohort.open === true, r);
   r = await call("school-apply", { token: token2b, direction: "Непонятно что", motivation: "Снимаю город и людей: серии о районах и людях рядом." });
   check("направление только из списка", r.ok === false && r.code === 400, r);
   r = await call("school-apply", { token: token2b, direction: "Интервью", motivation: "Коротко" });
@@ -510,6 +519,34 @@ const results = [];
   check("редакция принимает в школу", r.ok === true && r.application.status === "accepted", r);
   r = await call("school-mine", { token: token2b });
   check("принятый видит статус «accepted»", r.ok === true && r.application.status === "accepted", r);
+  r = await call("school-cohorts", { token: token3 });
+  check("в платформе видны заявки", r.ok === true && (r.applications || []).length >= 1, r);
+  r = await call("school-enroll", { token: token3, appId: r.ok ? (r.applications.find((a) => a.userId === second.id) || {}).id : "", cohortId: cohortId });
+  check("принятого зачисляют в набор", r.ok === true && r.application && r.application.cohortId === cohortId, r);
+  r = await call("school-assignment-add", { token: token3, cohortId: cohortId,
+    title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров об одном дворе и выберите три лучших.", dueAt: "2026-12-01" });
+  check("задание добавляется в набор", r.ok === true && r.assignment && r.assignment.order === 1, r);
+  const assignmentId = r.ok ? r.assignment.id : "";
+  r = await call("school-my-course", { token: token2b });
+  check("до сдачи курс показывает задание", r.ok === true && (r.assignments || []).length === 1 && (r.subs || []).length === 0, r);
+  r = await call("school-sub-send", { token: token2b, assignmentId: assignmentId, text: "Коротко" });
+  check("слишком короткая работа не принимается", r.ok === false, r);
+  r = await call("school-sub-send", { token: token2b, assignmentId: assignmentId,
+    text: "Снял пять кадров у двора на Лесной: утро, скамейка, дворник, велосипеды и закат.",
+    aiNote: "ИИ помог с планом кадров, снимал сам" });
+  check("работа сдаётся с полем про ИИ", r.ok === true && r.submission && r.submission.attempt === 1, r);
+  const subId = r.ok ? r.submission.id : "";
+  r = await call("school-my-course", { token: token2b });
+  check("в курсе видна сданная работа", r.ok === true && r.subs.some((x) => x.status === "pending"), r);
+  r = await call("school-sub-review", { token: token2b, id: subId, decision: "accepted", points: 10, groupNote: "Группе: смотрите на третий кадр" });
+  check("разбор делает только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-sub-review", { token: token3, id: subId, decision: "accepted", points: 12,
+    groupNote: "Сильная серия: третий кадр — лучший, подпись короткая.",
+    personalNote: "Пятый кадр переснимите ближе.", aiChecked: true });
+  check("работа принимается с баллами и разбором", r.ok === true && r.submission.status === "accepted" && r.submission.points === 12, r);
+  r = await call("school-my-course", { token: token2b });
+  check("в курсе видны баллы и групповой разбор",
+    r.ok === true && r.points >= 12 && r.subs.some((x) => /третий кадр/.test(x.groupNote || "")), r);
   r = await call("admin-log", { token: token3 });
   check("в журнале есть медиашкола", r.ok === true && r.entries.some((e) => /медиашкол/.test(e.action || "")), r);
 
