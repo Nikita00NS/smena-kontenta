@@ -527,8 +527,19 @@ const results = [];
     title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров об одном дворе и выберите три лучших.", dueAt: "2026-12-01" });
   check("задание добавляется в набор", r.ok === true && r.assignment && r.assignment.order === 1, r);
   const assignmentId = r.ok ? r.assignment.id : "";
+  r = await call("school-module-add", { token: token2b, cohortId: cohortId, title: "Модуль", body: "Текст" });
+  check("модули добавляет только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-module-add", { token: token3, cohortId: cohortId, assignmentId: assignmentId,
+    title: "Модуль 1: герой в кадре", body: "Смотрите на героя, а не на улицу: один человек, одно действие.",
+    checklist: "Три кадра с героем, подписи с именами" });
+  check("модуль добавляется к заданию", r.ok === true && r.module && r.module.assignmentId === assignmentId, r);
+  const moduleId = r.ok ? r.module.id : "";
+  r = await call("school-module-set", { token: token3, id: moduleId, checklist: "Три кадра с героем, подписи с именами, звук чистый" });
+  check("модуль правится", r.ok === true && /звук чистый/.test(r.module.checklist), r);
   r = await call("school-my-course", { token: token2b });
-  check("до сдачи курс показывает задание", r.ok === true && (r.assignments || []).length === 1 && (r.subs || []).length === 0, r);
+  check("до сдачи курс показывает задание и модуль",
+    r.ok === true && (r.assignments || []).length === 1 && (r.subs || []).length === 0 &&
+    (r.modules || []).length === 1 && /звук чистый/.test(r.modules[0].checklist), r);
   r = await call("school-sub-send", { token: token2b, assignmentId: assignmentId, text: "Коротко" });
   check("слишком короткая работа не принимается", r.ok === false, r);
   r = await call("school-sub-send", { token: token2b, assignmentId: assignmentId,
@@ -547,6 +558,22 @@ const results = [];
   r = await call("school-my-course", { token: token2b });
   check("в курсе видны баллы и групповой разбор",
     r.ok === true && r.points >= 12 && r.subs.some((x) => /третий кадр/.test(x.groupNote || "")), r);
+  r = await call("school-cohort-csv", { token: token2b, cohortId: cohortId });
+  check("CSV собирает только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-cohort-csv", { token: token3, cohortId: cohortId });
+  {
+    const csv = r.ok ? Buffer.from(r.data, "base64").toString("utf8") : "";
+    check("CSV выгрузка содержит ученика и баллы",
+      r.ok === true && /Тест Второй/.test(csv) && /принято, 12 б\./.test(csv) && /Баллы всего/.test(csv),
+      r.ok ? csv.slice(0, 200) : r);
+    check("CSV с BOM для Excel", csv.charCodeAt(0) === 0xfeff);
+  }
+  r = await call("mail-log", { token: token3 });
+  check("письмо о новом задании ушло ученику",
+    r.ok === true && r.entries.some((e) => e.template === "school_assignment_new" && /Новое задание/.test(e.subject || "")),
+    r.ok ? r.entries.slice(0, 3) : r);
+  r = await call("school-module-delete", { token: token3, id: moduleId });
+  check("модуль удаляется", r.ok === true, r);
   r = await call("admin-log", { token: token3 });
   check("в журнале есть медиашкола", r.ok === true && r.entries.some((e) => /медиашкол/.test(e.action || "")), r);
 

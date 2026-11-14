@@ -212,6 +212,38 @@ function read_school_subs($dir) {
     return is_array($v) ? $v : array();
 }
 
+/* ---- учебные модули набора: теория, пример разбора, чек-лист к заданию ---- */
+function school_modules_file($dir) { return $dir . '/school-modules.json'; }
+
+function read_school_modules($dir) {
+    $v = read_json(school_modules_file($dir), array());
+    return is_array($v) ? $v : array();
+}
+
+function school_module_public($m) {
+    return array(
+        'id' => $m['id'],
+        'cohortId' => isset($m['cohortId']) ? $m['cohortId'] : '',
+        'assignmentId' => isset($m['assignmentId']) ? $m['assignmentId'] : '',
+        'title' => isset($m['title']) ? $m['title'] : '',
+        'checklist' => isset($m['checklist']) ? $m['checklist'] : '',
+        'body' => isset($m['body']) ? $m['body'] : '',
+        'order' => isset($m['order']) ? (int) $m['order'] : 0,
+        'createdAt' => isset($m['createdAt']) ? $m['createdAt'] : '',
+    );
+}
+
+function school_cohort_students($dir, $cohortId) {
+    $out = array();
+    foreach (read_school($dir) as $app) {
+        if (!isset($app['cohortId']) || (string) $app['cohortId'] !== (string) $cohortId) continue;
+        if (!isset($app['status']) || $app['status'] !== 'accepted') continue;
+        if (empty($app['email'])) continue;
+        $out[] = $app;
+    }
+    return $out;
+}
+
 function school_cohort_public($c, $dir) {
     $students = 0;
     foreach (read_school($dir) as $app) {
@@ -284,6 +316,8 @@ function school_platform_routes($act, $dir) {
         'school-assignment-add', 'school-assignments',
         'school-sub-send', 'school-sub-queue', 'school-sub-review', 'school-my-course',
         'school-enroll',
+        'school-module-add', 'school-module-set', 'school-module-delete',
+        'school-modules', 'school-cohort-csv',
     );
     if (!in_array($act, $handled, true)) return false;
 
@@ -371,7 +405,24 @@ function school_platform_routes($act, $dir) {
         $list[] = $row;
         if (!write_json(school_assignments_file($dir), $list)) fail('Не удалось сохранить задание.', 500);
         audit_log($dir, $me['email'], 'медиашкола', 'задание «' . $title . '» добавлено');
-        respond(array('ok' => true, 'assignment' => $row));
+        /* письмо каждому ученику набора: новое задание и общий дедлайн */
+        $cohortName = '';
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) $cohortId) { $cohortName = isset($c['name']) ? $c['name'] : ''; break; }
+        }
+        foreach (school_cohort_students($dir, $cohortId) as $st) {
+            mail_notify($dir, 'school_assignment_new', (string) $st['email'], array(
+                'name' => isset($st['name']) ? $st['name'] : '',
+                'cohort' => $cohortName,
+                'title' => $title,
+                'due' => $dueAt !== '' ? $dueAt : 'без жёсткого срока',
+            ), array(
+                'kind' => 'school_assignment_new',
+                'by' => isset($me['name']) ? $me['name'] : 'редакция',
+                'dedupe' => 'assignment:' . $row['id'] . ':' . (isset($st['userId']) ? $st['userId'] : ''),
+            ));
+        }
+        respond(array('ok' => true, 'assignment' => $row, 'notified' => count(school_cohort_students($dir, $cohortId))));
     }
 
     if ($act === 'school-assignments') {
@@ -385,6 +436,159 @@ function school_platform_routes($act, $dir) {
         }));
         usort($list, function ($a, $b) { return (int) $a['order'] - (int) $b['order']; });
         respond(array('ok' => true, 'assignments' => $list));
+    }
+
+    /* ---- учебные модули набора ---- */
+    if ($act === 'school-module-add') {
+        if (!can($me, 'school.manage')) fail('Модули добавляет редакция школы.', 403);
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $assignmentId = text((string) (isset($in['assignmentId']) ? $in['assignmentId'] : ''), 40);
+        $title = text((string) (isset($in['title']) ? $in['title'] : ''), 120);
+        $checklist = text((string) (isset($in['checklist']) ? $in['checklist'] : ''), 600);
+        $body = text((string) (isset($in['body']) ? $in['body'] : ''), 8000);
+        if (slen($title) < 4) fail('Название модуля слишком короткое.');
+        if (slen($body) < 20) fail('Напишите материал модуля — хотя бы 20 символов.');
+        $found = false;
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) $cohortId) { $found = true; break; }
+        }
+        if (!$found) fail('Набор не найден.', 404);
+        if ($assignmentId !== '') {
+            $linked = false;
+            foreach (read_school_assignments($dir) as $a) {
+                if ((string) $a['id'] === (string) $assignmentId && (string) $a['cohortId'] === (string) $cohortId) { $linked = true; break; }
+            }
+            if (!$linked) fail('Задание не найдено в этом наборе.', 404);
+        }
+        $list = read_school_modules($dir);
+        $order = count(array_filter($list, function ($m) use ($cohortId) {
+            return (string) (isset($m['cohortId']) ? $m['cohortId'] : '') === (string) $cohortId;
+        })) + 1;
+        $row = array(
+            'id' => 'scm_' . bin2hex(random_bytes(4)),
+            'cohortId' => $cohortId,
+            'assignmentId' => $assignmentId,
+            'title' => $title,
+            'checklist' => $checklist,
+            'body' => $body,
+            'order' => $order,
+            'createdAt' => date('c'),
+        );
+        $list[] = $row;
+        if (!write_json(school_modules_file($dir), $list)) fail('Не удалось сохранить модуль.', 500);
+        audit_log($dir, $me['email'], 'медиашкола', 'модуль «' . $title . '» добавлен');
+        respond(array('ok' => true, 'module' => school_module_public($row)));
+    }
+
+    if ($act === 'school-module-set') {
+        if (!can($me, 'school.manage')) fail('Модули правит редакция школы.', 403);
+        $id = text((string) (isset($in['id']) ? $in['id'] : ''), 40);
+        $list = read_school_modules($dir);
+        foreach ($list as $i => $m) {
+            if ((string) $m['id'] !== (string) $id) continue;
+            if (isset($in['title'])) {
+                $t = text((string) $in['title'], 120);
+                if (slen($t) < 4) fail('Название модуля слишком короткое.');
+                $list[$i]['title'] = $t;
+            }
+            if (isset($in['checklist'])) $list[$i]['checklist'] = text((string) $in['checklist'], 600);
+            if (isset($in['body'])) {
+                $b = text((string) $in['body'], 8000);
+                if (slen($b) < 20) fail('Материал модуля — минимум 20 символов.');
+                $list[$i]['body'] = $b;
+            }
+            if (isset($in['assignmentId'])) {
+                $aid = text((string) $in['assignmentId'], 40);
+                if ($aid !== '') {
+                    $linked = false;
+                    foreach (read_school_assignments($dir) as $a) {
+                        if ((string) $a['id'] === (string) $aid && (string) $a['cohortId'] === (string) $m['cohortId']) { $linked = true; break; }
+                    }
+                    if (!$linked) fail('Задание не найдено в этом наборе.', 404);
+                }
+                $list[$i]['assignmentId'] = $aid;
+            }
+            if (!write_json(school_modules_file($dir), $list)) fail('Не удалось сохранить модуль.', 500);
+            audit_log($dir, $me['email'], 'медиашкола', 'модуль изменён: ' . $list[$i]['title']);
+            respond(array('ok' => true, 'module' => school_module_public($list[$i])));
+        }
+        fail('Модуль не найден.', 404);
+    }
+
+    if ($act === 'school-module-delete') {
+        if (!can($me, 'school.manage')) fail('Модули удаляет редакция школы.', 403);
+        $id = text((string) (isset($in['id']) ? $in['id'] : ''), 40);
+        $list = read_school_modules($dir);
+        $left = array();
+        $removed = '';
+        foreach ($list as $m) {
+            if ((string) $m['id'] === (string) $id) { $removed = isset($m['title']) ? $m['title'] : ''; continue; }
+            $left[] = $m;
+        }
+        if ($removed === '') fail('Модуль не найден.', 404);
+        if (!write_json(school_modules_file($dir), $left)) fail('Не удалось удалить модуль.', 500);
+        audit_log($dir, $me['email'], 'медиашкола', 'модуль удалён: ' . $removed);
+        respond(array('ok' => true));
+    }
+
+    if ($act === 'school-modules') {
+        if (!can($me, 'school.manage') && !can($me, 'school.teach') && !can($me, 'school.review')
+            && !can($me, 'school.enroll')) {
+            fail('Модули доступны редакции и ученикам школы.', 403);
+        }
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $list = array_values(array_filter(read_school_modules($dir), function ($m) use ($cohortId) {
+            return (string) (isset($m['cohortId']) ? $m['cohortId'] : '') === (string) $cohortId;
+        }));
+        usort($list, function ($a, $b) { return (int) (isset($a['order']) ? $a['order'] : 0) - (int) (isset($b['order']) ? $b['order'] : 0); });
+        $out = array();
+        foreach ($list as $m) $out[] = school_module_public($m);
+        respond(array('ok' => true, 'modules' => $out));
+    }
+
+    /* ---- успеваемость набора: CSV для редакции ---- */
+    if ($act === 'school-cohort-csv') {
+        if (!can($me, 'school.manage')) fail('Выгрузку делает редакция школы.', 403);
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $cohort = null;
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) $cohortId) { $cohort = $c; break; }
+        }
+        if (!$cohort) fail('Набор не найден.', 404);
+        $assignments = array_values(array_filter(read_school_assignments($dir), function ($a) use ($cohortId) {
+            return (string) (isset($a['cohortId']) ? $a['cohortId'] : '') === (string) $cohortId;
+        }));
+        usort($assignments, function ($a, $b) { return (int) $a['order'] - (int) $b['order']; });
+        $subs = read_school_subs($dir);
+        $csv = "\xEF\xBB\xBF";
+        $csv .= "Ученик;Почта";
+        foreach ($assignments as $a) $csv .= ";" . str_replace(array(";", "\r", "\n"), array(",", " ", " "), (string) $a['title']);
+        $csv .= ";Баллы всего\n";
+        foreach (school_cohort_students($dir, $cohortId) as $st) {
+            $line = str_replace(array(";", "\r", "\n"), array(",", " ", " "), (string) (isset($st['name']) ? $st['name'] : ''))
+                . ";" . str_replace(array(";", "\r", "\n"), array(",", " ", " "), (string) (isset($st['email']) ? $st['email'] : ''));
+            $total = function_exists('points_balance') ? (int) points_balance($dir, $st['userId']) : 0;
+            foreach ($assignments as $a) {
+                $cell = "-";
+                foreach ($subs as $sub) {
+                    if ((string) $sub['assignmentId'] !== (string) $a['id']) continue;
+                    if ((string) $sub['userId'] !== (string) $st['userId']) continue;
+                    if ($sub['status'] === 'accepted') $cell = "принято, " . (isset($sub['points']) ? (int) $sub['points'] : 0) . " б.";
+                    else if ($sub['status'] === 'pending') $cell = "на проверке";
+                    else if ($sub['status'] === 'returned') $cell = "возвращено";
+                }
+                $line .= ";" . $cell;
+            }
+            $line .= ";" . $total . "\n";
+            $csv .= $line;
+        }
+        if (trim($csv) === "\xEF\xBB\BF") $csv .= "Ученик;Почта;Баллы всего\n";
+        respond(array(
+            'ok' => true,
+            'filename' => 'uspevaemost-' . date('Y-m-d') . '.csv',
+            'mime' => 'text/csv; charset=UTF-8',
+            'data' => base64_encode($csv),
+        ));
     }
 
     /* ---- домашние работы ---- */
@@ -522,8 +726,14 @@ function school_platform_routes($act, $dir) {
                 );
             }
         }
+        $mods = array();
+        foreach (read_school_modules($dir) as $m) {
+            if ((string) (isset($m['cohortId']) ? $m['cohortId'] : '') !== (string) $cohort['id']) continue;
+            $mods[] = school_module_public($m);
+        }
+        usort($mods, function ($a, $b) { return (int) $a['order'] - (int) $b['order']; });
         respond(array('ok' => true, 'cohort' => array('id' => $cohort['id'], 'name' => $cohort['name']),
-            'assignments' => $assignments, 'subs' => $mine,
+            'assignments' => $assignments, 'subs' => $mine, 'modules' => $mods,
             'points' => function_exists('points_balance') ? points_balance($dir, $me['id']) : 0));
     }
 

@@ -1199,6 +1199,9 @@ if ($act === 'diag') {
         'school_open' => count(array_filter(read_school($DATA_DIR), function ($a) {
             return isset($a['status']) && $a['status'] === 'pending';
         })),
+        'school_subs_pending' => count(array_filter(read_school_subs($DATA_DIR), function ($sub) {
+            return isset($sub['status']) && $sub['status'] === 'pending';
+        })),
         'pending_email' => count(array_filter($users, function ($u) {
             return empty($u['emailVerified']);
         })),
