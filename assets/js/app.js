@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -1614,9 +1614,16 @@
       }
 
       function observeReveals() {
+        /* Первый скан — то, что было в HTML сразу (анимируем при прокрутке).
+           Всё, что дорисовано ПОСЛЕ (кабинет, панель), показываем мгновенно:
+           так новый контент виден всегда, даже если наблюдатель в конкретном
+           браузере или вкладке промолчал. */
+        var first = !initAnimations.scanned;
+        initAnimations.scanned = true;
         $$("[data-reveal], [data-count]").forEach(function (el) {
           if (el.__revealed) return;
           el.__revealed = true;
+          if (!first) { el.classList.add("is-in"); return; }
           initAnimations.io.observe(el);
         });
       }
@@ -4805,7 +4812,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -5146,7 +5153,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -5500,8 +5507,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -6301,7 +6308,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-13-7",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-13-8",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -6312,7 +6319,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-13-7",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-13-8",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -7111,7 +7118,8 @@
         '<p class="profile-id__role"><span class="status-badge">' + esc(user.access || "Пользователь") +
         "</span>" + esc(user.role) +
         (user.region ? " · " + esc(regionName(user.region)) : "") + "</p>" +
-        '<p class="profile-id__since">На проекте с ' + fmtDate(user.createdAt) + "</p></div>" +
+        '<p class="profile-id__since">На проекте с ' + fmtDate(user.createdAt) +
+        " · сборка " + esc((SC && SC.build) || "—") + "</p></div>" +
         "</div>" +
         '<div class="profile-hero__actions">' +
         (canWrite
@@ -7191,7 +7199,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -8241,7 +8249,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-7" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-13-8" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 

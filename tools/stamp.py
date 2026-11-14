@@ -44,4 +44,42 @@ if new != data:
         fh.write(new)
     print("версия в data.js обновлена")
 
+# Самовосстановление версии. Кэш хостинга и браузера держит старый HTML
+# по ключу URL: человек видит прежний интерфейс, хотя файлы уже новые.
+# Каждая страница при загрузке сверяет сборку data.js, полученную С СЕРВЕРА
+# (запрос со случайным ключом, мимо кэша), со своей; если она новее —
+# страница сама перезагружается на адрес с ?v=новой сборки.
+CHECKER = (
+    '<script>/* smena-v-check */(function(){'
+    'if(location.protocol==="file:")return;'
+    'function go(f){try{if(sessionStorage.getItem("smena-v")===f)return;'
+    'sessionStorage.setItem("smena-v",f);'
+    'var u=new URL(location.href);u.searchParams.set("v",f);location.replace(u.href)}catch(e){}}'
+    'function ck(){try{if(!window.SC||!window.SC.build)return false;'
+    'if(typeof fetch!=="function")return true;'
+    'fetch("/assets/js/data.js?nc="+Date.now(),{cache:"no-store"})'
+    '.then(function(r){return r.text()})'
+    '.then(function(t){var m=t.match(/build\\s*:\\s*"([^"]+)"/);'
+    'if(m&&m[1]&&m[1]!==window.SC.build)go(m[1])}).catch(function(){});'
+    'return true}catch(e){return true}}'
+    'var n=0;(function w(){if(ck()||++n>20)return;setTimeout(w,150)})()})();</script>'
+)
+injected = 0
+for base, dirs, files in os.walk(ROOT):
+    dirs[:] = [d for d in dirs if d not in {".git", "node_modules", "assets"}]
+    for name in files:
+        if not name.endswith(".html"):
+            continue
+        hp = os.path.join(base, name)
+        with open(hp, encoding="utf-8") as fh:
+            html = fh.read()
+        if "smena-v-check" in html or "</body>" not in html:
+            continue
+        html = html.replace("</body>", CHECKER + "</body>", 1)
+        with open(hp, "w", encoding="utf-8") as fh:
+            fh.write(html)
+        injected += 1
+if injected:
+    print("самопроверка версии добавлена в страницы:", injected)
+
 print("версия", BUILD, "— обновлено страниц:", changed)
