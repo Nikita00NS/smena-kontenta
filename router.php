@@ -10,7 +10,7 @@
    ========================================================================== */
 
 $pages = array(
-    'home', 'news', 'about', 'partners', 'region', 'media-school', 'school',
+    'home', 'news', 'about', 'partners', 'region', 'media-school', 'school', 'press-card',
     'docs', 'poisk', 'join', 'profile', 'write', 'admin', 'article',
     'support', 'founders', 'verify',
 );

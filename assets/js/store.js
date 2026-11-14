@@ -1805,6 +1805,11 @@ window.Store = (function () {
   function mailTemplateTest(key, to) { return withToken("mail-template-test", { key: key, to: to }); }
   function mailLog() { return withToken("mail-log"); }
 
+  /* Баллы участнику: начисление и списание с основанием (points.award). */
+  function pointsAdd(userId, delta, reason, note) {
+    return withToken("points-add", { userId: userId, delta: delta, reason: reason || "manual", note: note || "" });
+  }
+
   /* ---------- двухфакторный вход ---------- */
   function loginTwoFactor(email, code) {
     return api("login-2fa", { email: email, code: code }).then(function (res) {
@@ -2183,6 +2188,7 @@ window.Store = (function () {
     mailTemplatePreview: mailTemplatePreview,
     mailTemplateTest: mailTemplateTest,
     mailLog: mailLog,
+    pointsAdd: pointsAdd,
     hiringMine: hiringMine,
     hiringApply: hiringApply,
     hiringTest: hiringTest,

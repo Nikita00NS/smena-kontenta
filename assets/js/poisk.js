@@ -36,6 +36,20 @@
 
   var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  /* Плашка «проверено редакцией»: дата берётся из данных подборки. */
+  (function () {
+    var badge = $("[data-ps-updated]");
+    if (!badge || !DATA.updated) return;
+    var dateEl = $("[data-ps-updated-date]", badge);
+    try {
+      var d = new Date(String(DATA.updated));
+      dateEl.textContent = isNaN(d.getTime())
+        ? String(DATA.updated)
+        : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+      badge.hidden = false;
+    } catch (e) {}
+  })();
+
   /* ------------------------------------------------------------------ toast */
   var toastEl = $("#ps-toast"), toastTimer = null;
   function toast(msg) {

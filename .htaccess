@@ -36,6 +36,7 @@ AddDefaultCharset UTF-8
   RewriteRule ^region/?$ /router.php?p=region [L]
   RewriteRule ^media-school/?$ /router.php?p=media-school [L]
   RewriteRule ^school/?$ /router.php?p=school [L]
+  RewriteRule ^press-card/?$ /router.php?p=press-card [L]
   RewriteRule ^docs/?$ /router.php?p=docs [L]
   RewriteRule ^poisk/?$ /router.php?p=poisk [L]
   RewriteRule ^join/?$ /router.php?p=join [L]

@@ -68,8 +68,8 @@ function check(name, cond, extra) {
   const panels = Array.from(doc.querySelectorAll("[data-cab-panel]"));
   const ids = tabs.map((t) => t.getAttribute("data-cab-tab"));
 
-  check("семь разделов кабинета", tabs.length === 7 && panels.length === 7, ids.join(","));
-  check("порядок разделов", ids.join(",") === "overview,posts,card,progress,team,mail,settings", ids.join(","));
+  check("шесть разделов кабинета", tabs.length === 6 && panels.length === 6, ids.join(","));
+  check("порядок разделов", ids.join(",") === "overview,posts,card,progress,team,settings", ids.join(","));
   check("виден ровно один раздел", panels.filter((p) => !p.hidden).length === 1);
   check("выбранный раздел помечен для скринридера",
     tabs.filter((t) => t.getAttribute("aria-selected") === "true").length === 1);
@@ -87,7 +87,8 @@ function check(name, cond, extra) {
   check("настройки и безопасность вместе",
     !!settings.querySelector("[data-profile-form]") && !!settings.querySelector("[data-twofa-card]") &&
     !!settings.querySelector("[data-danger-zone]") && !!settings.querySelector("[data-recovery-card]"));
-  check("почта в своём разделе", !!doc.querySelector('[data-cab-panel="mail"] [data-inbox]'));
+  check("письма редакции в «Редакции и задачи»", !!doc.querySelector('[data-cab-panel="team"] [data-inbox]'));
+  check("отдельной вкладки «Почта» больше нет", !doc.querySelector('[data-cab-tab="mail"]'));
   check("редакция и задачи вместе",
     !!doc.querySelector('[data-cab-panel="team"] [data-my-editorial]') &&
     !!doc.querySelector('[data-cab-panel="team"] [data-tasks-cabinet]'));

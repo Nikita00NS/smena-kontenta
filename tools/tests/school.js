@@ -63,10 +63,10 @@ const BASE = `
 (async () => {
   /* 1. Гость: приглашение зарегистрироваться */
   {
-    const { dom } = makeDom("/media-school/index.html", BASE);
+    const { dom } = makeDom("/school/index.html", BASE);
     await new Promise((r) => setTimeout(r, 1500));
     const doc = dom.window.document;
-    const host = doc.querySelector("[data-school-host]");
+    const host = doc.querySelector("[data-school-status]");
     check("на странице медиашколы есть блок заявки", !!host);
     check("гостю предлагают создать аккаунт",
       !!host && /Создать аккаунт/.test(host.textContent), host && host.textContent.slice(0, 120));
@@ -75,7 +75,7 @@ const BASE = `
 
   /* 2. Автор без заявки: форма, направление из списка, отправка */
   {
-    const { dom } = makeDom("/media-school/index.html", BASE + `
+    const { dom } = makeDom("/school/index.html", BASE + `
       localStorage.setItem("smena_token_v1", "school-token");
       localStorage.setItem("smena_user_v1", JSON.stringify({ id: "u_sch", name: "Школа Тест", email: "sch@example.ru", createdAt: "2026-11-01T00:00:00Z" }));
     `);
@@ -84,25 +84,25 @@ const BASE = `
     const w = dom.window;
     const form = doc.querySelector("[data-school-form]");
     check("вошедшему показывают форму заявки", !!form);
-    const dir = form && form.querySelector('select[name="direction"]');
-    check("шесть направлений из программы",
-      !!dir && dir.options.length === 6, dir && dir.options.length);
+    const dirs = form ? Array.from(form.querySelectorAll('.school-dir-chips input[name="direction"]')) : [];
+    check("шесть направлений из программы", dirs.length === 6, dirs.length);
     check("в списке есть «Проверка информации»",
-      !!dir && Array.from(dir.options).some((o) => o.textContent === "Проверка информации"));
-    dir.value = "Интервью";
+      dirs.some((o) => o.value === "Проверка информации"));
+    const iv = dirs.filter((o) => o.value === "Интервью")[0];
+    if (iv) { iv.checked = true; iv.dispatchEvent(new w.Event("change", { bubbles: true })); }
     form.querySelector('textarea[name="motivation"]').value = "Делаю разговоры с героями района: записала уже три интервью на телефон.";
     form.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
     await new Promise((r) => setTimeout(r, 400));
     check("заявка ушла с выбранным направлением",
       w.applied && w.applied.direction === "Интервью", w.applied);
-    check("после отправки виден статус «на рассмотрении»",
-      /Заявка на рассмотрении/.test((doc.querySelector("[data-school-host]") || {}).textContent || ""));
+    check("после отправки форма подтверждает",
+      /Заявка отправлена/.test((doc.querySelector("[data-school-apply]") || {}).textContent || ""));
     dom.window.close();
   }
 
   /* 3. Принятый: зелёная плашка и следующий шаг */
   {
-    const { dom } = makeDom("/media-school/index.html", BASE + `
+    const { dom } = makeDom("/school/index.html", BASE + `
       localStorage.setItem("smena_token_v1", "school-token");
       localStorage.setItem("smena_user_v1", JSON.stringify({ id: "u_sch", name: "Школа Тест", email: "sch@example.ru", createdAt: "2026-11-01T00:00:00Z" }));
       schApp = { id: "sc_1", status: "accepted", direction: "Фотография", createdAt: "2026-11-10T00:00:00Z" };
@@ -112,7 +112,7 @@ const BASE = `
     const state = doc.querySelector("[data-school-state]");
     check("принятому показывают зелёную плашку",
       !!state && state.classList.contains("fill-note--ok"), state && state.className);
-    check("следующий шаг — первое задание", /Написать материал/.test(state.textContent));
+    check("следующий шаг — первое задание", /Сделать первый материал/.test(state.textContent));
     dom.window.close();
   }
 
