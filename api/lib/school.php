@@ -292,6 +292,78 @@ function school_cohort_students($dir, $cohortId) {
     return $out;
 }
 
+/* ---- пост-анонс набора: черновики для соцсетей из реальных данных набора ---- */
+function school_plural($n, $one, $few, $many) {
+    $n = (int) $n;
+    $m10 = $n % 10;
+    $m100 = $n % 100;
+    if ($m10 === 1 && $m100 !== 11) return $one;
+    if ($m10 >= 2 && $m10 <= 4 && ($m100 < 12 || $m100 > 14)) return $few;
+    return $many;
+}
+function school_post_pick($arr) {
+    return $arr[mt_rand(0, count($arr) - 1)];
+}
+function school_post_drafts($dir, $cohort, $tone, $seed) {
+    mt_srand((int) $seed);
+    $name = (string) (isset($cohort['name']) ? $cohort['name'] : 'новый набор');
+    $open = !empty($cohort['open']);
+    $students = 0;
+    foreach (read_school($dir) as $app) {
+        if (isset($app['cohortId']) && (string) $app['cohortId'] === (string) $cohort['id']
+            && isset($app['status']) && $app['status'] === 'accepted') $students++;
+    }
+    $assignments = count(array_filter(read_school_assignments($dir), function ($a) use ($cohort) {
+        return (string) (isset($a['cohortId']) ? $a['cohortId'] : '') === (string) $cohort['id'];
+    }));
+    $link = 'https://smenakontenta.ru/school#apply';
+    $tags = '#СменаКонтента #медиашкола #журналистика';
+    $free = 'Школа бесплатная: дипломов и сертификатов нет, зато есть разбор каждого материала и публикация на сайте.';
+    $dirs = 'Шесть направлений: текст, интервью, фотография, видео, соцсети и факт-чекинг.';
+    $status = $open
+        ? school_post_pick(array('Идёт приём заявок.', 'Приём открыт — подать заявку можно прямо сейчас.'))
+        : school_post_pick(array('Приём скоро откроется — загляните на страницу школы.',
+            'Набор готовится: как только откроем приём, сообщим здесь.'));
+    $people = '';
+    if ($students > 0) {
+        $people = school_post_pick(array(
+            'В наборе уже ' . $students . ' ' . school_plural($students, 'человек', 'человека', 'человек') . '.',
+            'Учиться приходят ' . $students . ' ' . school_plural($students, 'человек', 'человека', 'человек') . ' — можно присоединяться.',
+        ));
+    }
+    $program = $assignments > 0
+        ? 'Программа — ' . $assignments . ' ' . school_plural($assignments, 'практическое задание', 'практических задания', 'практических заданий')
+            . ' ' . school_plural($assignments, 'с разбором', 'с разбором', 'с разбором') . ' от редактора.'
+        : 'Каждый материал разбирает редактор: что получилось и что переписать.';
+    $cta = 'Подать заявку: ' . $link;
+    $out = array();
+    for ($i = 0; $i < 3; $i++) {
+        if ($tone === 'short') {
+            $hook = school_post_pick(array('«' . $name . '» — набор в медиашколу.', 'Набор «' . $name . '»: школа бесплатно.'));
+            $line = $hook . ' ' . ($students > 0
+                ? 'В наборе ' . $students . ' ' . school_plural($students, 'человек', 'человека', 'человек') . ', присоединяйтесь.'
+                : 'Разбор каждого материала, публикация на сайте.') . ' ' . $cta . ' ' . $tags;
+        } elseif ($tone === 'official') {
+            $hook = school_post_pick(array(
+                'Медиашкола «Смена контента» набирает группу «' . $name . '».',
+                'Объявляем набор «' . $name . '» в медиашколе «Смена контента».',
+            ));
+            $line = $hook . "\n" . $dirs . "\n" . $program . "\n" . $free . ($students > 0 ? "\n" . $people : "")
+                . "\n" . $status . "\n" . $cta . "\n" . $tags;
+        } else {
+            $hook = school_post_pick(array(
+                'Учимся делать материалы, которые читают до конца 🌿',
+                'Хотите писать так, чтобы дочитывали? Рассказываем, как. ✍️',
+                'Медиашкола «Смена контента» снова собирает группу — бесплатно.',
+            ));
+            $line = $hook . "\n" . $name . ": " . $program . "\n" . $free
+                . ($students > 0 ? "\n" . $people : "") . "\n" . $status . "\n" . $cta . "\n" . $tags;
+        }
+        $out[] = trim(preg_replace('/\n{2,}/', "\n", $line));
+    }
+    return $out;
+}
+
 function school_cohort_public($c, $dir) {
     $students = 0;
     foreach (read_school($dir) as $app) {
@@ -369,7 +441,7 @@ function school_platform_routes($act, $dir) {
         'school-quiz-add', 'school-quiz-delete', 'school-quizzes',
         'school-quiz-submit', 'school-quiz-results', 'school-diary',
         'school-sub-remind',
-        'school-graduation-pdf', 'school-cohort-students', 'school-invite',
+        'school-graduation-pdf', 'school-cohort-students', 'school-invite', 'school-post-draft',
     );
     if (!in_array($act, $handled, true)) return false;
 
@@ -998,6 +1070,25 @@ function school_platform_routes($act, $dir) {
         }
         audit_log($dir, $me['email'], 'медиашкола', 'приглашения на набор: отправлено ' . $sent);
         respond(array('ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'considered' => $considered));
+    }
+
+    /* ---- пост-анонс набора: черновики для соцсетей (публикует редакция вручную) ---- */
+    if ($act === 'school-post-draft') {
+        if (!can($me, 'school.manage')) fail('Черновики постов делает редакция школы.', 403);
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $tone = text((string) (isset($in['tone']) ? $in['tone'] : 'warm'), 20);
+        if (!in_array($tone, array('warm', 'official', 'short'), true)) $tone = 'warm';
+        $cohort = null;
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) $cohortId) { $cohort = $c; break; }
+        }
+        if (!$cohort) fail('Набор не найден.', 404);
+        $seed = isset($in['seed']) ? (int) $in['seed'] : 0;
+        if ($seed <= 0) $seed = (int) (microtime(true) * 1000) % 1000000;
+        audit_log($dir, $me['email'], 'медиашкола', 'черновик пост-анонса набора «' . $cohort['name'] . '»');
+        respond(array('ok' => true, 'tone' => $tone, 'seed' => $seed,
+            'posts' => school_post_drafts($dir, $cohort, $tone, $seed),
+            'cohort' => school_cohort_public($cohort, $dir)));
     }
 
     /* ---- успеваемость набора: CSV для редакции ---- */

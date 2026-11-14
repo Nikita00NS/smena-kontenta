@@ -91,6 +91,17 @@ function check(name, cond, extra) {
       ] });
     };
     Store.schoolInvite = function () { return Promise.resolve({ ok: true, sent: 0, skipped: 0 }); };
+    Store.schoolPostDraft = function (cohortId, tone, seed) {
+      tone = tone || "warm";
+      seed = seed || 1;
+      return Promise.resolve({
+        ok: true, tone: tone, seed: seed,
+        posts: ["[" + tone + " s" + seed + "] Черновик раз: набор «Набор 001», ссылка smenakontenta.ru/school",
+                "[" + tone + " s" + seed + "] Черновик два: разбор каждого материала",
+                "[" + tone + " s" + seed + "] Черновик три: шесть направлений"],
+        cohort: { name: "Набор 001", open: false, students: 1, assignments: 2 },
+      });
+    };
     Store.schoolSubQueue = function () { return Promise.resolve({ ok: true, subs: [] }); };
     Store.schoolAssignments = function () { return Promise.resolve({ ok: true, assignments: [] }); };
     Store.schoolCohorts = function () {
@@ -216,6 +227,29 @@ function check(name, cond, extra) {
   check("кнопка выпуска у набравшего курс есть",
     !!doc.querySelector('[data-panel="school"] [data-sch-grad="u_s1"]'));
   check("кнопка приглашения на набор есть", !!doc.querySelector('[data-panel="school"] [data-sch-invite]'));
+  check("кнопка «Пост-анонс (ИИ-помощник)» есть", !!doc.querySelector('[data-panel="school"] [data-sch-post]'));
+  doc.querySelector('[data-panel="school"] [data-sch-post]').dispatchEvent(new dom.window.Event("click", { bubbles: true }));
+  await new Promise((r2) => setTimeout(r2, 30));
+  const postPanel = doc.querySelector('[data-panel="school"] [data-sch-post-panel]');
+  check("панель черновиков открылась с честной пометкой",
+    !!postPanel && /ИИ-помощник/.test(postPanel.textContent) && /Ничего не публикуется само/.test(postPanel.textContent));
+  check("черновики отрисованы: три текста с тона warm",
+    postPanel.querySelectorAll("[data-sch-post-text]").length === 3 &&
+    postPanel.querySelectorAll("[data-sch-post-text]")[0].value.indexOf("[warm s1]") === 0);
+  check("кнопки копирования у каждого черновика", postPanel.querySelectorAll("[data-sch-post-copy]").length === 3);
+  postPanel.querySelectorAll("[data-sch-post-copy]")[0].dispatchEvent(new dom.window.Event("click", { bubbles: true }));
+  await new Promise((r2) => setTimeout(r2, 30));
+  check("копирование даёт понятную подсказку без буфера",
+    /Скопировано|выделен/.test(postPanel.querySelector("[data-sch-post-copied='0']").textContent));
+  const officialBtn = postPanel.querySelector('[data-sch-post-tone="official"]');
+  officialBtn.dispatchEvent(new dom.window.Event("click", { bubbles: true }));
+  await new Promise((r2) => setTimeout(r2, 30));
+  check("переключение тона перезапрашивает черновики",
+    postPanel.querySelectorAll("[data-sch-post-text]")[0].value.indexOf("[official s1]") === 0);
+  postPanel.querySelector("[data-sch-post-more]").dispatchEvent(new dom.window.Event("click", { bubbles: true }));
+  await new Promise((r2) => setTimeout(r2, 30));
+  check("«Другие варианты» увеличивает seed",
+    postPanel.querySelectorAll("[data-sch-post-text]")[0].value.indexOf("[official s2]") === 0);
 
   /* Регротест «узкой колонки»: при box-sizing:border-box связка
      max-width + паддинг (100vw-1200)/2 схлопывает контентную область до

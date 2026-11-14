@@ -701,6 +701,31 @@ const results = [];
   r = await call("school-invite", { token: token3, cohortId: cohortId });
   check("приглашения уходят без заявок, ученику не уходят",
     r.ok === true && r.sent >= 1 && typeof r.skipped === "number", r);
+
+  // 18б3. ПОСТ-АНОНС НАБОРА: черновики для соцсетей из данных набора
+  r = await call("school-post-draft", { token: token2b, cohortId: cohortId });
+  check("черновики постов делает только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-post-draft", { token: token3, cohortId: "scg_net" });
+  check("несуществующий набор — 404", r.ok === false && r.code === 404, r);
+  r = await call("school-post-draft", { token: token3, cohortId: cohortId, tone: "warm", seed: 7 });
+  check("черновики собираются: 3 варианта, ссылка и название на месте",
+    r.ok === true && r.posts.length === 3 &&
+    r.posts.every((t) => /smenakontenta\.ru\/school/.test(t) && /Набор 001|группу «Набор 001»|набор «Набор 001»/i.test(t)),
+    r.ok ? r.posts.map((t) => t.slice(0, 60)) : r);
+  const warmPosts = r.ok ? r.posts.slice() : [];
+  r = await call("school-post-draft", { token: token3, cohortId: cohortId, tone: "warm", seed: 7 });
+  check("одинаковый seed даёт одинаковые черновики", r.ok === true && JSON.stringify(r.posts) === JSON.stringify(warmPosts), r.ok ? r.posts[0].slice(0, 60) : r);
+  r = await call("school-post-draft", { token: token3, cohortId: cohortId, tone: "warm", seed: 99 });
+  check("другой seed меняет варианты", r.ok === true && JSON.stringify(r.posts) !== JSON.stringify(warmPosts), r.ok ? r.posts[0].slice(0, 60) : r);
+  r = await call("school-post-draft", { token: token3, cohortId: cohortId, tone: "short", seed: 3 });
+  check("короткий тон — короткие посты с ссылкой",
+    r.ok === true && r.posts.length === 3 && r.posts.every((t) => t.length < 300 && /smenakontenta\.ru\/school/.test(t)),
+    r.ok ? r.posts.map((t) => t.length) : r);
+  r = await call("school-cohort-set", { token: token3, id: cohortId, open: false });
+  r = await call("school-post-draft", { token: token3, cohortId: cohortId, tone: "official", seed: 5 });
+  check("у закрытого набора черновик честно пишет о скором приёме",
+    r.ok === true && r.posts.some((t) => /скоро|готовится/.test(t)), r.ok ? r.posts[0].slice(0, 80) : r);
+  r = await call("school-cohort-set", { token: token3, id: cohortId, open: true });
   r = await call("mail-log", { token: token3 });
   check("письмо-приглашение в журнале отправок",
     r.ok === true && r.entries.some((e) => e.template === "school_invite" && /открыт/i.test(e.subject || "")),
