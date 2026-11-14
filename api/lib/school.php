@@ -369,6 +369,7 @@ function school_platform_routes($act, $dir) {
         'school-quiz-add', 'school-quiz-delete', 'school-quizzes',
         'school-quiz-submit', 'school-quiz-results', 'school-diary',
         'school-sub-remind',
+        'school-graduation-pdf', 'school-cohort-students', 'school-invite',
     );
     if (!in_array($act, $handled, true)) return false;
 
@@ -861,6 +862,142 @@ function school_platform_routes($act, $dir) {
         }
         usort($events, function ($a, $b) { return strcmp((string) $b['at'], (string) $a['at']); });
         respond(array('ok' => true, 'events' => array_slice($events, 0, 20)));
+    }
+
+    /* ---- выпускная справка ученика: все задания набора приняты ---- */
+    if ($act === 'school-graduation-pdf') {
+        if (!can($me, 'school.manage')) fail('Справки об обучении выдаёт редакция школы.', 403);
+        $userId = text((string) (isset($in['userId']) ? $in['userId'] : ''), 40);
+        $cohort = school_user_cohort($dir, $userId);
+        if (!$cohort) fail('Человек не зачислен в набор школы.', 409);
+        $assignments = array_values(array_filter(read_school_assignments($dir), function ($a) use ($cohort) {
+            return (string) (isset($a['cohortId']) ? $a['cohortId'] : '') === (string) $cohort['id'];
+        }));
+        $totalCount = count($assignments);
+        if ($totalCount === 0) fail('В наборе нет заданий — сначала составьте программу.', 409);
+        $acceptedIds = array();
+        foreach (read_school_subs($dir) as $sub) {
+            if ((string) (isset($sub['userId']) ? $sub['userId'] : '') !== (string) $userId) continue;
+            if (!isset($sub['status']) || $sub['status'] !== 'accepted') continue;
+            $acceptedIds[(string) $sub['assignmentId']] = true;
+        }
+        $passedCount = 0;
+        foreach ($assignments as $a) {
+            if (isset($acceptedIds[(string) $a['id']])) $passedCount++;
+        }
+        if ($passedCount < $totalCount) fail('Не все задания набора приняты: ' . $passedCount . ' из ' . $totalCount . '. Разберите оставшиеся работы, затем выдайте справку.', 409);
+        $student = null;
+        foreach (read_users($dir) as $u) {
+            if ((string) $u['id'] === (string) $userId) { $student = $u; break; }
+        }
+        if (!$student) fail('Ученик не найден.', 404);
+        $app = school_by_user($dir, $userId);
+        $direction = $app && isset($app['direction']) ? (string) $app['direction'] : '';
+        $points = function_exists('points_balance') ? points_balance($dir, $userId) : 0;
+        $bytes = school_graduation_pdf_bytes($student, isset($cohort['name']) ? $cohort['name'] : '',
+            $direction, $passedCount, $totalCount, $points,
+            array('name' => isset($me['name']) ? $me['name'] : 'Редакция'));
+        /* баллы за завершение курса — один раз на пару набор-ученик */
+        $awarded = 0;
+        if (function_exists('points_add')) {
+            $res = points_add($dir, $userId, 25, 'school.course', 'Медиашкола',
+                'Курс набора «' . (isset($cohort['name']) ? $cohort['name'] : '') . '» завершён',
+                'course:' . $cohort['id'] . ':' . $userId);
+            if (!empty($res['ok']) && empty($res['skipped'])) $awarded = 25;
+        }
+        audit_log($dir, $me['email'], 'медиашкола', 'выпускная справка: ' .
+            (isset($student['name']) ? $student['name'] : '') . ' (' . $passedCount . '/' . $totalCount . ')');
+        respond(array(
+            'ok' => true,
+            'filename' => 'spravka-o-kurse-' . date('Y-m-d') . '.pdf',
+            'mime' => 'application/pdf',
+            'data' => base64_encode($bytes),
+            'awarded' => $awarded,
+        ));
+    }
+
+    /* ---- ученики набора: прогресс для редакции ---- */
+    if ($act === 'school-cohort-students') {
+        if (!can($me, 'school.manage') && !can($me, 'school.teach') && !can($me, 'school.review')
+            && !can($me, 'school.enroll')) {
+            fail('Список набора видит редакция школы.', 403);
+        }
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $totalCount = count(array_filter(read_school_assignments($dir), function ($a) use ($cohortId) {
+            return (string) (isset($a['cohortId']) ? $a['cohortId'] : '') === (string) $cohortId;
+        }));
+        $acceptedIds = array();
+        foreach (read_school_assignments($dir) as $a) {
+            if ((string) (isset($a['cohortId']) ? $a['cohortId'] : '') !== (string) $cohortId) continue;
+            $acceptedIds[(string) $a['id']] = array();
+        }
+        foreach (read_school_subs($dir) as $sub) {
+            if (!isset($sub['status']) || $sub['status'] !== 'accepted') continue;
+            $aid = (string) (isset($sub['assignmentId']) ? $sub['assignmentId'] : '');
+            $uid = (string) (isset($sub['userId']) ? $sub['userId'] : '');
+            if (!isset($acceptedIds[$aid])) continue;
+            if (!in_array($uid, $acceptedIds[$aid], true)) $acceptedIds[$aid][] = $uid;
+        }
+        $out = array();
+        foreach (school_cohort_students($dir, $cohortId) as $st) {
+            $uid = (string) (isset($st['userId']) ? $st['userId'] : '');
+            $passed = 0;
+            foreach ($acceptedIds as $uids) {
+                if (in_array($uid, $uids, true)) $passed++;
+            }
+            $out[] = array(
+                'userId' => $uid,
+                'name' => isset($st['name']) ? $st['name'] : '',
+                'email' => isset($st['email']) ? $st['email'] : '',
+                'direction' => isset($st['direction']) ? $st['direction'] : '',
+                'accepted' => $passed,
+                'total' => $totalCount,
+                'points' => function_exists('points_balance') ? points_balance($dir, $uid) : 0,
+            );
+        }
+        respond(array('ok' => true, 'students' => $out, 'total' => $totalCount));
+    }
+
+    /* ---- приглашение на открытый набор: письмо тем, кто ещё не подал заявку ---- */
+    if ($act === 'school-invite') {
+        if (!can($me, 'school.manage')) fail('Приглашения рассылает редакция школы.', 403);
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $cohort = null;
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) $cohortId) { $cohort = $c; break; }
+        }
+        if (!$cohort) fail('Набор не найден.', 404);
+        if (empty($cohort['open'])) fail('Приём набора закрыт — сначала откройте его.', 409);
+        $hasApp = array();
+        foreach (read_school($dir) as $a) {
+            if (isset($a['userId'])) {
+                if (isset($a['status']) && in_array($a['status'], array('pending', 'accepted'), true)) {
+                    $hasApp[(string) $a['userId']] = true;
+                }
+            }
+        }
+        $sent = 0;
+        $skipped = 0;
+        $considered = 0;
+        foreach (read_users($dir) as $u) {
+            if (empty($u['emailVerified']) || empty($u['email'])) continue;
+            $access = isset($u['access']) ? (string) $u['access'] : 'Пользователь';
+            if (in_array($access, array('Сотрудник', 'Редактор', 'Главный администратор', 'Директор'), true)) continue;
+            if (isset($hasApp[(string) $u['id']])) continue;
+            $considered++;
+            if ($sent >= 200) { $skipped++; continue; }
+            $ok = mail_notify($dir, 'school_invite', (string) $u['email'], array(
+                'name' => isset($u['name']) ? $u['name'] : '',
+                'cohort' => isset($cohort['name']) ? $cohort['name'] : '',
+            ), array(
+                'kind' => 'school_invite',
+                'by' => isset($me['name']) ? $me['name'] : 'редакция',
+                'dedupe' => 'invite:' . $cohortId . ':' . (string) $u['id'],
+            ));
+            if ($ok) $sent++; else $skipped++;
+        }
+        audit_log($dir, $me['email'], 'медиашкола', 'приглашения на набор: отправлено ' . $sent);
+        respond(array('ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'considered' => $considered));
     }
 
     /* ---- успеваемость набора: CSV для редакции ---- */

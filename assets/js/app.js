@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -4485,6 +4485,7 @@
       var quizzes = [];
       var quizResults = [];
       var diary = [];
+      var students = [];
       var applications = [];
 
       function cohortById(id) {
@@ -4537,6 +4538,7 @@
           '<button class="btn btn--sm ' + (c.open ? "btn--ghost" : "btn--accent") + '" type="button" data-sch-toggle>' +
           (c.open ? "Закрыть приём" : "Открыть приём") + "</button>" +
           '<button class="btn btn--ghost btn--sm" type="button" data-sch-csv>Успеваемость (CSV)</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-sch-invite>Пригласить участников</button>' +
           '<span class="form__note" data-sch-csv-note></span></div>';
         $$( "[data-sch-cohort]", cohortPanel).forEach(function (b) {
           b.addEventListener("click", function () {
@@ -4569,6 +4571,25 @@
             refresh();
           }, function (err) {
             if (note) note.textContent = (err && err.message) || "Не переключилось.";
+          });
+        });
+        var inviteBtn = $("[data-sch-invite]", cohortPanel);
+        if (inviteBtn) inviteBtn.addEventListener("click", function () {
+          var note = $("[data-sch-csv-note]", cohortPanel);
+          if (!c.open) {
+            if (note) note.textContent = "Приём набора закрыт — сначала откройте его, затем приглашайте.";
+            return;
+          }
+          if (!window.confirm("Разослать приглашение всем зарегистрированным участникам без заявки? Лимит — 200 писем за раз.")) return;
+          inviteBtn.disabled = true;
+          if (note) note.textContent = "Рассылаем приглашения…";
+          Store.schoolInvite(c.id).then(function (res) {
+            inviteBtn.disabled = false;
+            if (note) note.textContent = "Готово: приглашений отправлено " + res.sent +
+              (res.skipped ? ", пропущено " + res.skipped : "") + ". Повторно одним кнопкой не уйдут (сутки).";
+          }, function (err) {
+            inviteBtn.disabled = false;
+            if (note) note.textContent = (err && err.message) || "Не разослалось.";
           });
         });
         var csvBtn = $("[data-sch-csv]", cohortPanel);
@@ -4794,7 +4815,10 @@
                   diary = (dres && dres.events) || [];
                   return Store.schoolSubQueue(currentId).then(function (sres) {
                     subs = sres.subs || [];
-                    drawZone();
+                    return Store.schoolCohortStudents(currentId).then(function (stres) {
+                      students = (stres && stres.students) || [];
+                      drawZone();
+                    });
                   });
                 });
               });
@@ -4873,6 +4897,21 @@
               }).join("") + "</div></div>"
             : "") +
           "</div>";
+        var studentsHtml = students.length
+          ? '<div class="panel" style="padding:20px;margin-bottom:22px"><span class="kicker">Ученики набора: ' +
+            students.length + "</span>" +
+            '<div class="diag" style="margin-top:10px">' + students.map(function (st) {
+              var doneAll = st.total > 0 && st.accepted >= st.total;
+              return '<div class="diag__row"><span><b>' + esc(st.name) + "</b> · " + esc(st.email) +
+                (st.direction ? " · " + esc(st.direction) : "") + " · задания: " + st.accepted + "/" + st.total +
+                " · баллы: " + st.points + "</span><b>" +
+                (doneAll
+                  ? '<span class="status status--pub">курс пройден</span> ' +
+                    '<button class="btn btn--accent btn--sm" type="button" data-sch-grad="' + esc(st.userId) + '">Справка о курсе</button>'
+                  : '<span class="status status--draft">в процессе</span>') + "</b></div>";
+            }).join("") + "</div></div>"
+          : '<div class="fill-note fill-note--flat" style="margin-bottom:22px"><b>Учеников в наборе пока нет</b>' +
+            "<p>Примите заявки и зачислите людей — они появятся здесь с прогрессом по заданиям.</p></div>";
         var diaryHtml = diary.length
           ? '<div class="panel" style="padding:20px;margin-bottom:22px"><span class="kicker">Дневник набора</span>' +
             '<p class="form__note">Последние события: сдачи, разборы, тесты. Полный журнал — в «Сайт-журнале».</p>' +
@@ -4914,7 +4953,7 @@
               }).join("") + "</div></div>"
             : "") +
           "</div>";
-        zone.innerHTML = addHtml + listHtml + modulesHtml + quizzesHtml + diaryHtml + queueHtml;
+        zone.innerHTML = addHtml + listHtml + modulesHtml + quizzesHtml + studentsHtml + diaryHtml + queueHtml;
         bindModules();
         bindQuizzes();
 
@@ -4968,6 +5007,34 @@
         }
         bindReview("[data-sch-accept]", "accepted");
         bindReview("[data-sch-return]", "returned");
+        $$("[data-sch-grad]", zone).forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var uid = btn.getAttribute("data-sch-grad");
+            var row = btn.closest(".diag__row");
+            btn.disabled = true;
+            if (row) row.setAttribute("data-grad-busy", "1");
+            Store.schoolGraduationPdf(uid).then(function (file) {
+              btn.disabled = false;
+              if (row) row.removeAttribute("data-grad-busy");
+              var url = URL.createObjectURL(file.blob);
+              var a = document.createElement("a");
+              a.href = url;
+              a.download = file.filename;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+              loadZone();
+            }, function (err) {
+              btn.disabled = false;
+              if (row) row.removeAttribute("data-grad-busy");
+              if (row) {
+                var note = row.querySelector(".status");
+                if (note) note.textContent = (err && err.message) || "Не собралось.";
+              }
+            });
+          });
+        });
         $$("[data-sch-remind]", zone).forEach(function (btn) {
           btn.addEventListener("click", function () {
             var id = btn.getAttribute("data-sch-remind");
@@ -5689,7 +5756,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -5974,7 +6041,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6328,8 +6395,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -7129,7 +7196,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-6",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-7",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -7140,7 +7207,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-6",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-7",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -7730,6 +7797,18 @@
             '<span class="form__note" data-quiz-note></span></div></div>' +
             '<div data-quiz-result></div></div>';
         }
+        var allDone = assignments.length > 0 && assignments.every(function (a) {
+          var sub = mine[a.id];
+          return sub && sub.status === "accepted";
+        });
+        var doneHtml = allDone
+          ? '<div class="fill-note fill-note--ok" style="margin-bottom:14px"><b>Курс набора пройден!</b>' +
+            "<p>Все задания приняты, разборы прочитаны. Редакция выдаст справку о завершении курса — " +
+            "она появится в кабинете, а баллы за курс уже начислены.</p>" +
+            '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' +
+            '<a class="btn btn--accent btn--sm" href="/write">Продолжайте публиковать</a>' +
+            '<a class="btn btn--ghost btn--sm" href="/docs">Документы проекта</a></div></div>'
+          : "";
         var quizzesHtml = quizzes.length
           ? '<div data-school-quizzes>' + quizzes.map(quizCard).join("") + "</div>"
           : "";
@@ -7750,6 +7829,7 @@
           '<div class="panel" style="padding:20px;margin-bottom:14px"><div class="panel__head"><h3>' + esc(cohort.name) + "</h3>" +
           '<span class="panel__tag">баллы: ' + Number(res.points || 0) + "</span></div>" +
           '<p class="form__note">Задания общие для набора, дедлайн один на всех. После разбора работу можно сдать снова.</p></div>' +
+          doneHtml +
           (assignments.length ? cards : '<div class="fill-note fill-note--flat"><b>Заданий пока нет</b>' +
             "<p>Редакция скоро добавит первое задание набора — оно появится здесь.</p></div>") +
           quizzesHtml + programHtml + groupsHtml;
@@ -8284,7 +8364,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -9332,7 +9412,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-6" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-7" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 

@@ -631,6 +631,51 @@ const results = [];
     r.ok === true && r.entries.some((e) => e.template === "school_homework_reminder"), r.ok ? r.entries.slice(0, 3) : r);
   r = await call("school-quiz-delete", { token: token3, id: quizId });
   check("тест удаляется", r.ok === true, r);
+
+  // 18г. ВЫПУСК: ученики набора, справка о курсе, приглашения
+  r = await call("school-cohort-students", { token: token2b, cohortId: cohortId });
+  check("список набора закрыт участнику", r.ok === false && r.code === 403, r);
+  r = await call("school-cohort-students", { token: token3, cohortId: cohortId });
+  check("список набора показывает ученика с прогрессом",
+    r.ok === true && r.students.length === 1 && r.students[0].name === "Тест Второй" &&
+    r.students[0].total === 1 && r.students[0].accepted === 1, r.ok ? r.students : r);
+  const gradUserId = r.ok ? r.students[0].userId : "";
+  r = await call("school-graduation-pdf", { token: token2b, userId: gradUserId });
+  check("справку выдаёт только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-graduation-pdf", { token: token3, userId: gradUserId });
+  {
+    const pdfHead = r.ok && r.data ? Buffer.from(r.data, "base64").toString("latin1").slice(0, 5) : "";
+    check("справка о курсе собирается как PDF", r.ok === true && pdfHead === "%PDF-", r.ok ? r.filename : r);
+    check("баллы за курс начислены один раз (25 б.)", r.ok === true && r.awarded === 25, r.ok ? r.awarded : r);
+  }
+  r = await call("school-graduation-pdf", { token: token3, userId: gradUserId });
+  check("повторная справка не начисляет баллы", r.ok === true && r.awarded === 0, r.ok ? r.awarded : r);
+  r = await call("school-invite", { token: token2b, cohortId: cohortId });
+  check("приглашения рассылает только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-cohort-set", { token: token3, id: cohortId, open: false });
+  r = await call("school-invite", { token: token3, cohortId: cohortId });
+  check("приглашать можно только при открытом приёме", r.ok === false && r.code === 409, r);
+  r = await call("school-cohort-set", { token: token3, id: cohortId, open: true });
+  /* адресат приглашения: свежий участник без заявки (first — директор, second — сотрудник с заявкой) */
+  r = await call("reg", { name: "Аня Приглашённая", email: "invite@example.ru", pass: "parol1234", region: "moskva" });
+  check("участник для приглашения зарегистрирован", r.ok === true, r);
+  /* приглашение идёт только на подтверждённую почту: отмечаем verified в обеих папках данных */
+  {
+    for (const dir of ["/smena-data", "/site/api/data"]) {
+      try {
+        const users = JSON.parse(await readText(dir + "/users.json"));
+        for (const u of users) { u.emailVerified = true; if (u.status === "pending_email") u.status = "active"; }
+        await php.writeFile(dir + "/users.json", JSON.stringify(users));
+      } catch (e) {}
+    }
+  }
+  r = await call("school-invite", { token: token3, cohortId: cohortId });
+  check("приглашения уходят без заявок, ученику не уходят",
+    r.ok === true && r.sent >= 1 && typeof r.skipped === "number", r);
+  r = await call("mail-log", { token: token3 });
+  check("письмо-приглашение в журнале отправок",
+    r.ok === true && r.entries.some((e) => e.template === "school_invite" && /открыт/i.test(e.subject || "")),
+    r.ok ? r.entries.slice(0, 3) : r);
   r = await call("admin-log", { token: token3 });
   check("в журнале есть медиашкола", r.ok === true && r.entries.some((e) => /медиашкол/.test(e.action || "")), r);
 
