@@ -9490,3 +9490,168 @@ body.is-maint { overflow: hidden; }
   font-size: 0.85rem;
   color: rgba(244, 242, 237, 0.72);
 }
+
+/* 23. Сезонные и праздничные акценты -------------------------------------- */
+.site-seasonal {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: 10px var(--pad);
+  color: var(--ink);
+  border-bottom: 1px solid var(--seasonal-tint);
+  background: linear-gradient(100deg, var(--seasonal-tint), transparent 78%);
+}
+
+.site-seasonal__mark {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--seasonal-tint);
+  border-radius: 13px;
+  background: var(--seasonal-tint);
+  color: var(--seasonal-accent);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.site-seasonal__content {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.site-seasonal__label {
+  display: block;
+  color: var(--seasonal-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.site-seasonal__message {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.site-seasonal__dismiss {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--seasonal-tint);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.site-seasonal__dismiss:hover {
+  border-color: var(--seasonal-accent);
+  background: var(--seasonal-tint);
+  color: var(--ink);
+}
+
+html[data-seasonal-month="1"] { --seasonal-accent: #8bd8ff; --seasonal-tint: rgba(89, 180, 235, 0.13); }
+html[data-seasonal-month="2"] { --seasonal-accent: #b5a0ff; --seasonal-tint: rgba(145, 116, 237, 0.13); }
+html[data-seasonal-month="3"] { --seasonal-accent: #86d59c; --seasonal-tint: rgba(86, 181, 110, 0.13); }
+html[data-seasonal-month="4"] { --seasonal-accent: #74cee0; --seasonal-tint: rgba(78, 174, 195, 0.13); }
+html[data-seasonal-month="5"] { --seasonal-accent: #ffd477; --seasonal-tint: rgba(229, 165, 74, 0.14); }
+html[data-seasonal-month="6"] { --seasonal-accent: #8ed9a2; --seasonal-tint: rgba(84, 184, 111, 0.13); }
+html[data-seasonal-month="7"] { --seasonal-accent: #ffd16b; --seasonal-tint: rgba(231, 165, 51, 0.14); }
+html[data-seasonal-month="8"] { --seasonal-accent: #ffad78; --seasonal-tint: rgba(224, 132, 79, 0.13); }
+html[data-seasonal-month="9"] { --seasonal-accent: #f2a66d; --seasonal-tint: rgba(207, 120, 63, 0.14); }
+html[data-seasonal-month="10"] { --seasonal-accent: #d99768; --seasonal-tint: rgba(177, 104, 59, 0.14); }
+html[data-seasonal-month="11"] { --seasonal-accent: #7fc5b5; --seasonal-tint: rgba(74, 159, 140, 0.14); }
+html[data-seasonal-month="12"] { --seasonal-accent: #eda1b4; --seasonal-tint: rgba(201, 106, 131, 0.14); }
+
+html[data-seasonal-holiday="new-year"] { --seasonal-accent: #82ddff; --seasonal-tint: rgba(72, 174, 225, 0.15); }
+html[data-seasonal-holiday="defender-day"] { --seasonal-accent: #a9b9e8; --seasonal-tint: rgba(94, 125, 196, 0.15); }
+html[data-seasonal-holiday="women-day"] { --seasonal-accent: #f09fbe; --seasonal-tint: rgba(218, 106, 153, 0.14); }
+html[data-seasonal-holiday="cosmonautics-day"] { --seasonal-accent: #b7a1ff; --seasonal-tint: rgba(133, 109, 216, 0.15); }
+html[data-seasonal-holiday="spring-labour-day"] { --seasonal-accent: #94d88e; --seasonal-tint: rgba(104, 171, 85, 0.14); }
+html[data-seasonal-holiday="victory-day"] { --seasonal-accent: #df8d7e; --seasonal-tint: rgba(180, 84, 71, 0.13); }
+html[data-seasonal-holiday="russia-day"] { --seasonal-accent: #91baff; --seasonal-tint: rgba(83, 129, 210, 0.15); }
+html[data-seasonal-holiday="knowledge-day"] { --seasonal-accent: #a5d89a; --seasonal-tint: rgba(99, 161, 87, 0.14); }
+html[data-seasonal-holiday="unity-day"] { --seasonal-accent: #83cbb6; --seasonal-tint: rgba(71, 160, 136, 0.15); }
+html[data-seasonal-holiday="constitution-day"] { --seasonal-accent: #9fc1dd; --seasonal-tint: rgba(92, 145, 183, 0.14); }
+
+html[data-theme="light"] .site-seasonal {
+  color: var(--ink);
+  background: linear-gradient(100deg, var(--seasonal-tint), rgba(255, 255, 255, 0.28) 78%);
+}
+
+.site-seasonal-snow {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.site-seasonal-snow__flake {
+  position: absolute;
+  top: -10vh;
+  color: rgba(233, 246, 255, 0.62);
+  text-shadow: 0 0 9px rgba(155, 215, 255, 0.44);
+  line-height: 1;
+  animation: site-seasonal-snowfall var(--snow-duration, 16s) linear var(--snow-delay, 0s) infinite;
+  will-change: transform;
+}
+
+@keyframes site-seasonal-snowfall {
+  from { transform: translate3d(0, -5vh, 0) rotate(0deg); }
+  to { transform: translate3d(var(--snow-drift, 18px), 112vh, 0) rotate(360deg); }
+}
+
+@media (max-width: 720px) {
+  .site-seasonal {
+    gap: 10px;
+    padding: 9px 16px;
+  }
+  .site-seasonal__mark {
+    flex-basis: 34px;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    font-size: 18px;
+  }
+  .site-seasonal__label { font-size: 9px; }
+  .site-seasonal__message { font-size: 12px; }
+  .site-seasonal__dismiss { flex-basis: 32px; width: 32px; height: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-seasonal-snow { display: none !important; }
+  .site-seasonal-snow__flake { animation: none !important; }
+}
+
+@media print {
+  .site-seasonal,
+  .site-seasonal-snow { display: none !important; }
+}
+
+html[data-seasonal-month] .site-header::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--seasonal-accent), transparent);
+  content: "";
+  pointer-events: none;
+}
