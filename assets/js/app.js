@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -3052,6 +3052,29 @@
           : '<p class="form__note">Заявлений нет.</p>';
       }
 
+      /* Медиашкола в карточке участника: заявка, набор и прогресс по заданиям. */
+      function schoolPersonHtml(s) {
+        var ST = { pending: "ждёт решения", accepted: "принята", rejected: "отклонена" };
+        if (s.status === "accepted" && s.cohortName) {
+          var html = '<div class="pcard__line"><span>Учится в наборе</span><small>' + esc(s.cohortName) +
+            (s.direction ? " · " + esc(s.direction) : "") + "</small><span></span></div>" +
+            '<div class="diag">' +
+            '<div class="diag__row"><span>Задания</span><b>' + (s.accepted || 0) + " из " + (s.total || 0) + " принято</b></div>" +
+            '<div class="diag__row"><span>Баллы за задания</span><b>' + (s.points || 0) + "</b></div>" +
+            '<div class="diag__row"><span>Последний разбор</span><b>' +
+            (s.lastReviewedAt ? esc(fmtDate(s.lastReviewedAt)) : "пока нет") + "</b></div></div>" +
+            (s.done ? '<span class="status status--pub" style="margin-top:8px;display:inline-block">курс пройден · можно выпустить справкой</span>' : "") +
+            (s.lastNote ? '<p class="form__note">Последний комментарий разбора: «' + esc(s.lastNote) + "»</p>" : "");
+          return html;
+        }
+        var line = '<div class="pcard__line"><span>Заявка в медиашколу</span><small>' +
+          esc(ST[s.status] || s.status || "") + (s.direction ? " · " + esc(s.direction) : "") +
+          (s.createdAt ? " · от " + esc(fmtDate(s.createdAt)) : "") + "</small><span></span></div>";
+        if (s.status === "rejected" && s.note) line += '<p class="form__note">Причина отказа: «' + esc(s.note) + "»</p>";
+        if (s.status === "accepted" && !s.cohortName) line += '<p class="form__note">Заявка принята, набор ещё не назначен.</p>';
+        return line;
+      }
+
       function renderCard(d) {
         var u = d.user;
         var cards = d.cards || [];
@@ -3108,6 +3131,8 @@
           '<p class="form__note" data-card-note></p></div></div>' +
 
           '<div class="pcard__section"><span class="kicker">Заявления</span>' + appsList(d) + "</div>" +
+          (d.school ? '<div class="pcard__section"><span class="kicker">Медиашкола</span>' +
+            schoolPersonHtml(d.school) + "</div>" : "") +
 
           '<div class="pcard__section"><span class="kicker">Документы из сайта</span>' +
           '<p class="form__note">Официальные документы проекта, готовятся прямо из панели: ' +
@@ -5905,7 +5930,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -6190,7 +6215,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6544,8 +6569,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -7345,7 +7370,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-9",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-10",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -7356,7 +7381,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-9",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-10",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -8513,7 +8538,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -9561,7 +9586,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-9" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 
