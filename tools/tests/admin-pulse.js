@@ -91,6 +91,22 @@ function check(name, cond, extra) {
       ] });
     };
     Store.schoolInvite = function () { return Promise.resolve({ ok: true, sent: 0, skipped: 0 }); };
+    Store.schoolActivity = function (cohortId) {
+      const pd = (x) => String(x).padStart(2, "0");
+      const mon = new Date();
+      mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+      const weeks = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(mon);
+        d.setDate(d.getDate() - i * 7);
+        const start = d.getFullYear() + "-" + pd(d.getMonth() + 1) + "-" + pd(d.getDate());
+        const last = i === 0;
+        weeks.push({ start: start, sent: last ? 3 : 0, reviewed: last ? 2 : 0, accepted: last ? 2 : 0,
+          quizzes: last ? 1 : 0, quizPassed: last ? 1 : 0 });
+      }
+      return Promise.resolve({ ok: true, weeks: weeks,
+        totals: { sent: 3, reviewed: 2, accepted: 2, quizzes: 1, quizPassed: 1 } });
+    };
     Store.userCard = function (id) {
       return Promise.resolve({
         ok: true,
@@ -168,6 +184,17 @@ function check(name, cond, extra) {
     doc.querySelectorAll(".overview__tile").length);
   check("плитка «работ школы» показывает 2", /работ школы/.test(doc.querySelector("[data-admin-overview]").textContent) &&
     /на проверке/.test(doc.querySelector("[data-admin-overview]").textContent));
+  check("карточка «Активность набора» есть", !!doc.querySelector("[data-activity-card]"));
+  const actSel = doc.querySelector("[data-activity-cohort]");
+  check("в графике выбор набора", !!actSel && actSel.options.length >= 1 && actSel.options[0].textContent.indexOf("Набор 001") === 0);
+  const actChart = doc.querySelector("[data-activity-chart]");
+  check("график отрисован: 12 недель-столбиков",
+    !!actChart && actChart.querySelectorAll("small").length === 12,
+    actChart ? actChart.querySelectorAll("small").length : actChart);
+  check("подпись итогов сходится с моком",
+    !!actChart && /сдано 3/.test(actChart.textContent) && /проверено 2/.test(actChart.textContent) && /тестов 1/.test(actChart.textContent));
+  check("у столбиков есть подсказки-цифры",
+    !!actChart && actChart.querySelectorAll('[title^="сдано работ"]').length === 12);
   const rows = Array.from(doc.querySelectorAll(".pulse-row"));
   check("очереди собраны в одном месте", rows.length >= 6, rows.length);
   check("очередь материалов показывает 2", rows.some((r) => /Материалы на проверке/.test(r.textContent) && /2/.test(r.querySelector(".pulse-row__count").textContent)));
