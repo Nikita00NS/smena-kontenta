@@ -481,3 +481,45 @@ body.ps.cursor-on .ps-cur { display: block; }
   .ps-brand__logo { height: 16px; }
   .ps-detail__meta { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Сезонная плашка для отдельной полноэкранной страницы поиска. */
+body.ps .site-seasonal--search {
+  position: relative;
+  z-index: 150;
+  width: min(720px, calc(100% - 32px));
+  max-width: none;
+  margin: 96px auto 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(110, 231, 255, 0.2);
+  border-top: 2px solid var(--seasonal-accent, var(--ps-cyan));
+  border-radius: 16px;
+  background: rgba(10, 14, 24, 0.78);
+  color: #fff;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+body.ps .site-seasonal--search .site-seasonal__message { color: rgba(255, 255, 255, 0.76); }
+body.ps .site-seasonal--search .site-seasonal__dismiss { color: rgba(255, 255, 255, 0.72); }
+body.ps .site-seasonal--search .site-seasonal__dismiss:hover { color: #fff; }
+
+@media (max-width: 720px) {
+  body.ps .site-seasonal--search {
+    width: calc(100% - 24px);
+    margin: 70px auto 0;
+    padding: 9px 11px;
+    gap: 9px;
+  }
+  body.ps .site-seasonal--search .site-seasonal__mark {
+    flex-basis: 31px;
+    width: 31px;
+    height: 31px;
+    font-size: 16px;
+  }
+}
+
+html[data-seasonal-month] body.ps .ps-hud {
+  border-color: var(--seasonal-tint);
+  box-shadow: 0 0 40px var(--seasonal-tint);
+}
