@@ -387,6 +387,8 @@
     if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
     var snow = document.querySelector(".site-seasonal-snow");
     if (snow && snow.parentNode) snow.parentNode.removeChild(snow);
+    var leaves = document.querySelector(".site-seasonal-leaves");
+    if (leaves && leaves.parentNode) leaves.parentNode.removeChild(leaves);
   }
 
   function appendText(parent, tag, className, text) {
@@ -405,7 +407,8 @@
     banner.setAttribute("data-no-i18n", "");
 
     var event = state.holiday && HOLIDAYS[state.holiday] ? HOLIDAYS[state.holiday] : null;
-    var mark = appendText(banner, "span", "site-seasonal__mark", event ? event.mark : MONTH_MARKS[state.month - 1]);
+    var markText = event ? event.mark : state.season === "autumn" ? "🍂" : MONTH_MARKS[state.month - 1];
+    var mark = appendText(banner, "span", "site-seasonal__mark", markText);
     mark.setAttribute("aria-hidden", "true");
 
     var content = document.createElement("div");
@@ -468,6 +471,54 @@
     document.body.appendChild(layer);
   }
 
+  function addAutumnLeaves() {
+    var reduced = false;
+    try { reduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); }
+    catch (e) {}
+    if (reduced) return;
+
+    var ns = "http://www.w3.org/2000/svg";
+    var colors = ["#e9782d", "#d65b25", "#f0a83a", "#b94727", "#db8430", "#c85b31"];
+    var shape = "M20 2 C23 8 30 7 30 14 C37 13 37 20 31 23 C35 29 30 33 25 29 C24 36 17 36 16 30 C10 33 5 29 10 23 C3 21 4 14 11 14 C11 8 18 9 20 2 Z";
+    var layer = document.createElement("div");
+    layer.className = "site-seasonal-leaves";
+    layer.setAttribute("aria-hidden", "true");
+
+    for (var i = 0; i < 14; i++) {
+      var leaf = document.createElement("span");
+      leaf.className = "site-seasonal-leaves__leaf";
+      leaf.style.left = ((i * 37 + 6) % 100) + "%";
+      leaf.style.width = (15 + (i % 4) * 4) + "px";
+      leaf.style.height = (19 + (i % 4) * 5) + "px";
+      leaf.style.opacity = String(0.55 + (i % 4) * 0.1);
+      leaf.style.setProperty("--leaf-delay", -((i % 8) * 1.9) + "s");
+      leaf.style.setProperty("--leaf-duration", (15 + (i % 5) * 2.2) + "s");
+      leaf.style.setProperty("--leaf-drift", ((i % 2 ? 1 : -1) * (18 + (i % 4) * 13)) + "px");
+      leaf.style.setProperty("--leaf-end", ((i % 2 ? -1 : 1) * (7 + (i % 3) * 9)) + "px");
+
+      var svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("viewBox", "0 0 40 40");
+      svg.setAttribute("focusable", "false");
+      svg.setAttribute("aria-hidden", "true");
+      var blade = document.createElementNS(ns, "path");
+      blade.setAttribute("d", shape);
+      blade.setAttribute("fill", colors[i % colors.length]);
+      blade.setAttribute("stroke", "#8f401f");
+      blade.setAttribute("stroke-width", "1.1");
+      var veins = document.createElementNS(ns, "path");
+      veins.setAttribute("d", "M19 5 C20 15 23 25 30 33 M20 15 L12 14 M21 18 L30 16 M22 22 L14 24 M24 26 L26 29");
+      veins.setAttribute("fill", "none");
+      veins.setAttribute("stroke", "rgba(112, 51, 25, .72)");
+      veins.setAttribute("stroke-width", "1.1");
+      veins.setAttribute("stroke-linecap", "round");
+      svg.appendChild(blade);
+      svg.appendChild(veins);
+      leaf.appendChild(svg);
+      layer.appendChild(leaf);
+    }
+    document.body.appendChild(layer);
+  }
+
   function init(date) {
     if (!document.body) return null;
     initialized = true;
@@ -484,6 +535,7 @@
 
     addBanner(state, copy, language);
     if (state.holiday === "new-year") addSnow();
+    else if (state.season === "autumn") addAutumnLeaves();
     return state;
   }
 

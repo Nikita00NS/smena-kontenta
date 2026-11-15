@@ -83,6 +83,27 @@ function localDate(window, year, month, day) {
 
   {
     const { dom, errors } = makeDom();
+    const state = dom.window.SmenaSeasonal.init(localDate(dom.window, 2026, 11, 12));
+    const doc = dom.window.document;
+    const layer = doc.querySelector(".site-seasonal-leaves");
+    check("осенью показывается отдельная оранжевая листва", state.season === "autumn"
+      && !!layer && doc.querySelectorAll(".site-seasonal-leaves__leaf").length === 14);
+    check("осенняя плашка получает листовой знак",
+      !!doc.querySelector(".site-seasonal__mark") && /🍂/.test(doc.querySelector(".site-seasonal__mark").textContent));
+    check("листья — декоративный слой с SVG и без перехвата кликов",
+      !!layer && layer.getAttribute("aria-hidden") === "true"
+      && layer.querySelectorAll("svg path").length === 28
+      && /pointer-events:\s*none/.test(CSS));
+    const dismiss = doc.querySelector(".site-seasonal__dismiss");
+    dismiss.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    check("закрытие осенней темы убирает листву", !doc.querySelector(".site-seasonal-leaves")
+      && !doc.querySelector(".site-seasonal"));
+    check("нет ошибок в осеннем рантайме", errors.length === 0, errors.join(" | "));
+    dom.window.close();
+  }
+
+  {
+    const { dom, errors } = makeDom();
     const state = dom.window.SmenaSeasonal.init(localDate(dom.window, 2026, 12, 24));
     const doc = dom.window.document;
     const banner = doc.querySelector(".site-seasonal");
@@ -129,6 +150,10 @@ function localDate(window, year, month, day) {
       !!dom.window.document.querySelector(".site-seasonal"));
     check("при reduced motion анимированный снег не создаётся",
       !dom.window.document.querySelector(".site-seasonal-snow"));
+    dom.window.SmenaSeasonal.init(localDate(dom.window, 2026, 11, 12));
+    check("при reduced motion осенняя листва не создаётся",
+      !!dom.window.document.querySelector(".site-seasonal")
+      && !dom.window.document.querySelector(".site-seasonal-leaves"));
     dom.window.close();
   }
 

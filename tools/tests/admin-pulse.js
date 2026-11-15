@@ -16,6 +16,7 @@ function inline(html) {
 }
 
 let bad = 0;
+const csvExports = [];
 function check(name, cond, extra) {
   if (cond) console.log("  ok   " + name);
   else { bad++; console.log("  FAIL " + name + (extra === undefined ? "" : " → " + extra)); }
@@ -50,13 +51,16 @@ function check(name, cond, extra) {
       return Promise.resolve({
         users: [
           { id: "u_1", name: "Марина Съёмкина", email: "marina@example.ru", access: "Директор", region: "moskva",
-            points: 41, emailVerified: true, consent: "approved", cardStatus: "issued", cardNumber: "СК-2026-001",
+            points: 41, emailVerified: true, consent: "approved", distributionConsent: "approved", cardStatus: "issued", cardNumber: "СК-2026-001",
+            hasRequests: false, recoveryOpen: false, status: "active",
             lastSeen: "2026-11-13T10:00:00Z", createdAt: "2026-10-01T00:00:00Z" },
           { id: "u_2", name: "Антон Новичок", email: "anton@example.ru", access: "Пользователь", region: "",
-            points: 0, emailVerified: false, consent: "none", cardStatus: "none",
+            points: 0, emailVerified: false, consent: "none", distributionConsent: "none", cardStatus: "none",
+            hasRequests: true, recoveryOpen: true, status: "suspended",
             lastSeen: "", createdAt: "2026-11-12T00:00:00Z" },
-          { id: "u_3", name: "Пётр Пишет", email: "petr@example.ru", access: "Пользователь", region: "spb",
-            points: 12, emailVerified: true, consent: "none", cardStatus: "pending",
+          { id: "u_3", name: "Пётр Пишет", email: "petr@example.ru", access: "Пользователь", region: "spb", craft: "=1+1",
+            points: 12, emailVerified: true, consent: "none", distributionConsent: "pending", cardStatus: "pending",
+            hasRequests: true, recoveryOpen: false, status: "active",
             lastSeen: "2026-11-11T09:00:00Z", createdAt: "2026-11-05T00:00:00Z" },
         ], roles: [] });
     };
@@ -161,6 +165,9 @@ function check(name, cond, extra) {
     beforeParse(w) {
       w.localStorage.setItem("smena_lang", "ru"); /* проверки текста — на русском */
       w.fetch = () => Promise.reject(new Error("сети нет"));
+      w.Blob = function (parts, options) { this.text = parts.join(""); this.type = options && options.type; };
+      w.URL.createObjectURL = (blob) => { csvExports.push(blob.text); return "blob:csv-test"; };
+      w.URL.revokeObjectURL = () => {};
       w.scrollTo = () => {};
       w.matchMedia = () => ({
         matches: false, addListener() {}, removeListener() {},
@@ -221,8 +228,36 @@ function check(name, cond, extra) {
     /Без согласия · 2/.test(peoplePanel.querySelector('[data-cat="noconsent"]').textContent) &&
     /Без карты · 2/.test(peoplePanel.querySelector('[data-cat="nocard"]').textContent) &&
     /Почта не подтверждена · 1/.test(peoplePanel.querySelector('[data-cat="noverify"]').textContent));
-  check("в строках видны баллы и статусы карты/согласия",
-    /карта СК-2026-001/.test(peoplePanel.textContent) && /нет согласия/.test(peoplePanel.textContent) &&
+  check("пространство людей показывает сводку и инструменты фильтрации",
+    !!peoplePanel.querySelector("[data-people-dashboard]") &&
+    !!peoplePanel.querySelector('[data-people-stat-value="all"]') &&
+    !!peoplePanel.querySelector("[data-people-region]") && !!peoplePanel.querySelector("[data-people-access]") &&
+    !!peoplePanel.querySelector("[data-people-refresh]") && !!peoplePanel.querySelector("[data-people-count]"));
+  check("сводка считает открытые заявки и приостановленные аккаунты",
+    peoplePanel.querySelector('[data-people-stat-value="requests"]').textContent === "2" &&
+    peoplePanel.querySelector('[data-people-stat-value="suspended"]').textContent === "1");
+  check("фильтр по заявкам показывает только людей с открытым действием",
+    /Нужны действия · 2/.test(peoplePanel.querySelector('[data-cat="requests"]').textContent));
+  peoplePanel.querySelector('[data-cat="requests"]').dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  check("открытая заявка фильтрует список", peoplePanel.querySelectorAll(".people__row").length === 2);
+  peoplePanel.querySelector('[data-cat="suspended"]').dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  check("приостановленные аккаунты доступны отдельным фильтром", peoplePanel.querySelectorAll(".people__row").length === 1);
+  peoplePanel.querySelector('[data-cat="all"]').dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  const regionFilter = peoplePanel.querySelector("[data-people-region]");
+  regionFilter.value = "spb";
+  regionFilter.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  check("фильтр по региону работает", peoplePanel.querySelectorAll(".people__row").length === 1
+    && /Пётр Пишет/.test(peoplePanel.textContent));
+  peoplePanel.querySelector("[data-people-csv]").click();
+  check("CSV выгружает только текущую выборку и обезвреживает формулы",
+    csvExports.length === 1 && /Пётр Пишет/.test(csvExports[0])
+      && !/Марина Съёмкина|Антон Новичок/.test(csvExports[0])
+      && /"'=1\+1"/.test(csvExports[0]));
+  regionFilter.value = "";
+  regionFilter.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  check("в строках видны баллы и раздельные статусы согласий",
+    /карта СК-2026-001/.test(peoplePanel.textContent) && /обработка: нет согласия/.test(peoplePanel.textContent) &&
+    /распространение: принято/.test(peoplePanel.textContent) && /распространение: на проверке/.test(peoplePanel.textContent) &&
     /41 б\./.test(peoplePanel.textContent));
   check("сортировка присутствует", !!peoplePanel.querySelector("[data-people-sort]"));
   const sortSel = peoplePanel.querySelector("[data-people-sort]");
@@ -304,6 +339,23 @@ function check(name, cond, extra) {
   await new Promise((r2) => setTimeout(r2, 30));
   check("«Другие варианты» увеличивает seed",
     postPanel.querySelectorAll("[data-sch-post-text]")[0].value.indexOf("[official s2]") === 0);
+
+  const peopleTab = doc.querySelector('[data-admin-tab="people"]');
+  peopleTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  const closePerson = peoplePanel.querySelector("[data-close-card]");
+  if (closePerson) closePerson.click();
+  const originalUserCard = dom.window.Store.userCard;
+  dom.window.Store.userCard = function () { return Promise.reject(new Error("ошибка загрузки профиля")); };
+  const firstPerson = peoplePanel.querySelector(".people__row .people__open");
+  if (firstPerson) firstPerson.click();
+  await new Promise((r2) => setTimeout(r2, 30));
+  check("при ошибке загрузки профиля есть возврат к списку",
+    !!peoplePanel.querySelector("[data-person-error-back]") && /ошибка загрузки профиля/.test(peoplePanel.textContent));
+  const errorBack = peoplePanel.querySelector("[data-person-error-back]");
+  if (errorBack) errorBack.click();
+  check("возврат после ошибки снова открывает пространство людей",
+    !peoplePanel.hasAttribute("data-person-open") && !!peoplePanel.querySelector("[data-people-dashboard]"));
+  dom.window.Store.userCard = originalUserCard;
 
   /* Регротест «узкой колонки»: при box-sizing:border-box связка
      max-width + паддинг (100vw-1200)/2 схлопывает контентную область до

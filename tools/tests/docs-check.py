@@ -53,7 +53,17 @@ def main():
     start = src.find("docs: [")
     block = src[start:src.find("\n  ],", start)]
     cards = re.findall(r'file: "([^"]+)",\s*pages: (\d+)', block)
+    variants = re.findall(r'\{ label: "([^"]+)", file: "([^"]+)", pages: (\d+) \}', block)
     check(len(cards) >= 8, "на странице документов не меньше восьми карточек", len(cards))
+    check(len(variants) == 4 and {label for label, _, _ in variants} == {"14 лет и старше", "Младше 14 лет"},
+          "на странице доступны оба возрастных варианта каждого согласия", variants)
+    expected_variant_files = {
+        "soglasie-na-obrabotku-pd.pdf", "soglasie-na-obrabotku-pd-do-14.pdf",
+        "soglasie-na-rasprostranenie-pd.pdf", "soglasie-na-rasprostranenie-pd-do-14.pdf",
+    }
+    variant_files = {os.path.basename(file.split("?v=")[0]) for _, file, _ in variants}
+    check(variant_files == expected_variant_files,
+          "ссылки ведут на четыре нужных PDF-бланка", sorted(variant_files))
 
     for path, pages in cards:
         name = os.path.basename(path)
@@ -65,32 +75,77 @@ def main():
         check(len(reader.pages) == int(pages),
               "число страниц совпадает: " + name, "%s ≠ %s" % (len(reader.pages), pages))
 
-    # --- согласие на обработку -------------------------------------------------
-    reader, processing = text_of("soglasie-na-obrabotku-pd.pdf")
-    p = norm(processing)
-    check("СОГЛАСИЕ" in p and "на использование и обработку персональных данных" in p,
-          "согласие на обработку названо как в образце")
-    check("152-ФЗ" in p, "в согласии на обработку есть ссылка на 152-ФЗ")
-    check("940802781550" not in p and "784304154610" in p,
-          "оператор один — Ильин Б. П. (ИНН 784304154610), Сирик не указан")
-    check("30 дней" in p, "срок прекращения обработки при отзыве — 30 дней")
-    check("достигший 14 лет" in p, "возраст самостоятельной подписи — 14 лет")
-    check("законный представитель" in p, "для несовершеннолетних есть подтверждение представителя")
-    check("отдельным согласием на распространение" in p,
-          "согласие на обработку не смешано с разрешением на распространение")
+    # --- четыре отдельных возрастных бланка согласий ---------------------------
+    processing_names = ["soglasie-na-obrabotku-pd.pdf", "soglasie-na-obrabotku-pd-do-14.pdf"]
+    processing_text = {}
+    for name in processing_names:
+        reader, body = text_of(name)
+        p_variant = norm(body)
+        processing_text[name] = p_variant
+        check(len(reader.pages) == 1, "одна страница: " + name, len(reader.pages))
+        resources = reader.pages[0].get("/Resources") or {}
+        xobjects = resources.get("/XObject") or {}
+        images = [obj for obj in xobjects.values()
+                  if obj.get_object().get("/Subtype") == "/Image"]
+        check(not images, "нет изображений-подписей: " + name)
+        check("СОГЛАСИЕ" in p_variant and "на использование и обработку персональных данных" in p_variant,
+              "согласие на обработку названо: " + name)
+        check("152-ФЗ" in p_variant, "есть ссылка на 152-ФЗ: " + name)
+        check("940802781550" not in p_variant and "784304154610" in p_variant,
+              "оператор — Ильин Б. П., Сирик не указан: " + name)
+        check("30 дней" in p_variant, "срок прекращения обработки — 30 дней: " + name)
+        check("уточнение (обновление, изменение)" in p_variant,
+              "перечень операций сохраняет обновление и изменение: " + name)
+        check("информационная система сайта и электронная почта" in p_variant,
+              "указаны автоматизированные средства обработки: " + name)
+        check("пересылка почтой" in p_variant,
+              "цель включает выдачу карты лично или почтой: " + name)
+        check("отдельное согласие на распространение" in p_variant,
+              "обработка не смешана с распространением: " + name)
+        check("сфотограф" not in p_variant and "загрузите" not in p_variant and "личном кабинете" not in p_variant,
+              "в бланке нет инструкций по фото и загрузке: " + name)
+        check("E-mail аккаунта автора" in p_variant,
+              "контактное поле автора без длинной инструкции: " + name)
+        check("Подпись" in p_variant and "Расшифровка подписи" in p_variant,
+              "есть строки подписи и расшифровки: " + name)
 
-    # --- согласие на распространение ------------------------------------------
-    reader, spread = text_of("soglasie-na-rasprostranenie-pd.pdf")
-    sp = norm(spread)
-    check("10.1" in sp, "согласие на распространение ссылается на статью 10.1")
-    check("smenakontenta.ru" in sp, "сайт указан как ресурс распространения")
-    for title, url in social_links():
-        check(url in sp, "площадка в согласии: " + title, url)
-    check("Объём разрешения" in sp and "сайт и площадки проекта" in sp,
-          "есть отметка об объёме разрешения: сайт или сайт и площадки")
-    check("Условия и запреты" in sp and "разрешаю / не разрешаю" in sp,
-          "категории данных размечаются вручную, есть условия и запреты")
-    check("трёх рабочих дней" in sp, "прекращение распространения — три рабочих дня")
+    processing_adult = processing_text[processing_names[0]]
+    processing_child = processing_text[processing_names[1]]
+    check("14 лет и старше" in processing_adult and "14–17 лет" in processing_adult,
+          "вариант от 14 лет отдельно описывает подпись автора и представителя")
+    check("младше 14 лет" in processing_child and "Подпись законного представителя" in processing_child,
+          "для младше 14 лет согласие подписывает законный представитель")
+    check("№ 178" in processing_adult and "№ 178" in processing_child,
+          "ссылка на типовую форму РКН есть в обоих вариантах обработки")
+
+    distribution_names = ["soglasie-na-rasprostranenie-pd.pdf", "soglasie-na-rasprostranenie-pd-do-14.pdf"]
+    distribution_text = {}
+    for name in distribution_names:
+        reader, body = text_of(name)
+        sp_variant = norm(body)
+        distribution_text[name] = sp_variant
+        check(len(reader.pages) == 1, "одна страница: " + name, len(reader.pages))
+        check("10.1" in sp_variant, "ссылка на статью 10.1: " + name)
+        check("smenakontenta.ru" in sp_variant, "сайт указан как ресурс распространения: " + name)
+        for title, url in social_links():
+            check(url in sp_variant, "площадка в согласии " + title + ": " + name, url)
+        check("Объём разрешения" in sp_variant and "сайт и площадки проекта" in sp_variant,
+              "отдельно указан объём разрешения: " + name)
+        check("Условия и запреты" in sp_variant and "[ ] разрешаю" in sp_variant and "[ ] не разрешаю" in sp_variant,
+              "есть перечень категорий и условия распространения: " + name)
+        check("трёх рабочих дней" in sp_variant,
+              "срок прекращения распространения — три рабочих дня: " + name)
+        check("сфотограф" not in sp_variant and "загрузите" not in sp_variant and "личном кабинете" not in sp_variant,
+              "в бланке нет инструкций по фото и загрузке: " + name)
+        check("Подпись" in sp_variant and "Расшифровка подписи" in sp_variant,
+              "есть строки подписи и расшифровки: " + name)
+
+    distribution_adult = distribution_text[distribution_names[0]]
+    distribution_child = distribution_text[distribution_names[1]]
+    check("14 лет и старше" in distribution_adult and "Подпись автора" in distribution_adult,
+          "вариант распространения от 14 лет подписывает автор")
+    check("младше 14 лет" in distribution_child and "Подпись законного представителя" in distribution_child,
+          "вариант распространения младше 14 лет подписывает представитель")
 
     # --- политика и соглашение -------------------------------------------------
     reader, privacy = text_of("politika-konfidencialnosti.pdf")
@@ -117,10 +172,10 @@ def main():
         _, body = text_of(name)
         check("УТВЕРЖДЕНО" in body, "гриф УТВЕРЖДЕНО: " + name)
         check("подпись и дата" in body, "подписи сторон в документе: " + name)
-    for name in ["soglasie-na-obrabotku-pd.pdf", "soglasie-na-rasprostranenie-pd.pdf"]:
+    for name in processing_names + distribution_names:
         _, body = text_of(name)
-        check("(подпись)" in body and "(расшифровка подписи)" in body,
-              "бланк подписи с расшифровкой: " + name)
+        check("Подпись" in body and "Расшифровка подписи" in body,
+              "бланк содержит рукописную подпись и расшифровку: " + name)
         if "obrabotku" in name:
             check("№ 178" in body, "ссылка на типовую форму РКН: " + name)
         else:
