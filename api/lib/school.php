@@ -212,6 +212,16 @@ function read_school_subs($dir) {
     return is_array($v) ? $v : array();
 }
 
+/* понедельник недели, в которую попала дата (ключ недельного графика) */
+function school_week_start($iso) {
+    if (!is_string($iso) || $iso === '') return '';
+    try { $dt = new DateTime($iso); } catch (Exception $e) { return ''; }
+    if (!$dt) return '';
+    $n = (int) $dt->format('N');
+    if ($n > 1) $dt->modify('-' . ($n - 1) . ' days');
+    return $dt->format('Y-m-d');
+}
+
 /* ---- учебные модули набора: теория, пример разбора, чек-лист к заданию ---- */
 function school_modules_file($dir) { return $dir . '/school-modules.json'; }
 
@@ -441,7 +451,7 @@ function school_platform_routes($act, $dir) {
         'school-quiz-add', 'school-quiz-delete', 'school-quizzes',
         'school-quiz-submit', 'school-quiz-results', 'school-diary',
         'school-sub-remind',
-        'school-graduation-pdf', 'school-cohort-students', 'school-invite', 'school-post-draft',
+        'school-graduation-pdf', 'school-cohort-students', 'school-invite', 'school-post-draft', 'school-activity',
     );
     if (!in_array($act, $handled, true)) return false;
 
@@ -864,6 +874,64 @@ function school_platform_routes($act, $dir) {
         }
         usort($out, function ($a, $b) { return strcmp((string) $b['createdAt'], (string) $a['createdAt']); });
         respond(array('ok' => true, 'results' => array_slice($out, 0, 100)));
+    }
+
+    /* ---- график активности набора: сдачи, проверки и тесты по неделям ---- */
+    if ($act === 'school-activity') {
+        if (!can($me, 'school.manage') && !can($me, 'school.teach') && !can($me, 'school.review')) {
+            fail('Активность набора видит редакция школы.', 403);
+        }
+        $cohortId = text((string) (isset($in['cohortId']) ? $in['cohortId'] : ''), 40);
+        $cohort = null;
+        foreach (read_school_cohorts($dir) as $c) {
+            if ((string) $c['id'] === (string) $cohortId) { $cohort = $c; break; }
+        }
+        if (!$cohort) fail('Набор не найден.', 404);
+        /* последние 12 недель, ключ — понедельник недели */
+        $curMonday = school_week_start(date('c'));
+        $weekKeys = array();
+        $dt = new DateTime($curMonday);
+        $dt->modify('-77 days');
+        for ($i = 0; $i < 12; $i++) {
+            $weekKeys[] = $dt->format('Y-m-d');
+            $dt->modify('+7 days');
+        }
+        $buckets = array();
+        foreach ($weekKeys as $k) {
+            $buckets[$k] = array('start' => $k, 'sent' => 0, 'reviewed' => 0, 'accepted' => 0, 'quizzes' => 0, 'quizPassed' => 0);
+        }
+        foreach (read_school_subs($dir) as $sub) {
+            if ((string) (isset($sub['cohortId']) ? $sub['cohortId'] : '') !== (string) $cohortId) continue;
+            $wk = school_week_start(isset($sub['createdAt']) ? (string) $sub['createdAt'] : '');
+            if ($wk !== '' && isset($buckets[$wk])) $buckets[$wk]['sent']++;
+            if (empty($sub['reviewedAt'])) continue;
+            $wk2 = school_week_start((string) $sub['reviewedAt']);
+            if ($wk2 !== '' && isset($buckets[$wk2])) {
+                $buckets[$wk2]['reviewed']++;
+                if (isset($sub['status']) && $sub['status'] === 'accepted') $buckets[$wk2]['accepted']++;
+            }
+        }
+        $quizIds = array();
+        foreach (read_school_quizzes($dir) as $q) {
+            if ((string) (isset($q['cohortId']) ? $q['cohortId'] : '') === (string) $cohortId) $quizIds[(string) $q['id']] = true;
+        }
+        $results = read_json($dir . '/school-quiz-results.json', array());
+        if (!is_array($results)) $results = array();
+        foreach ($results as $r) {
+            if (!isset($quizIds[(string) (isset($r['quizId']) ? $r['quizId'] : '')])) continue;
+            $wk = school_week_start(isset($r['createdAt']) ? (string) $r['createdAt'] : '');
+            if ($wk !== '' && isset($buckets[$wk])) {
+                $buckets[$wk]['quizzes']++;
+                if (!empty($r['passed'])) $buckets[$wk]['quizPassed']++;
+            }
+        }
+        $out = array_values($buckets);
+        $totals = array('sent' => 0, 'reviewed' => 0, 'accepted' => 0, 'quizzes' => 0, 'quizPassed' => 0);
+        foreach ($out as $w) {
+            foreach ($totals as $k => $v) $totals[$k] += (int) $w[$k];
+        }
+        respond(array('ok' => true, 'weeks' => $out, 'totals' => $totals,
+            'cohort' => school_cohort_public($cohort, $dir)));
     }
 
     /* ---- напоминание ученику о задании (кнопка в очереди работ) ---- */

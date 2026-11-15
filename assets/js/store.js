@@ -1313,6 +1313,7 @@ window.Store = (function () {
     return withToken("school-quiz-submit", { quizId: quizId, answers: answers || [] });
   }
   function schoolQuizResults(cohortId) { return withToken("school-quiz-results", { cohortId: cohortId || "" }); }
+  function schoolActivity(cohortId) { return withToken("school-activity", { cohortId: cohortId || "" }); }
   function schoolDiary(cohortId) { return withToken("school-diary", { cohortId: cohortId || "" }); }
   function schoolSubRemind(subId) { return withToken("school-sub-remind", { subId: subId || "" }); }
   function schoolCohortStudents(cohortId) { return withToken("school-cohort-students", { cohortId: cohortId || "" }); }
@@ -2245,6 +2246,7 @@ window.Store = (function () {
     schoolQuizDelete: schoolQuizDelete,
     schoolQuizSubmit: schoolQuizSubmit,
     schoolQuizResults: schoolQuizResults,
+    schoolActivity: schoolActivity,
     schoolDiary: schoolDiary,
     schoolSubRemind: schoolSubRemind,
     schoolCohortStudents: schoolCohortStudents,

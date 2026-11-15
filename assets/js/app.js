@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -2266,12 +2266,18 @@
         '<div data-pulse-queues><p class="form__note">Загружаем очереди…</p></div></div>' +
         '<div class="pulse-card"><div class="pulse-card__head"><span class="kicker">Последние действия</span></div>' +
         '<div data-pulse-audit><p class="form__note">Загружаем журнал…</p></div></div>' +
-        "</div>";
+        "</div>" +
+        '<div class="pulse-card" data-activity-card style="margin-top:22px"><div class="pulse-card__head">' +
+        '<span class="kicker">Активность набора</span>' +
+        '<select data-activity-cohort aria-label="Набор" style="max-width:240px"></select></div>' +
+        '<div data-activity-chart><p class="form__note">Загружаем график…</p></div></div>';
       host.appendChild(section);
 
       var cards = $("[data-overview-cards]", section);
       var queuesEl = $("[data-pulse-queues]", section);
       var auditEl = $("[data-pulse-audit]", section);
+      var activityEl = $("[data-activity-chart]", section);
+      var activitySel = $("[data-activity-cohort]", section);
 
       function tile(tab, label, value, hint) {
         return '<button class="overview__tile" type="button" data-go-tab="' + tab + '">' +
@@ -2298,6 +2304,65 @@
           });
         });
       }
+
+      /* Активность набора: сдачи работ, проверки и тесты по неделям — из данных сервера. */
+      function drawActivityChart(weeks, cohortName) {
+        if (!activityEl) return;
+        if (!weeks || !weeks.length) {
+          activityEl.innerHTML = '<p class="form__note">Данных пока нет.</p>';
+          return;
+        }
+        var max = 1;
+        weeks.forEach(function (w) { max = Math.max(max, w.sent + w.quizzes, w.reviewed); });
+        var sum = function (key) {
+          return weeks.reduce(function (a, w) { return a + (Number(w[key]) || 0); }, 0);
+        };
+        var cols = weeks.map(function (w, i) {
+          var bar = function (v, title, color) {
+            var h = Math.max(2, Math.round(((Number(v) || 0) / max) * 120));
+            return '<span title="' + esc(title + ": " + v) + '" style="display:inline-block;width:10px;height:' +
+              h + "px;margin:0 1px;background:" + color + (Number(v) || 0 ? "" : ";opacity:.25") + '"></span>';
+          };
+          var last = i === weeks.length - 1;
+          return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' +
+            '<div style="display:flex;align-items:flex-end;height:124px">' +
+            bar(w.sent, "сдано работ", "var(--accent, #f60)") +
+            bar(w.reviewed, "проверено работ", "var(--ok, #2e7d32)") +
+            bar(w.quizzes, "тестов сдано", "#7c6bd6") + "</div>" +
+            "<small" + (last ? ' style="font-weight:700"' : "") + ">" +
+            esc(String(w.start).slice(8, 10) + "." + String(w.start).slice(5, 7)) + "</small></div>";
+        }).join("");
+        activityEl.innerHTML =
+          "<p class=\"form__note\">Недели набора «" + esc(cohortName || "") + "»: сдано " + sum("sent") +
+          " · проверено " + sum("reviewed") + " · тестов " + sum("quizzes") +
+          ". Столбики: сдано / проверено / тесты, наведите для цифр.</p>" +
+          '<div style="display:flex;gap:6px;align-items:flex-end;overflow-x:auto;padding:6px 0">' + cols + "</div>";
+      }
+      function loadActivity() {
+        if (!Store.schoolActivity) return;
+        Store.schoolCohorts().then(function (res) {
+          if (!activitySel) return;
+          var list = (res && res.cohorts) || [];
+          activitySel.innerHTML = list.map(function (c) {
+            return '<option value="' + esc(c.id) + '">' + esc(c.name) + (c.open ? " · приём открыт" : "") + "</option>";
+          }).join("");
+          if (!list.length) {
+            activityEl.innerHTML = '<p class="form__note">Наборов пока нет — график появится, как только создадите первый.</p>';
+            return;
+          }
+          var id = activitySel.value || list[0].id;
+          var name = (list.filter(function (c) { return c.id === id; })[0] || {}).name || "";
+          Store.schoolActivity(id).then(function (a) {
+            drawActivityChart(a && a.weeks ? a.weeks : [], name);
+          }, function (err) {
+            activityEl.innerHTML = '<p class="form__note is-error">' + esc((err && err.message) || "График не собрался.") + "</p>";
+          });
+        }, function () {
+          if (activityEl) activityEl.innerHTML = '<p class="form__note">Наборы не загрузились — график недоступен.</p>';
+        });
+      }
+      if (activitySel) activitySel.addEventListener("change", loadActivity);
+      loadActivity();
 
       function load() {
         Store.diag().then(function (d) {
@@ -5930,7 +5995,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -6215,7 +6280,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6569,8 +6634,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -7370,7 +7435,7 @@
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-10",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-11",
       none: "черновики и публикация закрыты",
       intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
         "фото. Комиссия проверит документ и откроет публикацию.",
@@ -7381,7 +7446,7 @@
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-10",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-11",
       none: "без него материалы не публикуются",
       intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
         "это распространение персональных данных, и разрешение на него оформляется " +
@@ -8538,7 +8603,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -9586,7 +9651,7 @@
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-10" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-11" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 

@@ -668,6 +668,35 @@ const results = [];
   r = await call("mail-log", { token: token3 });
   check("письмо-напоминание в журнале отправок",
     r.ok === true && r.entries.some((e) => e.template === "school_homework_reminder"), r.ok ? r.entries.slice(0, 3) : r);
+  // 18б4. ГРАФИК АКТИВНОСТИ НАБОРА: сдачи, проверки и тесты по неделям
+  r = await call("reg", { name: "Наблюдатель Графика", email: "observer@example.ru", pass: "parol1234", region: "moskva" });
+  const tokenObs = r.ok ? r.token : "";
+  r = await call("school-activity", { token: tokenObs, cohortId: cohortId });
+  check("график активности видит только редакция школы", r.ok === false && r.code === 403, r);
+  r = await call("school-activity", { token: token3, cohortId: "scg_net" });
+  check("активность несуществующего набора — 404", r.ok === false && r.code === 404, r);
+  r = await call("school-activity", { token: token3, cohortId: cohortId });
+  const weeksA = r.ok ? r.weeks : [];
+  check("график: 12 недель, у каждой понедельник и счётчики",
+    r.ok === true && weeksA.length === 12 &&
+    weeksA.every((w) => /^\d{4}-\d{2}-\d{2}$/.test(w.start) &&
+      typeof w.sent === "number" && typeof w.reviewed === "number" &&
+      typeof w.accepted === "number" && typeof w.quizzes === "number" && typeof w.quizPassed === "number"),
+    r.ok ? weeksA.slice(0, 3) : r);
+  const curWk = weeksA[weeksA.length - 1];
+  const pd = (x) => String(x).padStart(2, "0");
+  const mondayD = new Date();
+  mondayD.setDate(mondayD.getDate() - ((mondayD.getDay() + 6) % 7));
+  const monday = mondayD.getFullYear() + "-" + pd(mondayD.getMonth() + 1) + "-" + pd(mondayD.getDate());
+  check("последняя неделя — текущая, с работами и тестом",
+    !!curWk && curWk.start === monday && curWk.sent >= 1 && curWk.reviewed >= 1 &&
+    curWk.accepted >= 1 && curWk.quizzes >= 1 && curWk.quizPassed >= 1,
+    { start: curWk && curWk.start, monday: monday, curWk: curWk });
+  check("итоги графика сходятся с суммой недель",
+    r.ok === true && r.totals.sent === weeksA.reduce((a, w) => a + w.sent, 0) &&
+    r.totals.quizzes === weeksA.reduce((a, w) => a + w.quizzes, 0) &&
+    r.totals.quizPassed === weeksA.reduce((a, w) => a + w.quizPassed, 0),
+    r.ok ? r.totals : r);
   r = await call("school-quiz-delete", { token: token3, id: quizId });
   check("тест удаляется", r.ok === true, r);
 
