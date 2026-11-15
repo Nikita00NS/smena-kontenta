@@ -137,7 +137,15 @@ function check(name, cond, extra) {
   try { consents = JSON.parse(await readText("/smena-data/consents.json")); } catch (e) {}
   consents.push({ id: "consent_sim_1", userId: meUser.id, kind: "processing", status: "pending",
     name: meUser.name, email: meUser.email, scan: "", createdAt: new Date().toISOString(), history: [] });
+  consents.push({ id: "consent_sim_2", userId: meUser.id, kind: "distribution", status: "approved",
+    name: meUser.name, email: meUser.email, scan: "", createdAt: new Date(Date.now() - 1000).toISOString(), history: [] });
   await php.writeFile("/smena-data/consents.json", JSON.stringify(consents));
+  const peopleSnapshot = await call("users", { token });
+  const simulatedPerson = (peopleSnapshot.users || []).find((u) => u.id === meUser.id);
+  check("список людей отдаёт раздельные статусы согласий",
+    !!simulatedPerson && simulatedPerson.consent === "pending" && simulatedPerson.distributionConsent === "approved", simulatedPerson);
+  check("заявки человека агрегированы для фильтра людей",
+    !!simulatedPerson && simulatedPerson.hasRequests === true && simulatedPerson.recoveryOpen === false, simulatedPerson);
 
   /* страница админки: настоящие скрипты, сеть — через php-wasm */
   function inline(html) {

@@ -65,8 +65,8 @@ function inline(html) {
 
   if (cards.length !== 2) bad.push("карточек согласия " + cards.length + ", ожидалось 2");
   const expected = [
-    { kind: "processing", title: /обработку персональных данных/, pdf: "soglasie-na-obrabotku-pd.pdf", state: "Проверено комиссией", upload: false },
-    { kind: "distribution", title: /распространение персональных данных/, pdf: "soglasie-na-rasprostranenie-pd.pdf", state: "На проверке у комиссии", upload: true },
+    { kind: "processing", title: /обработку персональных данных/, pdf: "soglasie-na-obrabotku-pd.pdf", under14: "soglasie-na-obrabotku-pd-do-14.pdf", state: "Проверено комиссией", upload: false },
+    { kind: "distribution", title: /распространение персональных данных/, pdf: "soglasie-na-rasprostranenie-pd.pdf", under14: "soglasie-na-rasprostranenie-pd-do-14.pdf", state: "На проверке у комиссии", upload: true },
   ];
   expected.forEach((want, i) => {
     const card = cards[i];
@@ -76,10 +76,16 @@ function inline(html) {
     if (!h3 || !want.title.test(h3.textContent)) bad.push("заголовок не тот: " + want.kind);
     const state = card.querySelector(".consent-card__state b");
     if (!state || state.textContent !== want.state) bad.push("состояние не то: " + want.kind);
-    const link = card.querySelector(".consent-card__actions a");
-    if (!link || link.getAttribute("href").indexOf(want.pdf) === -1) bad.push("ссылка на форму не та: " + want.kind);
-    else if (!fs.existsSync(path.join(ROOT, link.getAttribute("href").split("?v=")[0])))
-      bad.push("файла формы нет: " + want.pdf);
+    const links = Array.from(card.querySelectorAll(".consent-card__actions a"));
+    const link = links.find((a) => a.getAttribute("href").indexOf(want.pdf) !== -1);
+    const under14 = links.find((a) => a.getAttribute("href").indexOf(want.under14) !== -1);
+    if (links.length !== 2 || !link || !under14) bad.push("нет двух возрастных форм: " + want.kind);
+    [link, under14].filter(Boolean).forEach((a) => {
+      const file = path.join(ROOT, a.getAttribute("href").split("?v=")[0]);
+      if (!fs.existsSync(file)) bad.push("файла формы нет: " + file);
+    });
+    if (link && !/14 лет и старше/.test(link.textContent)) bad.push("не подписан вариант от 14 лет: " + want.kind);
+    if (under14 && !/Младше 14 лет/.test(under14.textContent)) bad.push("не подписан вариант младше 14 лет: " + want.kind);
     const upload = card.querySelector("[data-consent-file]");
     if (!!upload !== want.upload) bad.push("кнопка загрузки не там: " + want.kind);
     if (upload && upload.getAttribute("data-consent-file") !== want.kind) bad.push("загрузка не привязана к документу: " + want.kind);

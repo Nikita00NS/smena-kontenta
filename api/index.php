@@ -724,10 +724,9 @@ function read_consents($dir) {
 /* Два разных документа, два разных согласия:
    processing   — согласие на обработку персональных данных. Без него закрыты
                   черновики, файлы и заявки: это условие работы на сайте.
-   distribution — согласие на распространение персональных данных (ст. 10.1
-                  152-ФЗ). Нужно только для конкурсов и активностей, которые
-                  выходят в открытые площадки проекта. Обычную публикацию на
-                  сайте не блокирует и не заменяет первое согласие.
+   distribution — отдельное согласие на распространение персональных данных
+                  (ст. 10.1 № 152-ФЗ). Оно задаёт категории данных и объём их
+                  публикации на сайте и выбранных открытых площадках.
    Записи, созданные до разделения, считаются согласием на обработку. */
 function consent_kind($raw) {
     $kind = is_string($raw) ? strtolower(trim($raw)) : '';
@@ -2512,7 +2511,7 @@ if ($act === 'consent-status') {
     $in = body();
     $user = user_by_token($DATA_DIR, isset($in['token']) ? (string) $in['token'] : '');
     if (!$user) fail('Нужно войти в аккаунт.', 401);
-    /* consent — обработка (как раньше), distribution — согласие для конкурсов.
+    /* consent — обработка, distribution — распространение.
        Клиент получает оба статуса сразу, чтобы не делать два запроса. */
     respond(array(
         'ok' => true,
@@ -3727,8 +3726,58 @@ if ($act === 'users') {
         if ($current) $cardByUser[$u['id']] = $current;
     }
     $consentByUser = array();
+    $requestByUser = array();
     foreach (read_consents($DATA_DIR) as $c) {
-        if (isset($c['userId'])) $consentByUser[$c['userId']] = isset($c['status']) ? $c['status'] : 'pending';
+        if (!isset($c['userId'])) continue;
+        $userId = (string) $c['userId'];
+        $kind = consent_record_kind($c);
+        $createdAt = isset($c['createdAt']) ? (string) $c['createdAt'] : '';
+        $lastCreatedAt = isset($consentByUser[$userId][$kind]['createdAt'])
+            ? (string) $consentByUser[$userId][$kind]['createdAt'] : '';
+        if (!isset($consentByUser[$userId][$kind]) || $createdAt >= $lastCreatedAt) {
+            $consentByUser[$userId][$kind] = array(
+                'status' => isset($c['status']) ? (string) $c['status'] : 'pending',
+                'createdAt' => $createdAt,
+            );
+        }
+    }
+    foreach ($consentByUser as $userId => $kinds) {
+        foreach ($kinds as $consent) {
+            if ($consent['status'] === 'pending') $requestByUser[$userId] = true;
+        }
+    }
+    foreach (read_editorial_apps($DATA_DIR) as $application) {
+        if (isset($application['userId'], $application['status']) && $application['status'] === 'pending') {
+            $requestByUser[(string) $application['userId']] = true;
+        }
+    }
+    foreach ($allCards as $card) {
+        if (isset($card['userId']) && card_effective_status($card) === 'pending') {
+            $requestByUser[(string) $card['userId']] = true;
+        }
+    }
+    foreach (read_portfolio($DATA_DIR) as $item) {
+        if (isset($item['userId']) && (!isset($item['status']) || $item['status'] === 'pending')) {
+            $requestByUser[(string) $item['userId']] = true;
+        }
+    }
+    if (function_exists('read_school')) {
+        $schoolStatusByUser = array();
+        foreach (read_school($DATA_DIR) as $application) {
+            if (isset($application['userId'])) {
+                $schoolStatusByUser[(string) $application['userId']] = isset($application['status'])
+                    ? (string) $application['status'] : 'pending';
+            }
+        }
+        foreach ($schoolStatusByUser as $userId => $status) {
+            if ($status === 'pending') $requestByUser[$userId] = true;
+        }
+    }
+    $recoveryOpenByEmail = array();
+    foreach (read_recovery_requests($DATA_DIR) as $request) {
+        if (isset($request['email']) && (!isset($request['status']) || $request['status'] === 'open')) {
+            $recoveryOpenByEmail[strtolower((string) $request['email'])] = true;
+        }
     }
 
     $out = array();
@@ -3737,7 +3786,14 @@ if ($act === 'users') {
     $withDeleted = !empty($in['includeDeleted']);
     foreach (read_users($DATA_DIR) as $u) {
         if (!$withDeleted && isset($u['status']) && $u['status'] === 'deleted') continue;
-        $card = isset($cardByUser[$u['id']]) ? $cardByUser[$u['id']] : null;
+        $userId = (string) $u['id'];
+        $email = strtolower(isset($u['email']) ? (string) $u['email'] : '');
+        $card = isset($cardByUser[$userId]) ? $cardByUser[$userId] : null;
+        $processingConsent = isset($consentByUser[$userId]['processing']['status'])
+            ? $consentByUser[$userId]['processing']['status'] : 'none';
+        $distributionConsent = isset($consentByUser[$userId]['distribution']['status'])
+            ? $consentByUser[$userId]['distribution']['status'] : 'none';
+        $recoveryOpen = !empty($recoveryOpenByEmail[$email]);
         $out[] = array(
             'id' => $u['id'],
             'number' => isset($u['number']) ? (int) $u['number'] : 0,
@@ -3757,7 +3813,10 @@ if ($act === 'users') {
             'cardStatus' => $card ? card_effective_status($card) : 'none',
             'cardNumber' => $card && !empty($card['number']) ? $card['number'] : '',
             'cardValidUntil' => $card ? card_valid_until($card) : '',
-            'consent' => isset($consentByUser[$u['id']]) ? $consentByUser[$u['id']] : 'none',
+            'consent' => $processingConsent,
+            'distributionConsent' => $distributionConsent,
+            'hasRequests' => !empty($requestByUser[$userId]) || $recoveryOpen,
+            'recoveryOpen' => $recoveryOpen,
         );
     }
     usort($out, function ($a, $b) { return strcmp((string) $a['createdAt'], (string) $b['createdAt']); });

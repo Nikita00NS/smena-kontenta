@@ -818,8 +818,8 @@
       '<span class="footer-note">Медиа о молодёжи и регионах России. Участие авторов бесплатное.</span>' +
       '<span class="footer-build" data-no-i18n title="Версия сборки сайта">версия ' +
       esc((SC && SC.build) || "?") + "</span>" +
-      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Конфиденциальность</a>' +
-      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Соглашение</a>' +
+      '<span><a href="/assets/docs/politika-konfidencialnosti.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Конфиденциальность</a>' +
+      ' · <a href="/assets/docs/polzovatelskoe-soglashenie.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Соглашение</a>' +
       ' · <a href="/docs">Документы</a></span>' +
       "</div></div>";
   }
@@ -1718,6 +1718,26 @@
     var docs = SC.docs || [];
     host.innerHTML = docs
       .map(function (d) {
+        var variants = d.variants || [];
+        if (variants.length) {
+          var links = variants.map(function (v) {
+            var pages = Number(v.pages) || Number(d.pages) || 1;
+            return '<a class="btn btn--sm btn--ghost" href="' + esc(v.file) +
+              '" target="_blank" rel="noopener">' + esc(v.label) + ' · ' + pages + " " +
+              pageWord(pages) + "</a>";
+          }).join("");
+          return (
+            '<article class="doc-card doc-card--variants">' +
+            '<span class="doc-card__type doc-card__type--pdf">PDF · ' + d.pages + " " +
+            pageWord(d.pages) + "</span>" +
+            "<h3>" + esc(d.title) + "</h3>" +
+            "<p>" + esc(d.desc) + "</p>" +
+            '<div class="doc-card__variants"><span>Выберите бланк по возрасту автора</span>' +
+            '<div>' + links + "</div></div>" +
+            '<div class="doc-card__foot"><span>' + esc(d.tag) +
+            "</span><span>Выберите вариант →</span></div></article>"
+          );
+        }
         return (
           '<a class="doc-card" href="' + d.file + '" target="_blank" rel="noopener">' +
           '<span class="doc-card__type doc-card__type--pdf">PDF · ' + d.pages + " " +
@@ -2870,66 +2890,63 @@
       if (!Store.usersList) return;
 
       host.innerHTML =
-        '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Люди</span>' +
+        '<div class="people-workspace">' +
+        '<div class="people-dashboard" data-people-dashboard>' +
+        '<div class="people-head"><div><span class="kicker">Люди · рабочее пространство</span>' +
         "<h2>Участники проекта</h2>" +
-        '<p class="sec-head__text">Нажмите на человека — откроется карточка: профиль, материалы, ' +
-        "заявления, пресс-карта и переписка. Всё решается на одном экране.</p></div>" +
-        '<div class="people-search"><input type="search" placeholder="Поиск: имя или почта" ' +
-        'data-people-search aria-label="Поиск участника">' +
-        '<button class="btn btn--ghost btn--sm" type="button" data-people-csv>Скачать CSV</button></div></div>' +
+        '<p>Поиск, статусы, заявки и профиль участника — в одном месте. Очереди согласий, карт и обращений остаются в своих разделах ниже.</p></div>' +
+        '<div class="people-tools"><button class="btn btn--ghost btn--sm" type="button" data-people-refresh>Обновить список</button>' +
+        '<button class="btn btn--accent btn--sm" type="button" data-people-csv disabled>Экспортировать выборку · CSV</button></div></div>' +
+        '<div class="people-kpis" aria-label="Сводка участников">' +
+        '<button class="people-kpi" type="button" data-people-shortcut="all"><span>Всего людей</span><b data-people-stat-value="all">—</b><small>в списке</small></button>' +
+        '<button class="people-kpi" type="button" data-people-shortcut="requests"><span>Нужны действия</span><b data-people-stat-value="requests">—</b><small>открытые заявки</small></button>' +
+        '<button class="people-kpi" type="button" data-people-shortcut="noconsent"><span>Согласие на обработку</span><b data-people-stat-value="noconsent">—</b><small>ещё не принято</small></button>' +
+        '<button class="people-kpi" type="button" data-people-shortcut="noverify"><span>Почта</span><b data-people-stat-value="noverify">—</b><small>не подтверждена</small></button>' +
+        '<button class="people-kpi" type="button" data-people-shortcut="suspended"><span>Доступ приостановлен</span><b data-people-stat-value="suspended">—</b><small>аккаунты на паузе</small></button>' +
+        "</div>" +
+        '<div class="people-toolbar">' +
+        '<label class="people-search"><span>Поиск по имени, почте или роли</span><input type="search" placeholder="Начните вводить…" data-people-search aria-label="Поиск участника"></label>' +
+        '<label class="people-filter"><span>Регион</span><select data-people-region aria-label="Фильтр по региону"><option value="">Все регионы</option></select></label>' +
+        '<label class="people-filter"><span>Доступ</span><select data-people-access aria-label="Фильтр по роли"><option value="">Все роли</option></select></label>' +
+        '<label class="people-filter"><span>Сортировка</span><select data-people-sort aria-label="Сортировка">' +
+        '<option value="new">Новые регистрации</option><option value="old">Давние регистрации</option>' +
+        '<option value="active">Недавняя активность</option><option value="points">По баллам</option><option value="name">По имени</option></select></label>' +
+        "</div>" +
         '<div class="people-cats" data-people-cats>' +
         '<button class="people-cat is-on" type="button" data-cat="all">Все</button>' +
+        '<button class="people-cat" type="button" data-cat="requests">Нужны действия</button>' +
         '<button class="people-cat" type="button" data-cat="team">Команда</button>' +
         '<button class="people-cat" type="button" data-cat="members">Участники</button>' +
-        '<button class="people-cat" type="button" data-cat="requests">Заявки</button>' +
         '<button class="people-cat" type="button" data-cat="noconsent">Без согласия</button>' +
         '<button class="people-cat" type="button" data-cat="nocard">Без карты</button>' +
         '<button class="people-cat" type="button" data-cat="noverify">Почта не подтверждена</button>' +
-        '<select data-people-sort aria-label="Сортировка" style="max-width:220px;margin-left:8px">' +
-        '<option value="new">Сначала новые</option>' +
-        '<option value="old">Сначала давние</option>' +
-        '<option value="points">По баллам</option>' +
-        '<option value="name">По имени</option></select>' +
+        '<button class="people-cat" type="button" data-cat="suspended">Приостановлены</button>' +
+        '<button class="people-cat" type="button" data-cat="inactive">Неактивны 30+ дней</button>' +
         "</div>" +
+        '<div class="people-results"><b data-people-count>Загружаем список…</b><span data-people-status></span></div>' +
         '<div data-people-list><p class="form__note">Загружаем участников…</p></div>' +
-        '<div data-person-card></div>';
+        '</div><div data-person-card></div></div>';
 
+      var workspace = $(".people-workspace", host);
       var listEl = $("[data-people-list]", host);
       var cardEl = $("[data-person-card]", host);
       var searchEl = $("[data-people-search]", host);
-      var all = [];
+      var regionEl = $("[data-people-region]", host);
+      var accessEl = $("[data-people-access]", host);
+      var sortEl = $("[data-people-sort]", host);
+      var countEl = $("[data-people-count]", host);
+      var statusEl = $("[data-people-status]", host);
+      var refreshBtn = $("[data-people-refresh]", host);
       var csvBtn = $("[data-people-csv]", host);
-      if (csvBtn) csvBtn.addEventListener("click", function () {
-        if (!all.length) return;
-        var head = "Имя;Почта;Роль;Доступ;Регион;Регистрация;Баллы;Пресс-карта;Согласие;Почта подтверждена";
-        var lines = all.map(function (u) {
-          return [u.name, u.email, u.role || "", u.access || "Пользователь", u.region || "", u.createdAt || "",
-            Number(u.points) || 0,
-            u.cardStatus === "issued" ? (u.cardNumber || "") + (u.cardValidUntil ? " до " + u.cardValidUntil : "") : (u.cardStatus || "нет"),
-            (u.consent || "none") === "approved" ? "подписано" : u.consent || "нет",
-            u.emailVerified ? "да" : "нет"]
-            .map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(";");
-        });
-        var blob = new Blob(["\uFEFF" + head + "\n" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
-        a.href = url;
-        a.download = "smena-lyudi.csv";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-      });
+      var all = [];
+      var visible = [];
       var roles = Store.ACCESS || [];
       var openedId = "";
       var needScroll = false;
       var cat = "all";
       var sort = "new";
-      var sortEl = $("[data-people-sort]", host);
-      if (sortEl) sortEl.addEventListener("change", function () {
-        sort = sortEl.value;
-        draw();
-      });
+      var regionFilter = "";
+      var accessFilter = "";
       /* Материалы открывают карточку автора прямо из очереди публикаций. */
       document.addEventListener("smena-open-person", function (ev) {
         var id = ev && ev.detail ? String(ev.detail) : "";
@@ -2949,6 +2966,38 @@
         return !!u.access && u.access !== "Пользователь";
       }
 
+      function isInactive(u) {
+        var lastSeen = Date.parse(u.lastSeen || "");
+        return !isFinite(lastSeen) || Date.now() - lastSeen > 30 * 86400000;
+      }
+
+      function fillFilterOptions() {
+        if (regionEl) {
+          var oldRegion = regionFilter;
+          var foundRegions = Object.create(null);
+          all.forEach(function (u) { if (u.region) foundRegions[u.region] = true; });
+          var regions = Object.keys(foundRegions).sort(function (a, b) {
+            return regionName(a).localeCompare(regionName(b), "ru");
+          });
+          regionEl.innerHTML = '<option value="">Все регионы</option>' + regions.map(function (slug) {
+            return '<option value="' + esc(slug) + '">' + esc(regionName(slug) || slug) + "</option>";
+          }).join("");
+          regionFilter = regions.indexOf(oldRegion) !== -1 ? oldRegion : "";
+          regionEl.value = regionFilter;
+        }
+        if (accessEl) {
+          var oldAccess = accessFilter;
+          var accessValues = (roles.length ? roles : all.map(function (u) { return u.access || "Пользователь"; }))
+            .filter(function (value, i, list) { return value && list.indexOf(value) === i; })
+            .sort(function (a, b) { return String(a).localeCompare(String(b), "ru"); });
+          accessEl.innerHTML = '<option value="">Все роли</option>' + accessValues.map(function (role) {
+            return '<option value="' + esc(role) + '">' + esc(role) + "</option>";
+          }).join("");
+          accessFilter = accessValues.indexOf(oldAccess) !== -1 ? oldAccess : "";
+          accessEl.value = accessFilter;
+        }
+      }
+
       function draw() {
         var q = ((searchEl && searchEl.value) || "").trim().toLowerCase();
         var list = all.filter(function (u) {
@@ -2958,16 +3007,23 @@
           if (cat === "noconsent" && (u.consent || "none") === "approved") return false;
           if (cat === "nocard" && (u.cardStatus || "none") === "issued") return false;
           if (cat === "noverify" && u.emailVerified) return false;
+          if (cat === "suspended" && u.status !== "suspended") return false;
+          if (cat === "inactive" && !isInactive(u)) return false;
+          if (regionFilter && u.region !== regionFilter) return false;
+          if (accessFilter && (u.access || "Пользователь") !== accessFilter) return false;
           if (!q) return true;
-          return (u.name || "").toLowerCase().indexOf(q) !== -1 ||
-            (u.email || "").toLowerCase().indexOf(q) !== -1;
+          var searchable = [u.name, u.email, u.craft, u.access, u.region, regionName(u.region), u.editorialName]
+            .join(" ").toLowerCase();
+          return searchable.indexOf(q) !== -1;
         });
         list = list.slice().sort(function (a, b) {
           if (sort === "points") return (Number(b.points) || 0) - (Number(a.points) || 0);
           if (sort === "name") return String(a.name || "").localeCompare(String(b.name || ""), "ru");
           if (sort === "old") return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+          if (sort === "active") return String(b.lastSeen || "").localeCompare(String(a.lastSeen || ""));
           return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
         });
+        visible = list;
 
         var counts = {
           all: all.length,
@@ -2977,36 +3033,65 @@
           noconsent: all.filter(function (u) { return (u.consent || "none") !== "approved"; }).length,
           nocard: all.filter(function (u) { return (u.cardStatus || "none") !== "issued"; }).length,
           noverify: all.filter(function (u) { return !u.emailVerified; }).length,
+          suspended: all.filter(function (u) { return u.status === "suspended"; }).length,
+          inactive: all.filter(isInactive).length,
+        };
+        var labels = {
+          all: "Все", team: "Команда", members: "Участники", requests: "Нужны действия",
+          noconsent: "Без согласия", nocard: "Без карты", noverify: "Почта не подтверждена",
+          suspended: "Приостановлены", inactive: "Неактивны 30+ дней",
         };
         $$("[data-cat]", host).forEach(function (b) {
           var key = b.getAttribute("data-cat");
           b.classList.toggle("is-on", key === cat);
-          var n = counts[key] || 0;
-          b.textContent = { all: "Все", team: "Команда", members: "Участники", requests: "Заявки",
-            noconsent: "Без согласия", nocard: "Без карты", noverify: "Почта не подтверждена" }[key] +
-            " · " + n;
+          b.textContent = labels[key] + " · " + (counts[key] || 0);
         });
+        $$("[data-people-stat-value]", host).forEach(function (b) {
+          var key = b.getAttribute("data-people-stat-value");
+          b.textContent = String(counts[key] || 0);
+        });
+        if (countEl) countEl.textContent = "Показано " + list.length + " из " + all.length;
+        if (csvBtn) csvBtn.disabled = list.length === 0;
 
         if (!all.length) {
           listEl.innerHTML = '<div class="fill-note fill-note--flat"><b>Пока никого нет</b>' +
-            "Права выдаёт владелец проекта: первый аккаунт больше не получает роль сам. " +
-            'После регистрации здесь появятся люди и их карточки.</p>' +
+            '<p>Здесь появятся участники проекта и их рабочие карточки.</p>' +
             '<p><a class="link-accent" href="/join">Открыть регистрацию</a></p></div>';
           return;
         }
         if (!list.length) {
-          listEl.innerHTML = '<p class="form__note">По запросу «' + esc(q) + '» никого нет.</p>';
+          listEl.innerHTML = '<div class="people-empty"><b>Никого не нашли</b>' +
+            '<p>Измените фильтр или сбросьте условия поиска.</p>' +
+            '<button class="btn btn--ghost btn--sm" type="button" data-people-clear>Сбросить фильтры</button></div>';
+          var clearBtn = $("[data-people-clear]", listEl);
+          if (clearBtn) clearBtn.addEventListener("click", clearFilters);
           return;
         }
 
         function rowBadges(u) {
           var out = "";
-          if (u.emailVerified === false) out += '<span class="status status--draft">почта не подтверждена</span> ';
-          if ((u.consent || "none") !== "approved") out += '<span class="status status--draft">нет согласия</span> ';
-          if (u.cardStatus === "issued") out += '<span class="status status--pub">карта ' + esc(u.cardNumber || "") + "</span> ";
+          if (u.emailVerified === false) out += '<span class="status status--draft">почта не подтверждена</span>';
+          if ((u.consent || "none") !== "approved") {
+            var processingLabel = u.consent === "pending" ? "на проверке"
+              : u.consent === "rejected" ? "нужно исправить" : "нет согласия";
+            var processingClass = u.consent === "pending" ? "status--pending"
+              : u.consent === "rejected" ? "status--rejected" : "status--draft";
+            out += '<span class="status ' + processingClass + '">обработка: ' + processingLabel + "</span>";
+          }
+          if (u.distributionConsent && u.distributionConsent !== "none") {
+            var distributionLabel = u.distributionConsent === "approved" ? "принято"
+              : u.distributionConsent === "pending" ? "на проверке" : "нужно исправить";
+            var distributionClass = u.distributionConsent === "approved" ? "status--pub"
+              : u.distributionConsent === "pending" ? "status--pending" : "status--rejected";
+            out += '<span class="status ' + distributionClass + '">распространение: ' +
+              distributionLabel + "</span>";
+          }
+          if (u.cardStatus === "issued") out += '<span class="status status--pub">карта ' + esc(u.cardNumber || "") + "</span>";
           else if (u.cardStatus && u.cardStatus !== "none") out += '<span class="status status--pending">карта: ' +
-            esc(u.cardStatus === "pending" ? "заявка" : u.cardStatus === "expired" ? "истекла" : u.cardStatus) + "</span> ";
-          out += '<span class="form__note">' + (Number(u.points) || 0) + " б. · был " +
+            esc(u.cardStatus === "pending" ? "заявка" : u.cardStatus === "expired" ? "истекла" : u.cardStatus) + "</span>";
+          if (u.hasRequests || u.recoveryOpen) out += '<span class="status status--pending">есть заявка</span>';
+          if (u.status === "suspended") out += '<span class="status status--rejected">доступ приостановлен</span>';
+          out += '<span class="people__points">' + (Number(u.points) || 0) + " б. · заходил " +
             esc(u.lastSeen ? fmtDate(u.lastSeen) : "давно") + "</span>";
           return out;
         }
@@ -3014,8 +3099,9 @@
           return '<div class="people__row' + (u.id === openedId ? " is-open" : "") + '">' +
             '<button class="people__open" type="button" data-open="' + esc(u.id) + '">' +
             "<b>" + esc(u.name) + "</b><small>" + esc(u.email) + "</small></button>" +
-            '<div class="people__meta">' + esc(regionName(u.region) || "регион не указан") + " · " +
-            chip(u.access) + "<br>" + rowBadges(u) + "</div>" +
+            '<div class="people__meta"><div class="people__profile-meta">' +
+            esc(regionName(u.region) || "регион не указан") + " · " + esc(u.craft || "роль не указана") +
+            "</div>" + chip(u.access) + '<div class="people__badges">' + rowBadges(u) + "</div></div>" +
             '<button class="btn btn--ghost btn--sm" type="button" data-open="' + esc(u.id) + '">' +
             (u.id === openedId ? "Свернуть" : "Открыть") + "</button></div>";
         }).join("") + "</div>";
@@ -3044,9 +3130,12 @@
         host.setAttribute("data-person-open", "1");
         cardEl.innerHTML = '<p class="form__note" style="margin-top:16px">Открываем страницу участника…</p>';
         Store.userCard(id).then(renderCard, function (err) {
-          cardEl.innerHTML = '<p class="form__note is-error" style="margin-top:16px">' +
-            esc((err && err.message) || "Карточка не открылась.") + "</p>";
-        });
+        cardEl.innerHTML = '<div class="people-empty"><button class="btn btn--ghost btn--sm" ' +
+          'type="button" data-person-error-back>← К списку участников</button><p class="form__note is-error" style="margin-top:12px">' +
+          esc((err && err.message) || "Карточка не открылась.") + "</p></div>";
+        var backBtn = $("[data-person-error-back]", cardEl);
+        if (backBtn) backBtn.addEventListener("click", closeCard);
+      });
       }
 
       function closeCard() {
@@ -3073,7 +3162,7 @@
         (d.consents || []).forEach(function (c) {
           var docKind = c.kind === "distribution" ? "distribution" : "processing";
           var docTitle = docKind === "distribution"
-            ? "Согласие на распространение ПД (конкурсы)"
+            ? "Согласие на распространение ПД"
             : "Согласие на обработку ПД";
           rows.push('<div class="pcard__line"><span>' + docTitle + "</span><small>" +
             esc(ED[c.status] || "ждёт решения") + "</small>" +
@@ -3324,6 +3413,7 @@
           }).then(function (out) {
             all = out.fresh.users || [];
             roles = out.fresh.roles || roles;
+            fillFilterOptions();
             draw();
             openCard(u.id);
             if (out.emailChanged) {
@@ -3627,22 +3717,113 @@
         });
       }
 
-      if (searchEl) searchEl.addEventListener("input", draw);
-      $$("[data-cat]", host).forEach(function (b) {
-        b.addEventListener("click", function () {
-          cat = b.getAttribute("data-cat");
-          draw();
-        });
-      });
+      function clearFilters() {
+        cat = "all";
+        regionFilter = "";
+        accessFilter = "";
+        if (searchEl) searchEl.value = "";
+        if (regionEl) regionEl.value = "";
+        if (accessEl) accessEl.value = "";
+        if (sortEl) sortEl.value = "new";
+        sort = "new";
+        draw();
+      }
 
-      Store.usersList().then(function (res) {
-        all = res.users || [];
-        roles = res.roles || roles;
+      function selectCategory(key) {
+        cat = key || "all";
         draw();
-      }, function () {
-        all = [];
+      }
+
+      function loadUsers() {
+        if (refreshBtn) refreshBtn.disabled = true;
+        if (statusEl) statusEl.textContent = all.length ? "Обновляем список…" : "Загружаем список…";
+        Store.usersList().then(function (res) {
+          if (res && res.error) {
+            if (statusEl) statusEl.textContent = "Не обновлено: " + res.error;
+            if (!all.length) {
+              listEl.innerHTML = '<div class="people-empty"><b>Список пока недоступен</b>' +
+                '<p>Проверьте соединение и попробуйте обновить ещё раз.</p></div>';
+            }
+            return;
+          }
+          all = (res && res.users) || [];
+          roles = (res && res.roles) || roles;
+          fillFilterOptions();
+          if (statusEl) statusEl.textContent = "Обновлено в " + new Date().toLocaleTimeString("ru-RU", {
+            hour: "2-digit", minute: "2-digit"
+          });
+          draw();
+        }, function (err) {
+          if (statusEl) statusEl.textContent = "Не обновлено: " + ((err && err.message) || "сервер недоступен.");
+          if (!all.length) {
+            listEl.innerHTML = '<div class="people-empty"><b>Список пока недоступен</b>' +
+              '<p>Проверьте соединение и попробуйте обновить ещё раз.</p></div>';
+          }
+        }).then(function () {
+          if (refreshBtn) refreshBtn.disabled = false;
+        }, function () {
+          if (refreshBtn) refreshBtn.disabled = false;
+        });
+      }
+
+      function exportCsv() {
+        if (!visible.length) return;
+        var head = ["Имя", "Почта", "Профиль", "Доступ", "Регион", "Редакция", "Регистрация", "Последняя активность",
+          "Баллы", "Пресс-карта", "Согласие на обработку", "Согласие на распространение", "Почта подтверждена", "Статус", "Есть заявка"];
+        function cell(value) {
+          var text = String(value == null ? "" : value).replace(/[\r\n]+/g, " ");
+          if (/^\s*[=+\-@]/.test(text)) text = "'" + text;
+          return '"' + text.replace(/"/g, '""') + '"';
+        }
+        var rows = visible.map(function (u) {
+          var card = u.cardStatus === "issued"
+            ? (u.cardNumber || "") + (u.cardValidUntil ? " до " + u.cardValidUntil : "")
+            : (u.cardStatus || "нет");
+          var consent = u.consent === "approved" ? "принято" : u.consent === "pending" ? "на проверке"
+            : u.consent === "rejected" ? "нужно исправить" : "нет";
+          var distribution = u.distributionConsent === "approved" ? "принято"
+            : u.distributionConsent === "pending" ? "на проверке"
+              : u.distributionConsent === "rejected" ? "нужно исправить" : "нет";
+          return [u.name, u.email, u.craft, u.access || "Пользователь", regionName(u.region) || "", u.editorialName,
+            u.createdAt, u.lastSeen, Number(u.points) || 0, card, consent, distribution,
+            u.emailVerified ? "да" : "нет", u.status === "suspended" ? "приостановлен" : "активен",
+            u.hasRequests || u.recoveryOpen ? "да" : "нет"].map(cell).join(";");
+        });
+        var blob = new Blob(["\uFEFF" + head.map(cell).join(";") + "\n" + rows.join("\n")],
+          { type: "text/csv;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "smena-lyudi.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        if (statusEl) statusEl.textContent = "Экспортировано: " + visible.length + " строк по текущим фильтрам.";
+      }
+
+      if (searchEl) searchEl.addEventListener("input", draw);
+      if (regionEl) regionEl.addEventListener("change", function () {
+        regionFilter = regionEl.value || "";
         draw();
       });
+      if (accessEl) accessEl.addEventListener("change", function () {
+        accessFilter = accessEl.value || "";
+        draw();
+      });
+      if (sortEl) sortEl.addEventListener("change", function () {
+        sort = sortEl.value || "new";
+        draw();
+      });
+      $$("[data-cat]", workspace).forEach(function (b) {
+        b.addEventListener("click", function () { selectCategory(b.getAttribute("data-cat")); });
+      });
+      $$("[data-people-shortcut]", workspace).forEach(function (b) {
+        b.addEventListener("click", function () { selectCategory(b.getAttribute("data-people-shortcut")); });
+      });
+      if (refreshBtn) refreshBtn.addEventListener("click", loadUsers);
+      if (csvBtn) csvBtn.addEventListener("click", exportCsv);
+      loadUsers();
     }
 
     /* Диагностика: почему не пускает и что с сервером. */
@@ -5626,15 +5807,16 @@
         '<div class="sec-head"><div class="sec-head__left"><span class="kicker">Согласия</span>' +
         "<h2>Сканы согласий: обработка и распространение</h2>" +
         '<p class="sec-head__text">Автор подписывает документ от руки и загружает фото. ' +
-        "Согласие на обработку открывает публикацию на сайте. Согласие на распространение " +
-        "нужно только для конкурсов в открытых площадках. Для отказа нужно основание.</p></div></div>" +
+        "Согласие на обработку разрешает работу с данными; отдельное согласие на распространение " +
+        "нужно для публикации отмеченных персональных данных на сайте и выбранных площадках. " +
+        "Для отказа нужно основание.</p></div></div>" +
         '<div class="panel"><div class="row" style="align-items:flex-end">' +
         '<div data-confirm-slot style="display:none"></div>' +
         '<label class="form__note">Документ ' +
         '<select data-consent-kind style="margin-left:8px">' +
         '<option value="">все</option>' +
         '<option value="processing">обработка данных</option>' +
-        '<option value="distribution">распространение (конкурсы)</option>' +
+        '<option value="distribution">распространение данных</option>' +
         "</select></label>" +
         '<button class="btn btn--sm" type="button" data-consent-load>Показать согласия</button></div>' +
         '<p class="form__note" data-consent-status></p></div><div data-consent-list></div>';
@@ -5653,7 +5835,7 @@
       function row(c) {
         var badge = LABEL[c.status] || LABEL.pending;
         var docLabel = c.kind === "distribution"
-          ? "Распространение данных · конкурсы"
+          ? "Распространение данных · сайт и отмеченные площадки"
           : "Обработка данных · работа на сайте";
         return (
           '<div class="admin-review"><div class="admin-review__top"><b>' +
@@ -5995,7 +6177,7 @@
       }).join("") +
       "</div>" +
       '<div class="presscard__actions">' +
-      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
+      '<a class="btn btn--sm" href="/assets/docs/press-kit.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Пресс-кит (PDF)</a>' +
       '<a class="btn btn--sm btn--ghost" href="/docs">Документы</a>' +
       "</div>" +
       '<div class="presscard__stamp" aria-hidden="true">смена<br>контента<br><span>' +
@@ -6280,7 +6462,7 @@
               "двора или вуза. Редакция поможет с текстом, а после публикации вы получите " +
               "пресс-карту автора.</p>" +
               '<div class="empty__actions"><a class="btn btn--sm" href="/join">Стать автором</a>' +
-              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Памятка автору</a></div></div>');
+              '<a class="btn btn--sm btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Памятка автору</a></div></div>');
 
       var note = $("[data-news-note]");
       if (note) note.hidden = allArticles().length === 0;
@@ -6634,8 +6816,8 @@
       "фотографов и видеографов в каждом регионе. Опыт публикаций не обязателен.</p>" +
       '<a class="btn btn--sm btn--block" href="/join">Зарегистрироваться</a></div>' +
       '<div class="aside-box"><h3>Документы</h3><ul>' +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
-      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/polozhenie-o-redakcii.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Кодекс редакции (PDF)</a></li>' +
       '<li><a href="/docs">Все документы</a></li>' +
       "</ul></div>" +
       '<div class="aside-box"><h3>На карте</h3>' +
@@ -7428,34 +7610,35 @@
   /* 12. Личный кабинет ===================================================== */
 
   /* Два документа для подписи. Оба идут одним путём: скачал форму → подписал
-     от руки → загрузил скан → комиссия проверила. Разница в том, что они
-     разрешают: обработка открывает работу на сайте, распространение нужно
-     только для конкурсов, которые выходят в открытые площадки проекта. */
+     от руки → загрузил скан → комиссия проверила. Обработка нужна для работы
+     с данными; распространение отдельно разрешает публикацию отмеченных данных
+     на сайте и, если выбран этот объём, на площадках проекта. */
   var CONSENT_DOCS = {
     processing: {
       kicker: "Документ для подписи",
       title: "Согласие на обработку персональных данных",
-      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-14-12",
+      file: "/assets/docs/soglasie-na-obrabotku-pd.pdf?v=2026-11-12-1",
+      fileUnder14: "/assets/docs/soglasie-na-obrabotku-pd-do-14.pdf?v=2026-11-12-1",
       none: "черновики и публикация закрыты",
-      intro: "Распечатайте форму, подпишите от руки, сфотографируйте лист целиком и загрузите " +
-        "фото. Комиссия проверит документ и откроет публикацию.",
+      intro: "Выберите бланк по возрасту автора, подпишите его от руки и загрузите скан. " +
+        "После проверки откроется работа в кабинете; для публикации материалов с данными " +
+        "автора нужно отдельное согласие на распространение.",
       wait: "Обычно проверка занимает до двух дней. Пока решение не принято, " +
         "черновики, файлы и заявки закрыты.",
-      ok: "Согласие принято. Публиковать материалы на сайте можно без ограничений.",
+      ok: "Согласие на обработку принято. Для публикации материалов с данными автора также " +
+        "нужно принятое отдельное согласие на распространение.",
     },
     distribution: {
       kicker: "Второй документ для подписи",
       title: "Согласие на распространение персональных данных",
-      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-14-12",
-      none: "без него материалы не публикуются",
-      intro: "Имя автора, фотография и работа на сайте видны всем посетителям — по закону " +
-        "это распространение персональных данных, и разрешение на него оформляется " +
-        "отдельным документом. В форме вы отмечаете, что можно показывать. Площадки " +
-        "проекта (Max, Telegram, ВКонтакте, ТДС Чат) — отдельная отметка, она нужна " +
-        "только для конкурсов; без неё материалы выходят только на сайте.",
-      wait: "Комиссия проверяет документ. Пока решения нет, материалы не публикуются.",
-      ok: "Согласие принято. Имя и работы могут выходить на сайте. В площадках проекта — " +
-        "только если вы отметили это в форме.",
+      file: "/assets/docs/soglasie-na-rasprostranenie-pd.pdf?v=2026-11-12-1",
+      fileUnder14: "/assets/docs/soglasie-na-rasprostranenie-pd-do-14.pdf?v=2026-11-12-1",
+      none: "публикация материалов с данными автора закрыта",
+      intro: "Выберите бланк по возрасту автора, отметьте данные и объём разрешения, " +
+        "подпишите его от руки и загрузите скан.",
+      wait: "Комиссия проверяет документ. До решения публикация материалов с данными автора закрыта.",
+      ok: "Публиковать можно только те данные и в том объёме, которые отмечены в бланке. " +
+        "Площадки проекта доступны, только если вы разрешили их в форме.",
     },
   };
 
@@ -7500,9 +7683,12 @@
 
     var fieldId = "consent-file-" + key;
     var actions =
+      '<p class="form__note consent-card__choose">Бланк по возрасту автора:</p>' +
       '<div class="consent-card__actions">' +
       '<a class="btn btn--sm btn--ghost" href="' + esc(doc.file) + '" ' +
-      'target="_blank" rel="noopener">Скачать форму (PDF)</a>' +
+      'target="_blank" rel="noopener">14 лет и старше · PDF</a>' +
+      '<a class="btn btn--sm btn--ghost" href="' + esc(doc.fileUnder14) + '" ' +
+      'target="_blank" rel="noopener">Младше 14 лет · PDF</a>' +
       (status === "approved"
         ? ""
         : '<label class="btn btn--sm btn--accent" for="' + fieldId + '">Загрузить согласие</label>' +
@@ -8327,8 +8513,8 @@
       var consentStatus = (consent && consent.status) || "none";
       var distribution = Store.consent("distribution");
       var distributionStatus = (distribution && distribution.status) || "none";
-      /* Писать материалы можно только с принятым согласием на обработку ПД:
-         до этого кнопка не ведёт в редактор, а показывает, чего не хватает. */
+      /* Для работы и публикации материалов нужны оба согласия: на обработку
+         данных и на распространение указанных автором данных. */
       var canWrite = consentStatus === "approved" && distributionStatus === "approved";
       var published = Store.listPosts({ authorId: user.id, status: "published" });
       var drafts = Store.listPosts({ authorId: user.id, status: "draft" });
@@ -8603,7 +8789,7 @@
             (canWrite
               ? '<a class="btn btn--accent" href="/write">Написать материал</a>'
               : '<span class="btn btn--accent is-locked" aria-disabled="true">Написать материал</span>') +
-            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
+            '<a class="btn btn--ghost" href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Памятка автору</a></div></div>') +
         "</div></section>" +
 
         /* ---- Пресс-карта ------------------------------------------------ */
@@ -9561,7 +9747,7 @@
       '<div><span class="kicker">' + (existing ? "Редактирование" : "Новый материал") + "</span>" +
       "<h1>" + (existing ? "Изменить материал" : "Написать материал") + "</h1>" +
       '<p class="lead">Пишите так, как рассказали бы другу. Черновики и отправка материалов ' +
-      "доступны после принятого согласия на обработку данных.</p></div>" +
+      "доступны после принятия согласия на обработку и отдельного согласия на распространение.</p></div>" +
       '<div class="write-head__side">' +
       '<a class="btn btn--sm btn--ghost" href="/profile">← В кабинет</a>' +
       "</div></div>" +
@@ -9644,14 +9830,14 @@
       '<button class="btn btn--block" type="submit" data-action="draft">Сохранить черновик</button>' +
       '<button class="btn btn--accent btn--block" type="submit" data-action="submit">Отправить на проверку</button>' +
       '<p class="form__note">Материал проверит редакция — обычно в течение дня. ' +
-      'Публикация возможна только после принятого согласия на обработку данных.</p>' +
+      'Публикация возможна после принятия обоих согласий: на обработку и распространение данных.</p>' +
       "</div>" +
       '<div class="write-side__box write-side__box--muted">' +
       "<h3>Перед публикацией</h3><ul class=\"check-list\">" +
       "<li>Проверьте факты и имена</li>" +
       "<li>Спросите героев о согласии</li>" +
       "<li>Укажите автора фотографии</li>" +
-      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-14-12" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
+      '<li><a href="/assets/docs/pamyatka-avtoru.pdf?v=2026-11-12-1" target="_blank" rel="noopener">Памятка автору (PDF)</a></li>' +
       "</ul></div>" +
       "</div></form></section>";
 
