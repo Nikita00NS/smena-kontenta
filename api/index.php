@@ -3324,11 +3324,65 @@ if ($act === 'user-card') {
         if ($post['status'] === 'published') $published++;
     }
 
+    /* медиашкола: заявка, набор и прогресс — для страницы участника */
+    $school = null;
+    if (function_exists('school_by_user')) {
+        $schoolApp = school_by_user($DATA_DIR, $id);
+        if ($schoolApp) {
+            $cohortName = '';
+            if (!empty($schoolApp['cohortId'])) {
+                foreach (read_school_cohorts($DATA_DIR) as $sc) {
+                    if ((string) $sc['id'] === (string) $schoolApp['cohortId']) { $cohortName = (string) $sc['name']; break; }
+                }
+            }
+            $school = array(
+                'status' => (string) (isset($schoolApp['status']) ? $schoolApp['status'] : 'pending'),
+                'direction' => (string) (isset($schoolApp['direction']) ? $schoolApp['direction'] : ''),
+                'createdAt' => (string) (isset($schoolApp['createdAt']) ? $schoolApp['createdAt'] : ''),
+                'note' => (string) (isset($schoolApp['note']) ? $schoolApp['note'] : ''),
+                'cohortId' => (string) (isset($schoolApp['cohortId']) ? $schoolApp['cohortId'] : ''),
+                'cohortName' => $cohortName,
+            );
+            if ($school['status'] === 'accepted') {
+                $cid = (string) $school['cohortId'];
+                $total = 0;
+                foreach (read_school_assignments($DATA_DIR) as $sa) {
+                    if ((string) (isset($sa['cohortId']) ? $sa['cohortId'] : '') === $cid) $total++;
+                }
+                $accepted = 0;
+                $subPoints = 0;
+                $lastReviewedAt = '';
+                $lastNote = '';
+                foreach (read_school_subs($DATA_DIR) as $sub) {
+                    if ((string) (isset($sub['userId']) ? $sub['userId'] : '') !== (string) $id) continue;
+                    if ((string) (isset($sub['cohortId']) ? $sub['cohortId'] : '') !== $cid) continue;
+                    if (isset($sub['status']) && $sub['status'] === 'accepted') {
+                        $accepted++;
+                        $subPoints += (int) (isset($sub['points']) ? $sub['points'] : 0);
+                    }
+                    $revAt = isset($sub['reviewedAt']) ? (string) $sub['reviewedAt'] : '';
+                    if ($revAt !== '' && $revAt >= $lastReviewedAt) {
+                        $lastReviewedAt = $revAt;
+                        $lastNote = (string) (isset($sub['personalNote']) && $sub['personalNote'] !== ''
+                            ? $sub['personalNote'] : (isset($sub['groupNote']) ? $sub['groupNote'] : ''));
+                    }
+                }
+                $school['total'] = $total;
+                $school['accepted'] = $accepted;
+                $school['points'] = $subPoints;
+                $school['lastReviewedAt'] = $lastReviewedAt;
+                $school['lastNote'] = $lastNote;
+                $school['done'] = $total > 0 && $accepted >= $total;
+            }
+        }
+    }
+
     respond(array(
         'ok' => true,
         'user' => array_merge(public_user($target), array(
             'createdAt' => isset($target['createdAt']) ? $target['createdAt'] : '',
         )),
+        'school' => $school,
         'posts' => $posts,
         'published' => $published,
         'editorialApps' => $editorialApps,

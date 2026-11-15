@@ -91,6 +91,19 @@ function check(name, cond, extra) {
       ] });
     };
     Store.schoolInvite = function () { return Promise.resolve({ ok: true, sent: 0, skipped: 0 }); };
+    Store.userCard = function (id) {
+      return Promise.resolve({
+        ok: true,
+        user: { id: id, name: "Марина Съёмкина", email: "marina@example.ru", access: "Директор",
+          region: "moskva", createdAt: "2026-10-01T00:00:00Z", emailVerified: true, status: "active" },
+        cards: [], editorialsFounded: [], editorialApps: [], consents: [], portfolio: [], recovery: [],
+        posts: [], messages: [], notes: [], timeline: [], points: 41, published: 0,
+        cardNumberNext: "СК-2026-002", cardMinPosts: 5,
+        school: { status: "accepted", direction: "Фотография", createdAt: "2026-10-02T00:00:00Z",
+          cohortId: "scg_1", cohortName: "Набор 001", accepted: 2, total: 2, points: 30,
+          lastReviewedAt: "2026-11-10T10:00:00Z", lastNote: "Серия сильная, подпишите кадры", done: true },
+      });
+    };
     Store.schoolPostDraft = function (cohortId, tone, seed) {
       tone = tone || "warm";
       seed = seed || 1;
@@ -190,6 +203,20 @@ function check(name, cond, extra) {
   sortSel.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   const firstName = peoplePanel.querySelector(".people__row .people__open b").textContent;
   check("сортировка по баллам ставит Марину первой", firstName === "Марина Съёмкина", firstName);
+  doc.querySelector(".people__row .people__open").dispatchEvent(new dom.window.Event("click", { bubbles: true }));
+  await new Promise((r2) => setTimeout(r2, 30));
+  const cardEl = doc.querySelector("[data-panel=\"people\"] .pcard");
+  check("карточка участника открылась", !!cardEl && /Марина Съёмкина/.test(cardEl.textContent));
+  const schSec = cardEl ? [].filter.call(cardEl.querySelectorAll(".pcard__section"),
+    (el) => /Медиашкола/.test(el.querySelector(".kicker") ? el.querySelector(".kicker").textContent : ""))[0] : null;
+  check("в карточке есть секция «Медиашкола»", !!schSec);
+  check("в секции набор, направление и прогресс",
+    !!schSec && /Набор 001/.test(schSec.textContent) && /Фотография/.test(schSec.textContent) &&
+    /2 из 2/.test(schSec.textContent) && /30/.test(schSec.textContent));
+  check("курс пройден — плашка и подсказка про справку",
+    !!schSec && /курс пройден/.test(schSec.textContent) && /справкой/.test(schSec.textContent));
+  check("последний разбор с комментарием виден",
+    !!schSec && /Серия сильная, подпишите кадры/.test(schSec.textContent));
 
   const contentPanel = doc.querySelector('[data-panel="content"]');
   check("очередь материалов отрисована", !!contentPanel && /Двор на Лесной/.test(contentPanel.textContent));

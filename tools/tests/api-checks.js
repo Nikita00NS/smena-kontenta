@@ -527,6 +527,16 @@ const results = [];
     title: "Задание 1: портрет двора", brief: "Снимите серию из 10 кадров об одном дворе и выберите три лучших.", dueAt: "2026-12-01" });
   check("задание добавляется в набор", r.ok === true && r.assignment && r.assignment.order === 1, r);
   const assignmentId = r.ok ? r.assignment.id : "";
+  r = await call("user-card", { token: token3, id: second.id });
+  check("в карточке участника видны набор и прогресс школы",
+    r.ok === true && r.school && r.school.status === "accepted" && r.school.cohortName === "Набор 001" &&
+    typeof r.school.total === "number" && typeof r.school.accepted === "number" &&
+    typeof r.school.points === "number" && typeof r.school.done === "boolean",
+    r.ok ? r.school : r);
+  r = await call("reg", { name: "Без школы", email: "noschool@example.ru", pass: "parol1234", region: "moskva" });
+  const meNoSchool = await call("me", { token: r.ok ? r.token : "" });
+  r = await call("user-card", { token: token3, id: meNoSchool.user.id });
+  check("у участника без заявки в школу блок школы пуст", r.ok === true && r.school === null, r.ok ? r.school : r);
   r = await call("school-module-add", { token: token2b, cohortId: cohortId, title: "Модуль", body: "Текст" });
   check("модули добавляет только редакция школы", r.ok === false && r.code === 403, r);
   r = await call("school-module-add", { token: token3, cohortId: cohortId, assignmentId: assignmentId,
